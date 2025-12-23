@@ -1,73 +1,45 @@
-# Welcome to your Lovable project
+# IG Autopublisher (v1)
 
-## Project info
+Automatisierte Erstellung und Veröffentlichung von Instagram-Feed-Posts mit KI-gestützter Caption-Generierung.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+- **AI Draft Generation**: Automatische Erstellung von Captions, Hashtags und Alt-Text
+- **Brand Rules**: Konfigurierbare Markenrichtlinien
+- **Review Workflow**: Manuelle Freigabe vor jeder Veröffentlichung
+- **Calendar Scheduling**: Zeitgesteuerte Veröffentlichung
+- **AI Image Generation**: AI-generierte Bilder via Lovable AI
 
-There are several ways of editing your application.
+## Setup
 
-**Use Lovable**
+### Meta Developer App
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+1. Erstelle App auf [developers.facebook.com](https://developers.facebook.com/)
+2. Füge "Facebook Login for Business" hinzu
+3. Berechtigungen: `instagram_basic`, `instagram_content_publish`, `pages_show_list`
+4. OAuth Redirect URL: `https://<project-id>.supabase.co/functions/v1/meta-oauth-callback`
 
-Changes made via Lovable will be committed automatically to this repo.
+### Supabase Secrets
 
-**Use your preferred IDE**
+| Secret | Beschreibung |
+|--------|--------------|
+| `META_APP_ID` | Meta App ID |
+| `META_APP_SECRET` | Meta App Secret |
+| `SITE_URL` | Frontend URL |
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Scheduler Cron
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```sql
+SELECT cron.schedule('scheduler-tick', '*/5 * * * *', $$
+  SELECT net.http_post(
+    url := 'https://<project-id>.supabase.co/functions/v1/scheduler-tick',
+    headers := '{"Authorization": "Bearer <anon-key>"}'::jsonb
+  );
+$$);
 ```
 
-**Edit a file directly in GitHub**
+## Post Status Flow
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+```
+IDEA → DRAFT → READY_FOR_REVIEW → APPROVED → SCHEDULED → PUBLISHED
+```

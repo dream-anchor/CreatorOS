@@ -5,3 +5,15 @@ verify_jwt = false
 
 [functions.autopilot-fill]
 verify_jwt = false
+
+[functions.scheduler-tick]
+verify_jwt = false
+
+[functions.publish-to-instagram]
+verify_jwt = false
+
+[functions.meta-oauth-callback]
+verify_jwt = false
+
+[functions.generate-asset]
+verify_jwt = false
