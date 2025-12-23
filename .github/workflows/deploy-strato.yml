@@ -1,0 +1,57 @@
+# .github/workflows/deploy-strato.yml
+name: Deploy to Strato (postpro.antoinemonot.com)
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-strato
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Optional, but recommended for SPA routing on Strato:
+      - name: Ensure .htaccess for SPA routing
+        run: |
+          if [ -d dist ]; then
+            cat > dist/.htaccess <<'EOF'
+            RewriteEngine On
+            RewriteBase /
+            RewriteRule ^index\.html$ - [L]
+            RewriteCond %{REQUEST_FILENAME} !-f
+            RewriteCond %{REQUEST_FILENAME} !-d
+            RewriteRule . /index.html [L]
+            EOF
+          fi
+
+      - name: Deploy dist/ to Strato via SFTP (password)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STRATO_HOST }}
+          username: ${{ secrets.STRATO_USER }}
+          password: ${{ secrets.STRATO_PASS }}
+          port: ${{ secrets.STRATO_PORT || 22 }}
+          source: "dist/*"
+          target: ${{ secrets.STRATO_PATH }}
+          strip_components: 1
+          overwrite: true
