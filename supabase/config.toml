@@ -1,0 +1,7 @@
+project_id = "utecdkwvjraucimdflnw"
+
+[functions.generate-draft]
+verify_jwt = false
+
+[functions.autopilot-fill]
+verify_jwt = false
