@@ -16,8 +16,8 @@ import {
   X,
   Upload,
   Image as ImageIcon,
-  Calendar,
   Eye,
+  Sparkles,
 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { format } from "date-fns";
@@ -35,6 +35,7 @@ export default function ReviewPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (user) loadPosts();
@@ -188,6 +189,43 @@ export default function ReviewPage() {
     }
   };
 
+  const handleGenerateImage = async () => {
+    if (!selectedPost) return;
+    
+    // Get the asset prompt from the post metadata or use caption as fallback
+    const prompt = selectedPost.caption?.slice(0, 200) || "Professional Instagram post image";
+    
+    setGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-asset", {
+        body: { 
+          postId: selectedPost.id, 
+          prompt: prompt 
+        },
+      });
+
+      if (error) throw error;
+
+      toast.success("Bild generiert!");
+      
+      // Refresh post data
+      const { data: updatedPost } = await supabase
+        .from("posts")
+        .select("*, assets(*)")
+        .eq("id", selectedPost.id)
+        .single();
+      
+      if (updatedPost) {
+        setSelectedPost(updatedPost as Post & { assets?: Asset[] });
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unbekannter Fehler";
+      toast.error("Generierung fehlgeschlagen: " + msg);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   if (loading) {
     return (
       <AppLayout title="Review">
@@ -261,17 +299,49 @@ export default function ReviewPage() {
               <div className="space-y-4">
                 <Label>Bild</Label>
                 {selectedPost.assets && selectedPost.assets.length > 0 ? (
-                  <div className="aspect-square rounded-lg overflow-hidden bg-muted">
-                    <img
-                      src={selectedPost.assets[0].public_url || ""}
-                      alt="Post preview"
-                      className="w-full h-full object-cover"
-                    />
+                  <div className="space-y-2">
+                    <div className="aspect-square rounded-lg overflow-hidden bg-muted">
+                      <img
+                        src={selectedPost.assets[0].public_url || ""}
+                        alt="Post preview"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        disabled={uploading}
+                        onClick={() => document.getElementById("file-upload")?.click()}
+                      >
+                        {uploading ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Upload className="mr-2 h-4 w-4" />
+                        )}
+                        Ersetzen
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        disabled={generating}
+                        onClick={handleGenerateImage}
+                      >
+                        {generating ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="mr-2 h-4 w-4" />
+                        )}
+                        Neu generieren
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="aspect-square rounded-lg bg-muted flex flex-col items-center justify-center gap-3">
                     <ImageIcon className="h-12 w-12 text-muted-foreground/30" />
-                    <Label htmlFor="file-upload" className="cursor-pointer">
+                    <div className="flex gap-2">
                       <Button
                         variant="outline"
                         size="sm"
@@ -283,18 +353,31 @@ export default function ReviewPage() {
                         ) : (
                           <Upload className="mr-2 h-4 w-4" />
                         )}
-                        Bild hochladen
+                        Hochladen
                       </Button>
-                    </Label>
-                    <input
-                      id="file-upload"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleFileUpload}
-                    />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={generating}
+                        onClick={handleGenerateImage}
+                      >
+                        {generating ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="mr-2 h-4 w-4" />
+                        )}
+                        Generieren
+                      </Button>
+                    </div>
                   </div>
                 )}
+                <input
+                  id="file-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
 
                 {selectedPost.alt_text && (
                   <div>
