@@ -29,7 +29,6 @@ jobs:
       - name: Build project
         run: npm run build
 
-      # --- FIXED .htaccess Step ---
       - name: Create .htaccess for SPA routing
         shell: bash
         run: |
@@ -43,7 +42,7 @@ jobs:
             'RewriteRule . /index.html [L]' \
             > dist/.htaccess
 
-      - name: Deploy dist/ to Strato via SFTP
+      - name: Deploy dist/ to Strato via SFTP (legacy cipher)
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.STRATO_HOST }}
@@ -54,3 +53,5 @@ jobs:
           target: ${{ secrets.STRATO_PATH }}
           strip_components: 1
           overwrite: true
+          use_insecure_cipher: true
+          debug: true
