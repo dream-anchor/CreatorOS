@@ -3,6 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { MetaConnection } from "@/types/database";
@@ -15,6 +17,7 @@ export default function MetaSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<MetaConnection | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [metaAppId, setMetaAppId] = useState(() => localStorage.getItem("meta_app_id") || "");
 
   useEffect(() => {
     if (user) loadConnection();
@@ -56,20 +59,23 @@ export default function MetaSettingsPage() {
     }
   };
 
+  const saveMetaAppId = (value: string) => {
+    setMetaAppId(value);
+    localStorage.setItem("meta_app_id", value);
+  };
+
   const startOAuth = () => {
     if (!user) {
       toast.error("Bitte zuerst einloggen");
       return;
     }
 
-    // These would be configured in your Meta Developer App
-    const META_APP_ID = import.meta.env.VITE_META_APP_ID;
-    const REDIRECT_URI = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-oauth-callback`;
-
-    if (!META_APP_ID) {
-      toast.error("Meta App ID nicht konfiguriert");
+    if (!metaAppId.trim()) {
+      toast.error("Bitte Meta App ID eingeben");
       return;
     }
+
+    const REDIRECT_URI = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-oauth-callback`;
 
     const scopes = [
       "instagram_basic",
@@ -78,7 +84,7 @@ export default function MetaSettingsPage() {
       "pages_read_engagement",
     ].join(",");
 
-    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${scopes}&state=${user.id}&response_type=code`;
+    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${metaAppId.trim()}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${scopes}&state=${user.id}&response_type=code`;
 
     window.location.href = authUrl;
   };
@@ -176,7 +182,19 @@ export default function MetaSettingsPage() {
                   <AlertCircle className="h-5 w-5 text-muted-foreground" />
                   <p className="text-muted-foreground">Nicht verbunden</p>
                 </div>
-                <Button onClick={startOAuth}>
+                <div className="space-y-2">
+                  <Label htmlFor="meta-app-id">Meta App ID</Label>
+                  <Input
+                    id="meta-app-id"
+                    value={metaAppId}
+                    onChange={(e) => saveMetaAppId(e.target.value)}
+                    placeholder="Deine Meta App ID eingeben"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Findest du unter developers.facebook.com → Deine App → Einstellungen → Allgemein
+                  </p>
+                </div>
+                <Button onClick={startOAuth} disabled={!metaAppId.trim()}>
                   <Instagram className="mr-2 h-4 w-4" />
                   Mit Instagram verbinden
                 </Button>
