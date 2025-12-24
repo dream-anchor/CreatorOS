@@ -19,7 +19,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.store-instagram-token]
-verify_jwt = true
+verify_jwt = false
 
 [functions.publish-instagram-post]
-verify_jwt = true
+verify_jwt = false
