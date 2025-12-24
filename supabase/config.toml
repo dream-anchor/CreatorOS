@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.test-instagram-connection]
 verify_jwt = false
+
+[functions.meta-oauth-config]
+verify_jwt = false
