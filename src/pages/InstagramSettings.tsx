@@ -26,29 +26,32 @@ interface TestPostResult {
   media_id?: string;
 }
 
-// Validate IG User ID: must be numeric and start with 178414 (Instagram Business Account prefix)
+// Validate IG User ID: must be numeric and start with 17841... (Instagram Business Account ID prefix)
 const validateIgUserId = (id: string): { valid: boolean; error?: string } => {
   const trimmed = id.trim();
-  
+
   if (!trimmed) {
-    return { valid: false, error: 'Instagram Business User ID ist erforderlich' };
+    return { valid: false, error: 'Instagram Business Account ID ist erforderlich' };
   }
-  
+
   // Must be numeric
   if (!/^\d+$/.test(trimmed)) {
     return { valid: false, error: 'Die ID muss nur aus Zahlen bestehen' };
   }
-  
-  // Must start with 178414 (Instagram Business Account IDs start with this)
+
+  // Must start with 17841... (IG Business Account IDs start with this)
   if (!trimmed.startsWith('178414') && !trimmed.startsWith('17841')) {
-    return { valid: false, error: 'Instagram Business User IDs beginnen mit 17841... – du hast vermutlich die Facebook App ID eingegeben' };
+    return {
+      valid: false,
+      error: 'Die Instagram Business Account ID beginnt mit 17841... – du hast vermutlich die Facebook App-ID eingegeben',
+    };
   }
-  
+
   // Reasonable length check (IG IDs are typically 17-18 digits)
   if (trimmed.length < 15 || trimmed.length > 20) {
     return { valid: false, error: 'Die ID sollte 15-20 Ziffern lang sein' };
   }
-  
+
   return { valid: true };
 };
 
@@ -481,7 +484,7 @@ export default function InstagramSettings() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="igUserId">Instagram Business User ID</Label>
+              <Label htmlFor="igUserId">Instagram Business Account ID (1784...)</Label>
               <Input
                 id="igUserId"
                 placeholder="z.B. 17841400000000000"
@@ -497,8 +500,9 @@ export default function InstagramSettings() {
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Diese ID ist <strong>numerisch</strong> und beginnt mit <code className="bg-muted px-1 rounded">17841...</code> – <strong>NICHT</strong> die Facebook App-ID (1116...).
-                  Findest du im Access Token Debugger oder über die Graph API.
+                  Findest du im <strong>Meta Developer Dashboard</strong> → <strong>Instagram API Setup</strong> (IG Business Account → ID).
+                  Diese ID ist <strong>numerisch</strong> und beginnt mit <code className="bg-muted px-1 rounded">17841...</code> –{' '}
+                  <strong>nicht</strong> die Facebook App-ID (1116...).
                 </p>
               )}
             </div>
@@ -541,9 +545,21 @@ export default function InstagramSettings() {
                   <li>Gehe zu developers.facebook.com</li>
                   <li>Öffne deine App → Graph API Explorer</li>
                   <li>Wähle deine App und Page aus</li>
-                  <li>Füge die Berechtigungen hinzu: <code className="bg-muted px-1 rounded text-xs">instagram_business_basic</code>, <code className="bg-muted px-1 rounded text-xs">instagram_business_content_publish</code>, <code className="bg-muted px-1 rounded text-xs">instagram_business_manage_comments</code></li>
+                  <li>
+                    Füge die Berechtigungen hinzu:{' '}
+                    <code className="bg-muted px-1 rounded text-xs">instagram_business_basic</code>,{' '}
+                    <code className="bg-muted px-1 rounded text-xs">instagram_business_content_publish</code>,{' '}
+                    <code className="bg-muted px-1 rounded text-xs">instagram_business_manage_comments</code>,{' '}
+                    <code className="bg-muted px-1 rounded text-xs">instagram_business_manage_messages</code>,{' '}
+                    <code className="bg-muted px-1 rounded text-xs">instagram_business_manage_insights</code>,{' '}
+                    <code className="bg-muted px-1 rounded text-xs">pages_show_list</code>,{' '}
+                    <code className="bg-muted px-1 rounded text-xs">pages_read_engagement</code>
+                  </li>
                   <li>Klicke "Generate Access Token"</li>
-                  <li>Nutze den Access Token Debugger um deine <strong>Instagram Business User ID</strong> (17841...) zu finden</li>
+                  <li>
+                    Die <strong>Instagram Business Account ID</strong> (17841...) findest du im Meta Dashboard → Instagram API Setup
+                    (oder im Access Token Debugger).
+                  </li>
                 </ol>
               </AlertDescription>
             </Alert>

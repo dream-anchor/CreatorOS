@@ -92,13 +92,23 @@ Deno.serve(async (req) => {
 
     const isDebug = req.method === "GET" || body?.debug === true;
 
+    const scopeParam = scopes.join(",");
+    const buildAuthUrl = (state: string) =>
+      `${authBaseUrl}?client_id=${META_APP_ID}` +
+      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+      `&scope=${encodeURIComponent(scopeParam)}` +
+      `&state=${encodeURIComponent(state)}` +
+      `&response_type=code`;
+
     const debugInfo = {
       meta_app_id: META_APP_ID,
       meta_oauth_mode: mode,
       meta_oauth_mode_raw: modeRaw,
       redirect_uri: REDIRECT_URI,
       scopes,
+      scope_param: scopeParam,
       auth_base_url: authBaseUrl,
+      auth_url: buildAuthUrl("debug"),
       timestamp: new Date().toISOString(),
     };
 
@@ -155,13 +165,7 @@ Deno.serve(async (req) => {
     }
 
     // Build OAuth URL (state = user.id)
-    const scopeParam = scopes.join(",");
-    const authUrl =
-      `${authBaseUrl}?client_id=${META_APP_ID}` +
-      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-      `&scope=${encodeURIComponent(scopeParam)}` +
-      `&state=${encodeURIComponent(user.id)}` +
-      `&response_type=code`;
+    const authUrl = buildAuthUrl(user.id);
 
     console.log("[meta-oauth-config] Generated OAuth URL", {
       user_id: user.id,
