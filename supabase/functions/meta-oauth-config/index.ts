@@ -46,19 +46,20 @@ Deno.serve(async (req) => {
     const scopes =
       mode === "instagram_app"
         ? [
-            // Instagram Login flow
+            // Instagram Login flow (Business permissions)
             "instagram_business_basic",
             "instagram_business_content_publish",
             "instagram_business_manage_messages",
             "instagram_business_manage_comments",
           ]
         : [
-            // Facebook Login for Business with Instagram Graph API
-            "instagram_basic",
-            "instagram_content_publish",
+            // Facebook Login for Business (Instagram Graph API)
+            "instagram_business_basic",
+            "instagram_business_content_publish",
+            "instagram_business_manage_comments",
+            "instagram_business_manage_messages",
             "pages_show_list",
             "pages_read_engagement",
-            "business_management",
           ];
 
     if (!META_APP_ID) {
