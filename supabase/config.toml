@@ -1,5 +1,8 @@
 project_id = "utecdkwvjraucimdflnw"
 
+[functions.meta-oauth-config]
+verify_jwt = false
+
 [functions.generate-draft]
 verify_jwt = false
 
