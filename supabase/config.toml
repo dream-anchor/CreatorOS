@@ -28,4 +28,4 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.meta-oauth-config]
-verify_jwt = false
+verify_jwt = true

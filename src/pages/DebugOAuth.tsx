@@ -8,8 +8,8 @@ import { supabase } from '@/integrations/supabase/client';
 
 interface OAuthDebugInfo {
   meta_app_id: string;
-  meta_app_id_configured: boolean;
   meta_oauth_mode: string;
+  meta_oauth_mode_raw: string;
   redirect_uri: string;
   scopes: string[];
   auth_base_url: string;
@@ -25,23 +25,15 @@ export default function DebugOAuth() {
     setIsLoading(true);
     setError(null);
     try {
-      // Call the edge function with GET to get debug info
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-oauth-config`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const response = await supabase.functions.invoke('meta-oauth-config', {
+        body: { debug: true },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to fetch debug info');
       }
-      
-      const data = await response.json();
-      setDebugInfo(data);
+
+      setDebugInfo(response.data as OAuthDebugInfo);
     } catch (err) {
       console.error('Error fetching debug info:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch debug info');
@@ -96,25 +88,27 @@ export default function DebugOAuth() {
             </Alert>
           ) : debugInfo ? (
             <div className="space-y-4">
-              {/* App ID Status */}
+              {/* App ID */}
               <div className="flex items-center justify-between p-4 rounded-lg border">
                 <div>
                   <p className="font-medium">META_APP_ID</p>
-                  <p className="text-sm text-muted-foreground">
-                    {debugInfo.meta_app_id_configured ? debugInfo.meta_app_id : 'Nicht konfiguriert'}
+                  <p className="text-sm text-muted-foreground font-mono break-all">
+                    {debugInfo.meta_app_id || 'Nicht konfiguriert'}
                   </p>
                 </div>
-                {debugInfo.meta_app_id_configured ? (
-                  <Badge variant="default" className="bg-green-500">
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    Konfiguriert
-                  </Badge>
-                ) : (
-                  <Badge variant="destructive">
-                    <XCircle className="h-3 w-3 mr-1" />
-                    Fehlt
-                  </Badge>
-                )}
+                <Badge variant={debugInfo.meta_app_id ? 'default' : 'destructive'}>
+                  {debugInfo.meta_app_id ? (
+                    <>
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Konfiguriert
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3 w-3 mr-1" />
+                      Fehlt
+                    </>
+                  )}
+                </Badge>
               </div>
 
               {/* OAuth Mode */}
