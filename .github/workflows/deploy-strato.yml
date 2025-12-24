@@ -1,4 +1,4 @@
-name: Deploy to Strato (postpro.antoinemonot.com)
+name: Build & Deploy to Strato (postpro)
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build project
+      - name: Build
         run: npm run build
 
       - name: Create .htaccess for SPA routing
@@ -42,16 +42,23 @@ jobs:
             'RewriteRule . /index.html [L]' \
             > dist/.htaccess
 
-      - name: Deploy dist/ to Strato via SFTP (legacy cipher)
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.STRATO_HOST }}
-          username: ${{ secrets.STRATO_USER }}
-          password: ${{ secrets.STRATO_PASS }}
-          port: 22
-          source: "dist/*"
-          target: ${{ secrets.STRATO_PATH }}
-          strip_components: 1
-          overwrite: true
-          use_insecure_cipher: true
-          debug: true
+      - name: Install lftp
+        run: sudo apt-get update && sudo apt-get install -y lftp
+
+      - name: Deploy dist/ to Strato via SFTP (mirror --delete)
+        env:
+          SSH_HOST: ${{ secrets.STRATO_HOST }}
+          SSH_PORT: ${{ secrets.STRATO_PORT }}
+          SSH_USER: ${{ secrets.STRATO_USER }}
+          SSH_PASSWORD: ${{ secrets.STRATO_PASS }}
+          SSH_TARGET: ${{ secrets.STRATO_PATH }}
+        run: |
+          set -e
+          lftp -e "
+            set sftp:auto-confirm yes;
+            set net:max-retries 2;
+            set net:timeout 20;
+            open -u ${SSH_USER},${SSH_PASSWORD} sftp://${SSH_HOST}:${SSH_PORT};
+            mirror -R --delete --verbose --only-newer dist/ ${SSH_TARGET};
+            bye
+          "
