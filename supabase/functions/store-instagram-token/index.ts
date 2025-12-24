@@ -5,6 +5,32 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Validate IG User ID: must be numeric and start with 17841 (Instagram Business Account prefix)
+const validateIgUserId = (id: string): { valid: boolean; error?: string } => {
+  const trimmed = id.trim();
+  
+  if (!trimmed) {
+    return { valid: false, error: 'ig_user_id is required' };
+  }
+  
+  // Must be numeric
+  if (!/^\d+$/.test(trimmed)) {
+    return { valid: false, error: 'ig_user_id must be numeric' };
+  }
+  
+  // Must start with 17841 (Instagram Business Account IDs start with this)
+  if (!trimmed.startsWith('17841')) {
+    return { valid: false, error: 'Invalid Instagram Business User ID. IDs start with 17841... You may have entered a Facebook App ID by mistake.' };
+  }
+  
+  // Reasonable length check (IG IDs are typically 17-18 digits)
+  if (trimmed.length < 15 || trimmed.length > 20) {
+    return { valid: false, error: 'ig_user_id should be 15-20 digits long' };
+  }
+  
+  return { valid: true };
+};
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -54,11 +80,12 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { ig_user_id, access_token } = body;
 
-    // Validate input
-    if (!ig_user_id || typeof ig_user_id !== 'string' || ig_user_id.trim() === '') {
-      console.log('Invalid ig_user_id');
+    // Validate ig_user_id format
+    const validation = validateIgUserId(ig_user_id || '');
+    if (!validation.valid) {
+      console.log('Invalid ig_user_id:', validation.error);
       return new Response(
-        JSON.stringify({ error: 'ig_user_id is required and must be a non-empty string' }),
+        JSON.stringify({ error: validation.error }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
