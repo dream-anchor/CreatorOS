@@ -3,17 +3,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, CheckCircle, AlertCircle, Instagram, Key, Shield } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Loader2, CheckCircle, AlertCircle, Instagram, Key, Shield, Wifi, XCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+interface ConnectionTestResult {
+  success: boolean;
+  username?: string;
+  id?: string;
+  media_count?: number;
+  error?: string;
+  details?: string;
+  token_expired?: boolean;
+  expected_id?: string;
+}
 
 export default function InstagramSettings() {
   const [igUserId, setIgUserId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [existingToken, setExistingToken] = useState<{ ig_user_id: string; created_at: string } | null>(null);
   const [isCheckingToken, setIsCheckingToken] = useState(true);
+  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
 
   useEffect(() => {
     checkExistingToken();
@@ -46,6 +59,7 @@ export default function InstagramSettings() {
     }
 
     setIsLoading(true);
+    setTestResult(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -79,11 +93,12 @@ export default function InstagramSettings() {
 
   const handleDeleteToken = async () => {
     setIsLoading(true);
+    setTestResult(null);
     try {
       const { error } = await supabase
         .from('instagram_tokens')
         .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all for current user (RLS handles filtering)
+        .neq('id', '00000000-0000-0000-0000-000000000000');
 
       if (error) throw error;
 
@@ -94,6 +109,41 @@ export default function InstagramSettings() {
       toast.error('Fehler beim Löschen des Tokens');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const response = await supabase.functions.invoke('test-instagram-connection', {
+        body: {}
+      });
+
+      if (response.error) {
+        // Try to parse error data
+        const errorData = response.error;
+        setTestResult({
+          success: false,
+          error: errorData.message || 'Verbindungstest fehlgeschlagen',
+        });
+        return;
+      }
+
+      const data = response.data as ConnectionTestResult;
+      setTestResult(data);
+
+      if (data.success) {
+        toast.success(`Verbindung erfolgreich! @${data.username}`);
+      }
+    } catch (err) {
+      console.error('Error testing connection:', err);
+      setTestResult({
+        success: false,
+        error: 'Unerwarteter Fehler beim Testen der Verbindung'
+      });
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -123,46 +173,139 @@ export default function InstagramSettings() {
           </CardContent>
         </Card>
       ) : existingToken ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-500" />
-              Token aktiv
-            </CardTitle>
-            <CardDescription>
-              Ein Instagram Token ist bereits konfiguriert
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Instagram User ID:</span>
-                <span className="font-mono">{existingToken.ig_user_id}</span>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                Token aktiv
+              </CardTitle>
+              <CardDescription>
+                Ein Instagram Token ist bereits konfiguriert
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Instagram User ID:</span>
+                  <span className="font-mono">{existingToken.ig_user_id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Gespeichert am:</span>
+                  <span>{new Date(existingToken.created_at).toLocaleDateString('de-DE')}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Gespeichert am:</span>
-                <span>{new Date(existingToken.created_at).toLocaleDateString('de-DE')}</span>
+              
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setExistingToken(null);
+                    setTestResult(null);
+                  }}
+                  className="flex-1"
+                >
+                  Token aktualisieren
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  onClick={handleDeleteToken}
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Löschen'}
+                </Button>
               </div>
-            </div>
-            
-            <div className="flex gap-3">
+            </CardContent>
+          </Card>
+
+          {/* Connection Test Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Wifi className="h-5 w-5" />
+                Verbindung testen
+              </CardTitle>
+              <CardDescription>
+                Überprüfe, ob dein Token funktioniert und die Instagram API erreichbar ist
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <Button 
-                variant="outline" 
-                onClick={() => setExistingToken(null)}
-                className="flex-1"
+                onClick={handleTestConnection}
+                disabled={isTesting}
+                className="w-full"
+                variant="secondary"
               >
-                Token aktualisieren
+                {isTesting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Teste Verbindung...
+                  </>
+                ) : (
+                  <>
+                    <Wifi className="mr-2 h-4 w-4" />
+                    Instagram Verbindung testen
+                  </>
+                )}
               </Button>
-              <Button 
-                variant="destructive" 
-                onClick={handleDeleteToken}
-                disabled={isLoading}
-              >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Löschen'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+
+              {/* Test Result Display */}
+              {testResult && (
+                testResult.success ? (
+                  <Alert className="border-green-500 bg-green-50 dark:bg-green-950/20">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <AlertTitle className="text-green-700 dark:text-green-400">
+                      Verbindung erfolgreich!
+                    </AlertTitle>
+                    <AlertDescription className="text-green-600 dark:text-green-300">
+                      <div className="mt-2 space-y-1">
+                        <div className="flex justify-between">
+                          <span>Username:</span>
+                          <span className="font-semibold">@{testResult.username}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Instagram ID:</span>
+                          <span className="font-mono text-sm">{testResult.id}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Letzte Medien abgerufen:</span>
+                          <span>{testResult.media_count} Posts</span>
+                        </div>
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <Alert variant="destructive">
+                    <XCircle className="h-4 w-4" />
+                    <AlertTitle>
+                      {testResult.token_expired ? 'Token abgelaufen' : 'Verbindung fehlgeschlagen'}
+                    </AlertTitle>
+                    <AlertDescription>
+                      <div className="mt-2 space-y-2">
+                        <p>{testResult.error}</p>
+                        {testResult.details && (
+                          <p className="text-sm opacity-80">{testResult.details}</p>
+                        )}
+                        {testResult.expected_id && (
+                          <p className="text-sm">
+                            <strong>Erwartete ID:</strong>{' '}
+                            <code className="bg-destructive/20 px-1 rounded">{testResult.expected_id}</code>
+                          </p>
+                        )}
+                        {testResult.token_expired && (
+                          <div className="mt-3 flex items-center gap-2 text-sm">
+                            <RefreshCw className="h-4 w-4" />
+                            <span>Bitte generiere einen neuen Token im Meta Developer Dashboard und aktualisiere ihn hier.</span>
+                          </div>
+                        )}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )
+              )}
+            </CardContent>
+          </Card>
+        </div>
       ) : (
         <Card>
           <CardHeader>
@@ -185,7 +328,8 @@ export default function InstagramSettings() {
                 disabled={isLoading}
               />
               <p className="text-xs text-muted-foreground">
-                Findest du im Meta Developer Dashboard unter "Access Token Debugger"
+                Diese ID ist <strong>numerisch</strong> (beginnt oft mit 1784...) – <strong>NICHT</strong> die App-ID.
+                Findest du im Access Token Debugger oder über die Graph API.
               </p>
             </div>
 
@@ -229,6 +373,7 @@ export default function InstagramSettings() {
                   <li>Wähle deine App und Page aus</li>
                   <li>Füge die Berechtigungen hinzu: instagram_basic, instagram_content_publish</li>
                   <li>Klicke "Generate Access Token"</li>
+                  <li>Nutze den Access Token Debugger um deine <strong>Instagram User ID</strong> zu finden</li>
                 </ol>
               </AlertDescription>
             </Alert>
