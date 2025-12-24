@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.publish-instagram-post]
 verify_jwt = false
+
+[functions.test-instagram-connection]
+verify_jwt = false
