@@ -12,6 +12,7 @@ import Generator from "./pages/Generator";
 import Review from "./pages/Review";
 import Calendar from "./pages/Calendar";
 import MetaSettings from "./pages/MetaSettings";
+import InstagramSettings from "./pages/InstagramSettings";
 import Logs from "./pages/Logs";
 import NotFound from "./pages/NotFound";
 
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/review" element={<ProtectedRoute><Review /></ProtectedRoute>} />
           <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
           <Route path="/settings/meta" element={<ProtectedRoute><MetaSettings /></ProtectedRoute>} />
+          <Route path="/settings/instagram" element={<ProtectedRoute><InstagramSettings /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><MetaSettings /></ProtectedRoute>} />
           <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
