@@ -541,7 +541,7 @@ export default function InstagramSettings() {
                   <li>Gehe zu developers.facebook.com</li>
                   <li>Öffne deine App → Graph API Explorer</li>
                   <li>Wähle deine App und Page aus</li>
-                  <li>Füge die Berechtigungen hinzu: <code className="bg-muted px-1 rounded text-xs">instagram_business_basic</code>, <code className="bg-muted px-1 rounded text-xs">instagram_business_content_publish</code></li>
+                  <li>Füge die Berechtigungen hinzu: <code className="bg-muted px-1 rounded text-xs">instagram_business_basic</code>, <code className="bg-muted px-1 rounded text-xs">instagram_business_content_publish</code>, <code className="bg-muted px-1 rounded text-xs">instagram_business_manage_comments</code></li>
                   <li>Klicke "Generate Access Token"</li>
                   <li>Nutze den Access Token Debugger um deine <strong>Instagram Business User ID</strong> (17841...) zu finden</li>
                 </ol>

@@ -227,7 +227,7 @@ export default function MetaSettingsPage() {
                 <li>1. Erstelle eine Meta Developer App unter developers.facebook.com</li>
                 <li>2. Füge das Produkt "Facebook Login for Business" hinzu</li>
                 <li>3. Aktiviere den Use Case "Instagram Graph API"</li>
-                <li>4. Füge die benötigten Permissions hinzu (instagram_business_basic, instagram_business_content_publish, pages_show_list, pages_read_engagement)</li>
+                <li>4. Füge die benötigten Permissions hinzu: instagram_business_basic, instagram_business_content_publish, instagram_business_manage_comments, instagram_business_manage_messages, instagram_business_manage_insights, pages_show_list, pages_read_engagement, business_management</li>
                 <li>5. Setze META_APP_ID und META_APP_SECRET in den Server Secrets</li>
               </ol>
               <div className="flex gap-3 mt-4">

@@ -16,7 +16,7 @@ Automatisierte Erstellung und Veröffentlichung von Instagram-Feed-Posts mit KI-
 
 1. Erstelle App auf [developers.facebook.com](https://developers.facebook.com/)
 2. Füge "Facebook Login for Business" hinzu
-3. Berechtigungen: `instagram_business_basic`, `instagram_business_content_publish`, `pages_show_list`, `pages_read_engagement`
+3. Berechtigungen: `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_comments`, `instagram_business_manage_messages`, `instagram_business_manage_insights`, `pages_show_list`, `pages_read_engagement`, `business_management`
 4. OAuth Redirect URL: `https://<project-id>.supabase.co/functions/v1/meta-oauth-callback`
 
 ### Supabase Secrets

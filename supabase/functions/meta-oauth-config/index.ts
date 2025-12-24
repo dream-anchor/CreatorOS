@@ -43,14 +43,16 @@ Deno.serve(async (req) => {
         ? "https://www.instagram.com/oauth/authorize"
         : "https://www.facebook.com/v20.0/dialog/oauth";
 
+    // Instagram Business API permissions (unified for both modes)
     const scopes =
       mode === "instagram_app"
         ? [
             // Instagram Login flow (Business permissions)
             "instagram_business_basic",
             "instagram_business_content_publish",
-            "instagram_business_manage_messages",
             "instagram_business_manage_comments",
+            "instagram_business_manage_messages",
+            "instagram_business_manage_insights",
           ]
         : [
             // Facebook Login for Business (Instagram Graph API)
@@ -58,8 +60,10 @@ Deno.serve(async (req) => {
             "instagram_business_content_publish",
             "instagram_business_manage_comments",
             "instagram_business_manage_messages",
+            "instagram_business_manage_insights",
             "pages_show_list",
             "pages_read_engagement",
+            "business_management",
           ];
 
     if (!META_APP_ID) {
