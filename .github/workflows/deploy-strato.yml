@@ -6,7 +6,7 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: deploy-strato
+  group: deploy-postpro-strato
   cancel-in-progress: true
 
 jobs:
@@ -33,14 +33,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          printf '%s\n' \
-            'RewriteEngine On' \
-            'RewriteBase /' \
-            'RewriteRule ^index\.html$ - [L]' \
-            'RewriteCond %{REQUEST_FILENAME} !-f' \
-            'RewriteCond %{REQUEST_FILENAME} !-d' \
-            'RewriteRule . /index.html [L]' \
-            > dist/.htaccess
+          cat > dist/.htaccess <<'EOF'
+          RewriteEngine On
+          RewriteBase /
+          RewriteRule ^index\.html$ - [L]
+          RewriteCond %{REQUEST_FILENAME} !-f
+          RewriteCond %{REQUEST_FILENAME} !-d
+          RewriteRule . /index.html [L]
+          EOF
 
       - name: Install lftp
         run: sudo apt-get update && sudo apt-get install -y lftp
@@ -51,17 +51,17 @@ jobs:
           SSH_PORT: ${{ secrets.STRATO_PORT }}
           SSH_USER: ${{ secrets.STRATO_USER }}
           SSH_PASSWORD: ${{ secrets.STRATO_PASS }}
-          SSH_TARGET: ${{ secrets.STRATO_PATH }}
         run: |
           set -e
+          TARGET_DIR="/WEBSITE/POSTPRO.ANTOINEMONOT.COM"
+
           lftp -e "
             set sftp:auto-confirm yes;
-            set net:max-retries 2;
+            set net:max-retries 3;
             set net:timeout 20;
             open -u ${SSH_USER},${SSH_PASSWORD} sftp://${SSH_HOST}:${SSH_PORT};
-            cd ${SSH_TARGET};
+            cd ${TARGET_DIR};
             pwd;
-            ls;
             mirror -R --delete --verbose --only-newer dist/ .;
             bye
           "
