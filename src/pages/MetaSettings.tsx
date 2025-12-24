@@ -77,14 +77,14 @@ export default function MetaSettingsPage() {
         return;
       }
 
-      const data = response.data;
-      
+      const data = response.data as any;
+
       if (!data.auth_url) {
         toast.error('Keine OAuth URL erhalten. Bitte META_APP_ID konfigurieren.');
         return;
       }
 
-      console.log('Starting OAuth with mode:', data.mode, 'scopes:', data.scopes);
+      console.log('Starting OAuth with mode:', data.meta_oauth_mode, 'scopes:', data.scopes);
       window.location.href = data.auth_url;
     } catch (err) {
       console.error('Error starting OAuth:', err);
@@ -227,7 +227,7 @@ export default function MetaSettingsPage() {
                 <li>1. Erstelle eine Meta Developer App unter developers.facebook.com</li>
                 <li>2. Füge das Produkt "Facebook Login for Business" hinzu</li>
                 <li>3. Aktiviere den Use Case "Instagram Graph API"</li>
-                <li>4. Füge die benötigten Permissions hinzu (instagram_basic, instagram_content_publish)</li>
+                <li>4. Füge die benötigten Permissions hinzu (instagram_business_basic, instagram_business_content_publish, pages_show_list, pages_read_engagement)</li>
                 <li>5. Setze META_APP_ID und META_APP_SECRET in den Server Secrets</li>
               </ol>
               <div className="flex gap-3 mt-4">

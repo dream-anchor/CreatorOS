@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Bug, CheckCircle, XCircle, RefreshCw, Server, ExternalLink } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 
 interface OAuthDebugInfo {
   meta_app_id: string;
@@ -24,16 +23,33 @@ export default function DebugOAuth() {
   const fetchDebugInfo = async () => {
     setIsLoading(true);
     setError(null);
-    try {
-      const response = await supabase.functions.invoke('meta-oauth-config', {
-        body: { debug: true },
-      });
 
-      if (response.error) {
-        throw new Error(response.error.message || 'Failed to fetch debug info');
+    try {
+      // We intentionally call the endpoint without a user JWT to avoid "Invalid JWT" failures
+      // when sessions are stale. This endpoint only returns non-sensitive config.
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+
+      if (!supabaseUrl || !apikey) {
+        throw new Error('Backend not configured (missing VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY)');
       }
 
-      setDebugInfo(response.data as OAuthDebugInfo);
+      const res = await fetch(`${supabaseUrl}/functions/v1/meta-oauth-config`, {
+        method: 'GET',
+        headers: {
+          apikey,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = (await res.json()) as unknown;
+
+      if (!res.ok) {
+        const msg = (data as any)?.error || (data as any)?.message || `Request failed (${res.status})`;
+        throw new Error(msg);
+      }
+
+      setDebugInfo(data as OAuthDebugInfo);
     } catch (err) {
       console.error('Error fetching debug info:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch debug info');
@@ -172,15 +188,13 @@ export default function DebugOAuth() {
                 <AlertDescription className="mt-2">
                   <ol className="list-decimal list-inside space-y-1 text-sm">
                     <li>Überprüfe, ob die META_APP_ID zur richtigen App gehört</li>
-                    <li>Stelle sicher, dass "Instagram Graph API" als Use Case aktiviert ist</li>
-                    <li>Für <code>instagram_basic</code> und <code>instagram_content_publish</code>:
-                      <ul className="list-disc list-inside ml-4 mt-1">
-                        <li>Gehe zu "App Dashboard → Use Cases → Customize"</li>
-                        <li>Aktiviere "Instagram Graph API"</li>
-                        <li>Füge die benötigten Permissions hinzu</li>
-                      </ul>
+                    <li>Stelle sicher, dass der Use Case „Instagram Graph API“ aktiviert ist</li>
+                    <li>
+                      Aktiviere die benötigten Berechtigungen (z. B.{' '}
+                      <code>instagram_business_basic</code>, <code>instagram_business_content_publish</code>,{' '}
+                      <code>pages_show_list</code>, <code>pages_read_engagement</code>)
                     </li>
-                    <li>Falls du eine "Instagram App" statt "Facebook App" verwendest, setze META_OAUTH_MODE=instagram_app</li>
+                    <li>Falls du eine „Instagram App“ statt „Facebook App“ verwendest, setze META_OAUTH_MODE=instagram_app</li>
                   </ol>
                 </AlertDescription>
               </Alert>
