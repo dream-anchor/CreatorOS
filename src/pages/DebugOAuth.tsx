@@ -190,9 +190,11 @@ export default function DebugOAuth() {
                     <li>Überprüfe, ob die META_APP_ID zur richtigen App gehört</li>
                     <li>Stelle sicher, dass der Use Case „Instagram Graph API“ aktiviert ist</li>
                     <li>
-                      Aktiviere die benötigten Berechtigungen (z. B.{' '}
+                      Aktiviere die benötigten Berechtigungen:{' '}
                       <code>instagram_business_basic</code>, <code>instagram_business_content_publish</code>,{' '}
-                      <code>pages_show_list</code>, <code>pages_read_engagement</code>)
+                      <code>instagram_business_manage_comments</code>, <code>instagram_business_manage_messages</code>,{' '}
+                      <code>instagram_business_manage_insights</code>, <code>pages_show_list</code>,{' '}
+                      <code>pages_read_engagement</code>, <code>business_management</code>
                     </li>
                     <li>Falls du eine „Instagram App“ statt „Facebook App“ verwendest, setze META_OAUTH_MODE=instagram_app</li>
                   </ol>

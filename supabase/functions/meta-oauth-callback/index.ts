@@ -37,7 +37,7 @@ serve(async (req) => {
 
     // Exchange code for short-lived token
     console.log("[meta-oauth-callback] Exchanging code for token...");
-    const tokenUrl = `https://graph.facebook.com/v18.0/oauth/access_token`;
+    const tokenUrl = `https://graph.facebook.com/v20.0/oauth/access_token`;
     const tokenParams = new URLSearchParams({
       client_id: META_APP_ID,
       client_secret: META_APP_SECRET,
@@ -57,7 +57,7 @@ serve(async (req) => {
 
     // Exchange for long-lived token
     console.log("[meta-oauth-callback] Exchanging for long-lived token...");
-    const longLivedUrl = `https://graph.facebook.com/v18.0/oauth/access_token`;
+    const longLivedUrl = `https://graph.facebook.com/v20.0/oauth/access_token`;
     const longLivedParams = new URLSearchParams({
       grant_type: "fb_exchange_token",
       client_id: META_APP_ID,
@@ -80,7 +80,7 @@ serve(async (req) => {
     // Get user's pages
     console.log("[meta-oauth-callback] Getting user pages...");
     const pagesResponse = await fetch(
-      `https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`
+      `https://graph.facebook.com/v20.0/me/accounts?access_token=${accessToken}`
     );
     const pagesData = await pagesResponse.json();
 
@@ -98,7 +98,7 @@ serve(async (req) => {
     // Get Instagram Business Account linked to the page
     console.log("[meta-oauth-callback] Getting Instagram account...");
     const igResponse = await fetch(
-      `https://graph.facebook.com/v18.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`
+      `https://graph.facebook.com/v20.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`
     );
     const igData = await igResponse.json();
 
@@ -111,7 +111,7 @@ serve(async (req) => {
 
     // Get IG username
     const igUserResponse = await fetch(
-      `https://graph.facebook.com/v18.0/${igUserId}?fields=username&access_token=${pageAccessToken}`
+      `https://graph.facebook.com/v20.0/${igUserId}?fields=username&access_token=${pageAccessToken}`
     );
     const igUserData = await igUserResponse.json();
     const igUsername = igUserData.username || null;
