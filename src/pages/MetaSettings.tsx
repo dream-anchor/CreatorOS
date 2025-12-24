@@ -3,13 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { MetaConnection } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Instagram, CheckCircle2, AlertCircle, ExternalLink, RefreshCw } from "lucide-react";
+import { Loader2, Instagram, CheckCircle2, AlertCircle, ExternalLink, RefreshCw, Bug } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export default function MetaSettingsPage() {
   const { user } = useAuth();
@@ -17,7 +16,7 @@ export default function MetaSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<MetaConnection | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
-  const [metaAppId, setMetaAppId] = useState(() => localStorage.getItem("meta_app_id") || "");
+  const [startingOAuth, setStartingOAuth] = useState(false);
 
   useEffect(() => {
     if (user) loadConnection();
@@ -39,7 +38,7 @@ export default function MetaSettingsPage() {
         save_error: "Fehler beim Speichern der Verbindung.",
         missing_params: "Ungültige OAuth-Antwort.",
       };
-      toast.error(errorMessages[error] || "Verbindung fehlgeschlagen");
+      toast.error(errorMessages[error] || "Verbindung fehlgeschlagen: " + error);
     }
   }, [searchParams]);
 
@@ -48,9 +47,9 @@ export default function MetaSettingsPage() {
       const { data, error } = await supabase
         .from("meta_connections")
         .select("id, user_id, page_id, page_name, ig_user_id, ig_username, token_expires_at, connected_at, updated_at")
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== "PGRST116") throw error;
+      if (error) throw error;
       if (data) setConnection(data as MetaConnection);
     } catch (error: unknown) {
       console.error("Error:", error);
@@ -59,34 +58,40 @@ export default function MetaSettingsPage() {
     }
   };
 
-  const saveMetaAppId = (value: string) => {
-    setMetaAppId(value);
-    localStorage.setItem("meta_app_id", value);
-  };
-
-  const startOAuth = () => {
+  const startOAuth = async () => {
     if (!user) {
       toast.error("Bitte zuerst einloggen");
       return;
     }
 
-    if (!metaAppId.trim()) {
-      toast.error("Bitte Meta App ID eingeben");
-      return;
+    setStartingOAuth(true);
+    try {
+      // Get OAuth URL from server (uses server-side META_APP_ID)
+      const response = await supabase.functions.invoke('meta-oauth-config', {
+        body: {}
+      });
+
+      if (response.error) {
+        console.error('OAuth config error:', response.error);
+        toast.error(response.error.message || 'Fehler beim Abrufen der OAuth-Konfiguration');
+        return;
+      }
+
+      const data = response.data;
+      
+      if (!data.auth_url) {
+        toast.error('Keine OAuth URL erhalten. Bitte META_APP_ID konfigurieren.');
+        return;
+      }
+
+      console.log('Starting OAuth with mode:', data.mode, 'scopes:', data.scopes);
+      window.location.href = data.auth_url;
+    } catch (err) {
+      console.error('Error starting OAuth:', err);
+      toast.error('Fehler beim Starten der OAuth-Verbindung');
+    } finally {
+      setStartingOAuth(false);
     }
-
-    const REDIRECT_URI = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-oauth-callback`;
-
-    const scopes = [
-      "instagram_basic",
-      "instagram_content_publish",
-      "pages_show_list",
-      "pages_read_engagement",
-    ].join(",");
-
-    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${metaAppId.trim()}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${scopes}&state=${user.id}&response_type=code`;
-
-    window.location.href = authUrl;
   };
 
   const disconnect = async () => {
@@ -152,8 +157,8 @@ export default function MetaSettingsPage() {
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <Button variant="outline" onClick={startOAuth}>
-                    <RefreshCw className="mr-2 h-4 w-4" />
+                  <Button variant="outline" onClick={startOAuth} disabled={startingOAuth}>
+                    {startingOAuth ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                     Erneut verbinden
                   </Button>
                   <Button variant="destructive" onClick={disconnect} disabled={disconnecting}>
@@ -171,8 +176,8 @@ export default function MetaSettingsPage() {
                     <p className="text-sm text-muted-foreground">Bitte erneut verbinden</p>
                   </div>
                 </div>
-                <Button onClick={startOAuth}>
-                  <Instagram className="mr-2 h-4 w-4" />
+                <Button onClick={startOAuth} disabled={startingOAuth}>
+                  {startingOAuth ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Instagram className="mr-2 h-4 w-4" />}
                   Erneut verbinden
                 </Button>
               </div>
@@ -182,21 +187,18 @@ export default function MetaSettingsPage() {
                   <AlertCircle className="h-5 w-5 text-muted-foreground" />
                   <p className="text-muted-foreground">Nicht verbunden</p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="meta-app-id">Meta App ID</Label>
-                  <Input
-                    id="meta-app-id"
-                    value={metaAppId}
-                    onChange={(e) => saveMetaAppId(e.target.value)}
-                    placeholder="Deine Meta App ID eingeben"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Findest du unter developers.facebook.com → Deine App → Einstellungen → Allgemein
-                  </p>
-                </div>
-                <Button onClick={startOAuth} disabled={!metaAppId.trim()}>
-                  <Instagram className="mr-2 h-4 w-4" />
-                  Mit Instagram verbinden
+                <Button onClick={startOAuth} disabled={startingOAuth}>
+                  {startingOAuth ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Starte OAuth...
+                    </>
+                  ) : (
+                    <>
+                      <Instagram className="mr-2 h-4 w-4" />
+                      Mit Instagram verbinden
+                    </>
+                  )}
                 </Button>
               </div>
             )}
@@ -224,16 +226,24 @@ export default function MetaSettingsPage() {
               <ol className="text-sm text-muted-foreground space-y-2">
                 <li>1. Erstelle eine Meta Developer App unter developers.facebook.com</li>
                 <li>2. Füge das Produkt "Facebook Login for Business" hinzu</li>
-                <li>3. Konfiguriere die OAuth Redirect URL</li>
-                <li>4. Füge die benötigten Berechtigungen hinzu (instagram_basic, instagram_content_publish)</li>
-                <li>5. Setze META_APP_ID und META_APP_SECRET in den Supabase Secrets</li>
+                <li>3. Aktiviere den Use Case "Instagram Graph API"</li>
+                <li>4. Füge die benötigten Permissions hinzu (instagram_basic, instagram_content_publish)</li>
+                <li>5. Setze META_APP_ID und META_APP_SECRET in den Server Secrets</li>
               </ol>
-              <Button variant="outline" className="mt-4" asChild>
-                <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Meta Developer Portal
-                </a>
-              </Button>
+              <div className="flex gap-3 mt-4">
+                <Button variant="outline" asChild>
+                  <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Meta Developer Portal
+                  </a>
+                </Button>
+                <Button variant="ghost" asChild>
+                  <Link to="/debug/oauth">
+                    <Bug className="mr-2 h-4 w-4" />
+                    OAuth Debug
+                  </Link>
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

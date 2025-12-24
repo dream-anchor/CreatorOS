@@ -13,6 +13,7 @@ import Review from "./pages/Review";
 import Calendar from "./pages/Calendar";
 import MetaSettings from "./pages/MetaSettings";
 import InstagramSettings from "./pages/InstagramSettings";
+import DebugOAuth from "./pages/DebugOAuth";
 import Logs from "./pages/Logs";
 import NotFound from "./pages/NotFound";
 
@@ -37,6 +38,7 @@ const App = () => (
           <Route path="/settings/instagram" element={<ProtectedRoute><InstagramSettings /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><MetaSettings /></ProtectedRoute>} />
           <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
+          <Route path="/debug/oauth" element={<ProtectedRoute><DebugOAuth /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
