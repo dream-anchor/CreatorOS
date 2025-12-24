@@ -59,6 +59,9 @@ jobs:
             set net:max-retries 2;
             set net:timeout 20;
             open -u ${SSH_USER},${SSH_PASSWORD} sftp://${SSH_HOST}:${SSH_PORT};
-            mirror -R --delete --verbose --only-newer dist/ ${SSH_TARGET};
+            cd ${SSH_TARGET};
+            pwd;
+            ls;
+            mirror -R --delete --verbose --only-newer dist/ .;
             bye
           "
