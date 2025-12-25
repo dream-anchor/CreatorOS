@@ -58,40 +58,23 @@ export default function MetaSettingsPage() {
     }
   };
 
-  const startOAuth = async () => {
+  const startOAuth = () => {
     if (!user) {
       toast.error("Bitte zuerst einloggen");
       return;
     }
 
     setStartingOAuth(true);
-    try {
-      // Get OAuth URL from server (uses server-side META_APP_ID)
-      const response = await supabase.functions.invoke('meta-oauth-config', {
-        body: {}
-      });
-
-      if (response.error) {
-        console.error('OAuth config error:', response.error);
-        toast.error(response.error.message || 'Fehler beim Abrufen der OAuth-Konfiguration');
-        return;
-      }
-
-      const data = response.data as any;
-
-      if (!data.auth_url) {
-        toast.error('Keine OAuth URL erhalten. Bitte META_APP_ID konfigurieren.');
-        return;
-      }
-
-      console.log('Starting OAuth with mode:', data.meta_oauth_mode, 'scopes:', data.scopes);
-      window.location.href = data.auth_url;
-    } catch (err) {
-      console.error('Error starting OAuth:', err);
-      toast.error('Fehler beim Starten der OAuth-Verbindung');
-    } finally {
-      setStartingOAuth(false);
-    }
+    
+    // Build OAuth URL with dynamic redirect_uri
+    const clientId = "907189555065398";
+    const redirectUri = encodeURIComponent(`${window.location.origin}/auth/callback`);
+    const scopes = "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement";
+    
+    const oauthUrl = `https://www.facebook.com/v17.0/dialog/oauth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scopes}&response_type=code`;
+    
+    console.log('Starting OAuth with URL:', oauthUrl);
+    window.location.href = oauthUrl;
   };
 
   const disconnect = async () => {
