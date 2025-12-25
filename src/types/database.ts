@@ -29,6 +29,10 @@ export interface BrandRules {
   language_primary: string;
   content_pillars: Record<string, unknown>[];
   disclaimers: string | null;
+  writing_style: string | null;
+  example_posts: string | null;
+  taboo_words: string[];
+  ai_model: string;
   created_at: string;
   updated_at: string;
 }

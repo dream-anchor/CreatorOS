@@ -63,49 +63,61 @@ export type Database = {
       }
       brand_rules: {
         Row: {
+          ai_model: string | null
           content_pillars: Json | null
           created_at: string
           disclaimers: string | null
           do_list: string[] | null
           dont_list: string[] | null
           emoji_level: number | null
+          example_posts: string | null
           hashtag_max: number | null
           hashtag_min: number | null
           id: string
           language_primary: string | null
+          taboo_words: string[] | null
           tone_style: string | null
           updated_at: string
           user_id: string
+          writing_style: string | null
         }
         Insert: {
+          ai_model?: string | null
           content_pillars?: Json | null
           created_at?: string
           disclaimers?: string | null
           do_list?: string[] | null
           dont_list?: string[] | null
           emoji_level?: number | null
+          example_posts?: string | null
           hashtag_max?: number | null
           hashtag_min?: number | null
           id?: string
           language_primary?: string | null
+          taboo_words?: string[] | null
           tone_style?: string | null
           updated_at?: string
           user_id: string
+          writing_style?: string | null
         }
         Update: {
+          ai_model?: string | null
           content_pillars?: Json | null
           created_at?: string
           disclaimers?: string | null
           do_list?: string[] | null
           dont_list?: string[] | null
           emoji_level?: number | null
+          example_posts?: string | null
           hashtag_max?: number | null
           hashtag_min?: number | null
           id?: string
           language_primary?: string | null
+          taboo_words?: string[] | null
           tone_style?: string | null
           updated_at?: string
           user_id?: string
+          writing_style?: string | null
         }
         Relationships: []
       }

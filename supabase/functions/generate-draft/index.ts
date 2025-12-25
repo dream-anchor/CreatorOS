@@ -42,17 +42,39 @@ serve(async (req) => {
       .eq('user_id', user.id)
       .single();
 
+    // Build taboo words section
+    const tabooWords = brand?.taboo_words?.length > 0 
+      ? `- Tabu-Wörter (NIEMALS verwenden): ${brand.taboo_words.join(', ')}` 
+      : '';
+
+    // Build writing style section
+    const writingStyle = brand?.writing_style 
+      ? `- Schreibstil: ${brand.writing_style}` 
+      : '';
+
+    // Build example posts section for few-shot prompting
+    const examplePosts = brand?.example_posts 
+      ? `
+
+BEISPIEL-POSTS (imitiere diesen Stil):
+${brand.example_posts}
+` 
+      : '';
+
     const systemPrompt = `Du bist ein professioneller Instagram Content Creator für den deutschen Markt.
 Erstelle einen Instagram-Post basierend auf dem gegebenen Thema.
 
 Brand Guidelines:
 - Tonalität: ${brand?.tone_style || 'Professionell und nahbar'}
+${writingStyle}
 - Sprache: ${brand?.language_primary || 'DE'}
 - Emoji-Level: ${brand?.emoji_level || 1} (0=keine, 3=viele)
 - Hashtags: ${brand?.hashtag_min || 8}-${brand?.hashtag_max || 20}
 - Do's: ${brand?.do_list?.join(', ') || 'Keine spezifischen'}
 - Don'ts: ${brand?.dont_list?.join(', ') || 'Keine spezifischen'}
+${tabooWords}
 ${brand?.disclaimers ? `- Disclaimer: ${brand.disclaimers}` : ''}
+${examplePosts}
 
 Antworte AUSSCHLIESSLICH mit validem JSON im folgenden Format:
 {
@@ -72,6 +94,10 @@ Keywords: ${topic.keywords?.join(', ') || 'Keine'}
 Priorität: ${topic.priority}/5
 Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}`;
 
+    // Use selected AI model or default
+    const selectedModel = brand?.ai_model || 'google/gemini-2.5-flash';
+    console.log(`Using AI model: ${selectedModel}`);
+
     // Call Lovable AI
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -80,7 +106,7 @@ Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: selectedModel,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -91,6 +117,13 @@ Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}`;
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error('AI API error:', errorText);
+      
+      if (aiResponse.status === 429) {
+        throw new Error('Rate limit erreicht. Bitte warte einen Moment.');
+      }
+      if (aiResponse.status === 402) {
+        throw new Error('Credits aufgebraucht. Bitte lade Credits nach.');
+      }
       throw new Error('AI generation failed');
     }
 
@@ -137,7 +170,7 @@ Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}`;
       post_id: post.id,
       event_type: 'draft_generated',
       level: 'info',
-      details: { topic_id, hashtag_count: hashtagCount },
+      details: { topic_id, hashtag_count: hashtagCount, model: selectedModel },
     });
 
     return new Response(JSON.stringify({ draft, post }), {
