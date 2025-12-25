@@ -4,6 +4,20 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
+export interface InstagramAccount {
+  ig_user_id: string;
+  ig_username: string;
+  profile_picture_url?: string;
+  page_id: string;
+  page_name: string;
+  page_access_token: string;
+}
+
+interface AuthCallbackState {
+  accounts: InstagramAccount[];
+  token_expires_at: string;
+}
+
 const AuthCallback = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -60,9 +74,24 @@ const AuthCallback = () => {
           throw new Error(data.error || 'Verbindung fehlgeschlagen');
         }
 
-        console.log('[AuthCallback] Successfully connected:', data);
-        toast.success('Instagram erfolgreich verbunden!');
-        navigate('/dashboard');
+        console.log('[AuthCallback] Successfully received accounts:', data);
+
+        // Check if we need to select an account
+        if (data.action === 'select_account' && data.accounts) {
+          // Store accounts in sessionStorage for the MetaSettings page to use
+          const callbackState: AuthCallbackState = {
+            accounts: data.accounts,
+            token_expires_at: data.token_expires_at
+          };
+          sessionStorage.setItem('instagram_auth_accounts', JSON.stringify(callbackState));
+          
+          // Navigate to MetaSettings with a flag to show account selection
+          navigate('/settings/meta?select_account=true');
+        } else {
+          // Old behavior - direct connection (shouldn't happen with new flow)
+          toast.success('Instagram erfolgreich verbunden!');
+          navigate('/dashboard');
+        }
       } catch (err) {
         console.error('[AuthCallback] Error:', err);
         setStatus('error');
@@ -86,7 +115,7 @@ const AuthCallback = () => {
               Verbinde mit Instagram...
             </h1>
             <p className="text-muted-foreground">
-              Bitte warten Sie, während wir Ihre Verbindung einrichten.
+              Bitte warten Sie, während wir Ihre Konten abrufen.
             </p>
           </>
         ) : (

@@ -7,22 +7,54 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { MetaConnection } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Instagram, CheckCircle2, AlertCircle, ExternalLink, RefreshCw, Bug } from "lucide-react";
+import { Loader2, Instagram, CheckCircle2, AlertCircle, ExternalLink, RefreshCw, Bug, User } from "lucide-react";
 import { Link } from "react-router-dom";
+import type { InstagramAccount } from "./AuthCallback";
+
+interface AuthCallbackState {
+  accounts: InstagramAccount[];
+  token_expires_at: string;
+}
 
 export default function MetaSettingsPage() {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<MetaConnection | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [startingOAuth, setStartingOAuth] = useState(false);
+  
+  // Account selection state
+  const [showAccountSelection, setShowAccountSelection] = useState(false);
+  const [availableAccounts, setAvailableAccounts] = useState<InstagramAccount[]>([]);
+  const [tokenExpiresAt, setTokenExpiresAt] = useState<string>("");
+  const [selectingAccount, setSelectingAccount] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) loadConnection();
   }, [user]);
 
   useEffect(() => {
+    // Check if we're returning from OAuth with accounts to select
+    const selectAccount = searchParams.get("select_account");
+    
+    if (selectAccount === "true") {
+      const storedData = sessionStorage.getItem("instagram_auth_accounts");
+      if (storedData) {
+        try {
+          const authState: AuthCallbackState = JSON.parse(storedData);
+          setAvailableAccounts(authState.accounts);
+          setTokenExpiresAt(authState.token_expires_at);
+          setShowAccountSelection(true);
+          // Clear the URL param
+          setSearchParams({});
+        } catch (e) {
+          console.error("Failed to parse stored accounts:", e);
+        }
+      }
+    }
+
+    // Handle legacy success/error params
     const success = searchParams.get("success");
     const error = searchParams.get("error");
 
@@ -40,7 +72,7 @@ export default function MetaSettingsPage() {
       };
       toast.error(errorMessages[error] || "Verbindung fehlgeschlagen: " + error);
     }
-  }, [searchParams]);
+  }, [searchParams, setSearchParams]);
 
   const loadConnection = async () => {
     try {
@@ -77,6 +109,46 @@ export default function MetaSettingsPage() {
     window.location.href = oauthUrl;
   };
 
+  const selectAccount = async (account: InstagramAccount) => {
+    setSelectingAccount(account.ig_user_id);
+    
+    try {
+      const response = await supabase.functions.invoke('instagram-auth', {
+        body: { 
+          action: 'select_account',
+          selected_account: {
+            ...account,
+            token_expires_at: tokenExpiresAt
+          }
+        }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || 'Fehler beim Speichern');
+      }
+
+      const data = response.data as any;
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Speichern fehlgeschlagen');
+      }
+
+      // Clear stored accounts
+      sessionStorage.removeItem("instagram_auth_accounts");
+      setShowAccountSelection(false);
+      setAvailableAccounts([]);
+      
+      toast.success(`@${account.ig_username} erfolgreich verbunden!`);
+      await loadConnection();
+    } catch (err) {
+      console.error("Error selecting account:", err);
+      const message = err instanceof Error ? err.message : 'Unbekannter Fehler';
+      toast.error(`Fehler: ${message}`);
+    } finally {
+      setSelectingAccount(null);
+    }
+  };
+
   const disconnect = async () => {
     if (!connection) return;
     setDisconnecting(true);
@@ -99,6 +171,12 @@ export default function MetaSettingsPage() {
     }
   };
 
+  const cancelAccountSelection = () => {
+    sessionStorage.removeItem("instagram_auth_accounts");
+    setShowAccountSelection(false);
+    setAvailableAccounts([]);
+  };
+
   const isConnected = connection?.ig_user_id;
   const isExpired = connection?.token_expires_at && new Date(connection.token_expires_at) < new Date();
 
@@ -115,6 +193,63 @@ export default function MetaSettingsPage() {
   return (
     <AppLayout title="Meta Verbindung" description="Verbinde dein Instagram Professional-Konto">
       <div className="max-w-2xl space-y-6">
+        {/* Account Selection Modal/Card */}
+        {showAccountSelection && availableAccounts.length > 0 && (
+          <Card className="glass-card border-primary/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Instagram className="h-5 w-5" />
+                Instagram-Konto auswählen
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Wähle das Instagram-Konto, auf dem du posten möchtest:
+              </p>
+              
+              <div className="grid gap-3">
+                {availableAccounts.map((account) => (
+                  <button
+                    key={account.ig_user_id}
+                    onClick={() => selectAccount(account)}
+                    disabled={selectingAccount !== null}
+                    className="flex items-center gap-4 p-4 rounded-lg border border-border bg-card hover:bg-accent hover:border-primary/50 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {account.profile_picture_url ? (
+                      <img 
+                        src={account.profile_picture_url} 
+                        alt={account.ig_username}
+                        className="h-12 w-12 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                        <User className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground truncate">
+                        @{account.ig_username}
+                      </p>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {account.page_name}
+                      </p>
+                    </div>
+                    {selectingAccount === account.ig_user_id ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    ) : (
+                      <CheckCircle2 className="h-5 w-5 text-muted-foreground/30" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <Button variant="ghost" onClick={cancelAccountSelection} className="w-full">
+                Abbrechen
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -139,10 +274,10 @@ export default function MetaSettingsPage() {
                     )}
                   </div>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 flex-wrap">
                   <Button variant="outline" onClick={startOAuth} disabled={startingOAuth}>
                     {startingOAuth ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                    Erneut verbinden
+                    Profil wechseln
                   </Button>
                   <Button variant="destructive" onClick={disconnect} disabled={disconnecting}>
                     {disconnecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
