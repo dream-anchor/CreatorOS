@@ -6,6 +6,52 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Post type structures for the wizard
+const POST_TYPE_PROMPTS: Record<string, { name: string; instruction: string }> = {
+  behind_scenes: {
+    name: "Set-Leben / Behind the Scenes",
+    instruction: `Erstelle einen authentischen Behind-the-Scenes Post.
+STRUKTUR: Persönlicher Einblick → Was passiert gerade → Emotion/Reaktion → Frage an Community
+STIL: Nahbar, echt, nicht zu poliert. Als würde man einem Freund erzählen.
+HOOK: Muss Neugier wecken - was passiert hinter den Kulissen?`
+  },
+  thoughts: {
+    name: "Gedanken / Reflexion",
+    instruction: `Erstelle einen tiefgründigen, nachdenklichen Post.
+STRUKTUR: Starkes Statement → Kontext/Geschichte → Lesson Learned → Call-to-Action
+STIL: Reflektiert, persönlich, verletzlich aber nicht dramatisch.
+HOOK: Eine unerwartete Erkenntnis oder kontroverses Statement.`
+  },
+  humor: {
+    name: "Humor / Entertainment",
+    instruction: `Erstelle einen lustigen, unterhaltsamen Post.
+STRUKTUR: Witziger Hook → Setup → Punchline → Emoji-reicher Abschluss
+STIL: Selbstironisch, witzig, relatable. Kurze Sätze für Comedy-Timing.
+HOOK: Überraschender Einstieg oder relatable Situation.`
+  },
+  motivation: {
+    name: "Motivation / Inspiration",
+    instruction: `Erstelle einen motivierenden, inspirierenden Post.
+STRUKTUR: Empowering Statement → Persönliche Erfahrung → Ermutigung → Aufruf
+STIL: Aufbauend, authentisch (nicht cheesy), mit echtem Beispiel.
+HOOK: Kraftvolles Statement das Hoffnung gibt.`
+  },
+  tips: {
+    name: "Tipps & Tricks",
+    instruction: `Erstelle einen informativen, hilfreichen Post.
+STRUKTUR: Problem benennen → Lösung/Tipp → Warum es funktioniert → Speichern-CTA
+STIL: Klar, strukturiert, actionable. Listenformat wenn sinnvoll.
+HOOK: "So mache ich..." oder "Der Trick ist..."`
+  },
+  announcement: {
+    name: "Ankündigung / News",
+    instruction: `Erstelle einen aufregenden Ankündigungs-Post.
+STRUKTUR: Teaser/Excitement → Die große News → Details → Was kommt als nächstes
+STIL: Enthusiastisch aber nicht übertrieben, Spannung aufbauen.
+HOOK: Etwas Großes steht bevor - Neugier wecken.`
+  }
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -23,8 +69,10 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) throw new Error('Unauthorized');
 
-    const { topic_id } = await req.json();
+    const { topic_id, post_type, post_structure, additional_context } = await req.json();
     if (!topic_id) throw new Error('topic_id required');
+
+    console.log(`Generating draft for topic ${topic_id}, type: ${post_type || 'default'}`);
 
     // Load topic
     const { data: topic, error: topicError } = await supabase
@@ -61,8 +109,31 @@ ${brand.example_posts}
 ` 
       : '';
 
+    // Get post type specific instructions
+    const postTypeInfo = post_type && POST_TYPE_PROMPTS[post_type] 
+      ? POST_TYPE_PROMPTS[post_type] 
+      : null;
+
+    const postTypeInstructions = postTypeInfo 
+      ? `
+
+POST-TYP: ${postTypeInfo.name}
+${postTypeInfo.instruction}
+` 
+      : '';
+
+    // Additional context from wizard
+    const contextSection = additional_context 
+      ? `
+
+ZUSÄTZLICHER KONTEXT VOM USER:
+${additional_context}
+` 
+      : '';
+
     const systemPrompt = `Du bist ein professioneller Instagram Content Creator für den deutschen Markt.
 Erstelle einen Instagram-Post basierend auf dem gegebenen Thema.
+${postTypeInstructions}
 
 Brand Guidelines:
 - Tonalität: ${brand?.tone_style || 'Professionell und nahbar'}
@@ -92,7 +163,7 @@ Antworte AUSSCHLIESSLICH mit validem JSON im folgenden Format:
 Beschreibung: ${topic.description || 'Keine'}
 Keywords: ${topic.keywords?.join(', ') || 'Keine'}
 Priorität: ${topic.priority}/5
-Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}`;
+Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}${contextSection}`;
 
     // Use selected AI model or default
     const selectedModel = brand?.ai_model || 'google/gemini-2.5-flash';
@@ -170,7 +241,12 @@ Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}`;
       post_id: post.id,
       event_type: 'draft_generated',
       level: 'info',
-      details: { topic_id, hashtag_count: hashtagCount, model: selectedModel },
+      details: { 
+        topic_id, 
+        hashtag_count: hashtagCount, 
+        model: selectedModel,
+        post_type: post_type || 'default'
+      },
     });
 
     return new Response(JSON.stringify({ draft, post }), {
