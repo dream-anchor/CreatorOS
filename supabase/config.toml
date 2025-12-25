@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.instagram-auth]
 verify_jwt = false
+
+[functions.analyze-style]
+verify_jwt = false
