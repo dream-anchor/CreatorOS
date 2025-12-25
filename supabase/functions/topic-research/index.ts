@@ -76,7 +76,6 @@ Denke an Hooks, die zum Stoppen animieren.`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        temperature: 0.8,
       }),
     });
 
