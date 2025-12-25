@@ -75,6 +75,8 @@ export type Database = {
           hashtag_min: number | null
           id: string
           language_primary: string | null
+          last_style_analysis_at: string | null
+          style_system_prompt: string | null
           taboo_words: string[] | null
           tone_style: string | null
           updated_at: string
@@ -94,6 +96,8 @@ export type Database = {
           hashtag_min?: number | null
           id?: string
           language_primary?: string | null
+          last_style_analysis_at?: string | null
+          style_system_prompt?: string | null
           taboo_words?: string[] | null
           tone_style?: string | null
           updated_at?: string
@@ -113,6 +117,8 @@ export type Database = {
           hashtag_min?: number | null
           id?: string
           language_primary?: string | null
+          last_style_analysis_at?: string | null
+          style_system_prompt?: string | null
           taboo_words?: string[] | null
           tone_style?: string | null
           updated_at?: string

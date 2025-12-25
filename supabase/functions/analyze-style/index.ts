@@ -42,8 +42,9 @@ serve(async (req) => {
 
     const accessToken = connection.token_encrypted;
     const igUserId = connection.ig_user_id;
+    const igUsername = connection.ig_username || 'Unknown';
 
-    console.log(`Fetching media for IG user ${igUserId}`);
+    console.log(`Fetching media for IG user ${igUserId} (@${igUsername})`);
 
     // Fetch last 20 posts from Instagram Graph API
     const mediaUrl = `https://graph.facebook.com/v17.0/${igUserId}/media?fields=id,caption,timestamp,like_count,comments_count,media_type&limit=20&access_token=${accessToken}`;
@@ -65,101 +66,77 @@ serve(async (req) => {
       throw new Error('Keine Posts gefunden. Bitte stelle sicher, dass dein Account Posts hat.');
     }
 
-    // Filter posts with captions and prepare analysis data
+    // Filter posts with captions
     const postsWithCaptions = posts.filter((post: any) => post.caption && post.caption.trim());
     
     if (postsWithCaptions.length < 3) {
       throw new Error('Zu wenige Posts mit Captions gefunden. Mindestens 3 werden benötigt.');
     }
 
-    // Prepare posts data for AI analysis
-    const postsForAnalysis = postsWithCaptions.map((post: any, index: number) => ({
-      number: index + 1,
-      caption: post.caption,
-      likes: post.like_count || 0,
-      comments: post.comments_count || 0,
-      date: post.timestamp,
-      engagement: (post.like_count || 0) + (post.comments_count || 0)
-    }));
-
-    // Sort by engagement to identify top performers
-    const topPerformers = [...postsForAnalysis]
-      .sort((a, b) => b.engagement - a.engagement)
-      .slice(0, 5);
-
-    console.log(`Analyzing ${postsForAnalysis.length} posts, top 5 by engagement identified`);
-
-    // Build the analysis prompt
-    const postsText = postsForAnalysis
-      .map((p: any) => `Post ${p.number} (${p.likes} Likes, ${p.comments} Kommentare):\n"${p.caption}"`)
+    // Prepare captions for analysis
+    const captionsText = postsWithCaptions
+      .map((post: any, index: number) => `POST ${index + 1}:\n"${post.caption}"`)
       .join('\n\n---\n\n');
 
-    const topPerformersText = topPerformers
-      .map((p: any) => `"${p.caption}" (${p.engagement} Interaktionen)`)
-      .join('\n\n');
+    console.log(`Analyzing ${postsWithCaptions.length} posts with Ghostwriter prompt`);
 
-    const analysisPrompt = `Analysiere den Schreibstil dieses Instagram-Autors anhand seiner letzten ${postsForAnalysis.length} Posts.
+    // The specific Ghostwriter analysis prompt as requested
+    const analysisPrompt = `Du bist ein erfahrener Ghostwriter. Hier sind ${postsWithCaptions.length} Original-Posts von @${igUsername}. Analysiere seine DNA:
 
-POSTS ZUR ANALYSE:
-${postsText}
+${captionsText}
 
-TOP 5 POSTS NACH ENGAGEMENT:
-${topPerformersText}
+---
 
-ANALYSIERE FOLGENDE ASPEKTE:
+ANALYSIERE FOLGENDE ASPEKTE DIESER POSTS:
 
-1. SATZSTRUKTUR
-- Wie beginnt der Autor typischerweise Sätze?
-- Nutzt er kurze oder lange Sätze?
-- Gibt es wiederkehrende Satzanfänge?
+1. **Hook-Analyse**: Wie steigt er in Texte ein? Welche Arten von Eröffnungssätzen nutzt er? (z.B. Fragen, Statements, Szenen)
 
-2. TONALITÄT
-- Ist der Ton humorvoll, sarkastisch, ernst, motivierend?
-- Wie persönlich/verletzlich ist der Stil?
-- Gibt es eine erkennbare "Stimme"?
+2. **Emoji-Nutzung**: Welche Emojis nutzt er regelmäßig? Welche nutzt er NIE? Wie häufig insgesamt? Wo platziert er sie?
 
-3. FORMATIERUNG
-- Emoji-Nutzung (häufig, selten, welche Art?)
-- Absätze und Struktur
-- Hashtag-Stil
+3. **Satzlänge**: Kurze oder lange Sätze? Variiert er? Nutzt er Fragmente?
 
-4. ENGAGEMENT-MUSTER
-- Was haben die Top-Posts gemeinsam?
-- Welche Elemente funktionieren besonders gut?
+4. **Tonalität**: Ist er ironisch, ernst, kumpelhaft, nachdenklich, witzig, sarkastisch? Wie zeigt sich das konkret?
 
-5. EINZIGARTIGE MERKMALE
-- Gibt es Catchphrases oder wiederkehrende Formulierungen?
-- Besonderheiten im Ausdruck?
+5. **Ansprache**: Duzt oder siezt er? Nutzt er "man" oder "du"? Spricht er die Community direkt an?
 
-ERSTELLE DARAUS:
+6. **Struktur**: Wie baut er Posts auf? Absätze? Listen? Einzeiler?
 
-A) Eine kompakte Stil-Beschreibung (2-3 Sätze)
+7. **Besonderheiten**: Catchphrases? Wiederkehrende Formulierungen? Signature-Elemente?
 
-B) Eine Liste von Do's (was der Autor immer tut)
+---
 
-C) Eine Liste von Don'ts (was der Autor nie tut)
+ERSTELLE DARAUS ZWEI DINGE:
 
-D) Beispiel-Posts die den Stil perfekt repräsentieren (wähle 2-3 aus den analysierten)
+**A) SYSTEM-INSTRUKTION (style_system_prompt)**
+Erstelle eine präzise System-Instruktion für einen KI-Bot, der neue Posts in EXAKT diesem Stil schreiben soll. Die Instruktion muss so konkret sein, dass die KI den Stil perfekt imitieren kann.
 
-E) Einen Schreibstil-String (kurz, z.B. "Selbstironisch, kurze Sätze, viele Emojis, direkte Ansprache")
+**B) ANALYSE-ZUSAMMENFASSUNG (analysis)**
+Fasse die wichtigsten Erkenntnisse zusammen.
 
-F) Ein empfohlenes Emoji-Level (0-3)
+---
 
 Antworte NUR mit validem JSON in diesem Format:
 {
-  "style_description": "Kompakte Stil-Beschreibung...",
-  "writing_style": "Kurzer Schreibstil-String",
-  "do_list": ["Do 1", "Do 2", "Do 3"],
-  "dont_list": ["Don't 1", "Don't 2"],
-  "example_posts": "Beispiel 1:\\n---\\nBeispiel 2:\\n---\\nBeispiel 3:",
+  "style_system_prompt": "Du bist ein Instagram-Content-Creator und schreibst im Stil von @${igUsername}. Dein Stil zeichnet sich aus durch: [KONKRETE ANWEISUNGEN]...",
+  "style_description": "Kurze Beschreibung des Stils (2-3 Sätze)",
+  "writing_style": "Schlagworte zum Stil (z.B. 'Selbstironisch, kurze Sätze, viele Emojis')",
+  "hook_patterns": ["Hook-Muster 1", "Hook-Muster 2"],
+  "emoji_usage": {
+    "favorites": ["🔥", "😂"],
+    "avoided": ["💯", "🙏"],
+    "frequency": "moderat"
+  },
+  "sentence_style": "Beschreibung der Satzstruktur",
+  "tone": "Beschreibung der Tonalität",
+  "address_style": "Du/Sie/man + Beschreibung",
+  "do_list": ["Was er immer tut 1", "Was er immer tut 2"],
+  "dont_list": ["Was er nie tut 1", "Was er nie tut 2"],
+  "example_posts": "Die 2-3 besten Beispiel-Posts, die den Stil perfekt zeigen (mit --- getrennt)",
   "emoji_level": 2,
-  "engagement_insights": "Was bei diesem Account besonders gut funktioniert...",
-  "unique_elements": ["Element 1", "Element 2"]
+  "unique_elements": ["Besonderheit 1", "Besonderheit 2"]
 }`;
 
-    // Call Lovable AI with a powerful model for deep analysis
-    console.log('Calling AI for style analysis...');
-    
+    // Call Lovable AI with GPT-5 or Gemini Pro for best quality
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -167,11 +144,11 @@ Antworte NUR mit validem JSON in diesem Format:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro', // Using Pro for deep analysis
+        model: 'openai/gpt-5', // Using GPT-5 for nuanced language analysis
         messages: [
           { 
             role: 'system', 
-            content: 'Du bist ein Experte für Social Media Content und Stilanalyse. Analysiere tiefgründig und liefere präzise, actionable Insights. Antworte immer auf Deutsch.' 
+            content: 'Du bist ein Experte für Stilanalyse und Ghostwriting. Du analysierst Schreibstile präzise und erstellst actionable Instruktionen. Antworte immer auf Deutsch und immer mit validem JSON.' 
           },
           { role: 'user', content: analysisPrompt }
         ],
@@ -203,7 +180,29 @@ Antworte NUR mit validem JSON in diesem Format:
     
     const analysis = JSON.parse(jsonMatch[0]);
 
-    console.log('Style analysis completed successfully');
+    console.log('Style analysis completed, saving to database...');
+
+    // Auto-save results to brand_rules
+    const { error: updateError } = await supabase
+      .from('brand_rules')
+      .update({
+        tone_style: analysis.style_description,
+        writing_style: analysis.writing_style,
+        style_system_prompt: analysis.style_system_prompt,
+        do_list: analysis.do_list,
+        dont_list: analysis.dont_list,
+        example_posts: analysis.example_posts,
+        emoji_level: analysis.emoji_level,
+        last_style_analysis_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id);
+
+    if (updateError) {
+      console.error('Error saving analysis:', updateError);
+      throw new Error('Analyse konnte nicht gespeichert werden');
+    }
+
+    console.log('Analysis saved successfully');
 
     // Log the analysis
     await supabase.from('logs').insert({
@@ -211,16 +210,18 @@ Antworte NUR mit validem JSON in diesem Format:
       event_type: 'style_analysis_completed',
       level: 'info',
       details: { 
-        posts_analyzed: postsForAnalysis.length,
-        top_engagement: topPerformers[0]?.engagement || 0
+        posts_analyzed: postsWithCaptions.length,
+        model: 'openai/gpt-5',
+        auto_saved: true
       },
     });
 
     return new Response(JSON.stringify({ 
       success: true,
       analysis,
-      posts_analyzed: postsForAnalysis.length,
-      top_performers_count: topPerformers.length
+      posts_analyzed: postsWithCaptions.length,
+      saved: true,
+      analyzed_at: new Date().toISOString()
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

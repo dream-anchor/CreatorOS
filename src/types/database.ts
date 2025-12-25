@@ -33,6 +33,8 @@ export interface BrandRules {
   example_posts: string | null;
   taboo_words: string[];
   ai_model: string;
+  style_system_prompt: string | null;
+  last_style_analysis_at: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -11,33 +11,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { BrandRules } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Save, Plus, X, Sparkles, Brain, Wand2, Instagram, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Save, Plus, X, Sparkles, Brain, Wand2, Instagram, CheckCircle2, Clock, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { formatDistanceToNow } from "date-fns";
+import { de } from "date-fns/locale";
 
 const AI_MODELS = [
   { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash", description: "Schnell & günstig" },
   { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", description: "Beste Qualität & Reasoning" },
   { value: "openai/gpt-5", label: "GPT-5", description: "Kreativ & präzise" },
 ];
-
-interface StyleAnalysis {
-  style_description: string;
-  writing_style: string;
-  do_list: string[];
-  dont_list: string[];
-  example_posts: string;
-  emoji_level: number;
-  engagement_insights: string;
-  unique_elements: string[];
-}
 
 export default function BrandPage() {
   const { user } = useAuth();
@@ -50,9 +33,6 @@ export default function BrandPage() {
   
   // Style Analysis State
   const [analyzing, setAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<StyleAnalysis | null>(null);
-  const [showAnalysisDialog, setShowAnalysisDialog] = useState(false);
-  const [postsAnalyzed, setPostsAnalyzed] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -97,6 +77,7 @@ export default function BrandPage() {
           example_posts: brand.example_posts,
           taboo_words: brand.taboo_words,
           ai_model: brand.ai_model,
+          style_system_prompt: brand.style_system_prompt,
         })
         .eq("id", brand.id);
 
@@ -111,7 +92,6 @@ export default function BrandPage() {
 
   const handleStyleAnalysis = async () => {
     setAnalyzing(true);
-    setAnalysisResult(null);
 
     try {
       const { data, error } = await supabase.functions.invoke("analyze-style");
@@ -119,32 +99,15 @@ export default function BrandPage() {
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
-      setAnalysisResult(data.analysis);
-      setPostsAnalyzed(data.posts_analyzed);
-      setShowAnalysisDialog(true);
-      toast.success(`${data.posts_analyzed} Posts analysiert!`);
+      // Reload brand rules to get the auto-saved analysis
+      await loadBrandRules();
+      
+      toast.success(`${data.posts_analyzed} Posts analysiert und gespeichert!`);
     } catch (error: any) {
       toast.error("Analyse fehlgeschlagen: " + error.message);
     } finally {
       setAnalyzing(false);
     }
-  };
-
-  const applyAnalysis = () => {
-    if (!analysisResult || !brand) return;
-
-    setBrand({
-      ...brand,
-      tone_style: analysisResult.style_description,
-      writing_style: analysisResult.writing_style,
-      do_list: analysisResult.do_list,
-      dont_list: analysisResult.dont_list,
-      example_posts: analysisResult.example_posts,
-      emoji_level: analysisResult.emoji_level,
-    });
-
-    setShowAnalysisDialog(false);
-    toast.success("Analyse übernommen! Vergiss nicht zu speichern.");
   };
 
   const addItem = (list: "do_list" | "dont_list" | "taboo_words") => {
@@ -169,6 +132,18 @@ export default function BrandPage() {
     });
   };
 
+  const formatLastAnalysis = () => {
+    if (!brand?.last_style_analysis_at) return null;
+    try {
+      return formatDistanceToNow(new Date(brand.last_style_analysis_at), { 
+        addSuffix: true, 
+        locale: de 
+      });
+    } catch {
+      return null;
+    }
+  };
+
   if (loading) {
     return (
       <AppLayout title="Marke & Regeln">
@@ -191,41 +166,38 @@ export default function BrandPage() {
       }
     >
       <div className="space-y-6">
-        {/* Style Analysis Card */}
-        <Card className="glass-card border-2 border-dashed border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
+        {/* KI-Stil-Analyse Card */}
+        <Card className="glass-card border-2 border-primary/30 bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5">
           <CardHeader>
             <div className="flex items-center gap-2">
               <Wand2 className="h-5 w-5 text-primary" />
-              <CardTitle>Stil-Analyse</CardTitle>
+              <CardTitle>KI-Stil-Analyse</CardTitle>
             </div>
             <CardDescription>
-              Analysiere deinen Instagram-Account automatisch und lerne deinen Schreibstil
+              Analysiere deinen Instagram-Account automatisch mit GPT-5 und lerne deinen einzigartigen Schreibstil
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-              <div className="flex-1">
-                <p className="text-sm text-muted-foreground mb-2">
-                  Die KI analysiert deine letzten 20 Instagram-Posts und extrahiert:
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+              <div className="flex-1 space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Die KI analysiert deine letzten 20 Instagram-Posts und erstellt eine präzise System-Instruktion für den Generator.
                 </p>
-                <ul className="text-xs text-muted-foreground space-y-1">
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-3 w-3 text-success" />
-                    Schreibstil & Tonalität
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-3 w-3 text-success" />
-                    Do's und Don'ts
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-3 w-3 text-success" />
-                    Beste Beispiel-Posts
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-3 w-3 text-success" />
-                    Engagement-Insights
-                  </li>
-                </ul>
+                {formatLastAnalysis() && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Letzte Analyse:</span>
+                    <Badge variant="outline" className="font-normal">
+                      {formatLastAnalysis()}
+                    </Badge>
+                  </div>
+                )}
+                {brand?.style_system_prompt && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                    <span className="text-success">Stil-Profil aktiv</span>
+                  </div>
+                )}
               </div>
               <Button 
                 onClick={handleStyleAnalysis} 
@@ -238,14 +210,35 @@ export default function BrandPage() {
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Analysiere...
                   </>
+                ) : brand?.last_style_analysis_at ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Erneut analysieren
+                  </>
                 ) : (
                   <>
                     <Instagram className="mr-2 h-4 w-4" />
-                    Account analysieren
+                    Meinen Account analysieren
                   </>
                 )}
               </Button>
             </div>
+
+            {/* Show System Prompt if exists */}
+            {brand?.style_system_prompt && (
+              <div className="mt-6 space-y-2">
+                <Label className="text-sm font-medium">Generierte System-Instruktion</Label>
+                <Textarea
+                  value={brand.style_system_prompt}
+                  onChange={(e) => setBrand(brand ? { ...brand, style_system_prompt: e.target.value } : null)}
+                  className="min-h-[150px] text-sm font-mono bg-muted/30"
+                  placeholder="Die System-Instruktion wird nach der Analyse hier angezeigt..."
+                />
+                <p className="text-xs text-muted-foreground">
+                  Diese Instruktion wird automatisch vom Generator verwendet. Du kannst sie manuell anpassen.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -538,114 +531,6 @@ Beispiel 3:"
           </Card>
         </div>
       </div>
-
-      {/* Analysis Results Dialog */}
-      <Dialog open={showAnalysisDialog} onOpenChange={setShowAnalysisDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Wand2 className="h-5 w-5 text-primary" />
-              Stil-Analyse Ergebnis
-            </DialogTitle>
-            <DialogDescription>
-              {postsAnalyzed} Posts analysiert • Powered by Gemini 2.5 Pro
-            </DialogDescription>
-          </DialogHeader>
-
-          {analysisResult && (
-            <div className="space-y-6 py-4">
-              {/* Style Description */}
-              <div className="space-y-2">
-                <Label className="text-base font-semibold">Dein Schreibstil</Label>
-                <p className="text-sm p-3 rounded-lg bg-muted/50 border border-border">
-                  {analysisResult.style_description}
-                </p>
-              </div>
-
-              {/* Writing Style String */}
-              <div className="space-y-2">
-                <Label className="text-base font-semibold">Stil-Zusammenfassung</Label>
-                <Badge variant="outline" className="text-sm px-3 py-1">
-                  {analysisResult.writing_style}
-                </Badge>
-              </div>
-
-              {/* Engagement Insights */}
-              <Alert>
-                <Sparkles className="h-4 w-4" />
-                <AlertTitle>Engagement-Insights</AlertTitle>
-                <AlertDescription>
-                  {analysisResult.engagement_insights}
-                </AlertDescription>
-              </Alert>
-
-              {/* Do's and Don'ts */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label className="text-success">Do's</Label>
-                  <ul className="text-sm space-y-1">
-                    {analysisResult.do_list.map((item, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-success shrink-0 mt-0.5" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-destructive">Don'ts</Label>
-                  <ul className="text-sm space-y-1">
-                    {analysisResult.dont_list.map((item, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Unique Elements */}
-              {analysisResult.unique_elements && analysisResult.unique_elements.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-base font-semibold">Einzigartige Merkmale</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {analysisResult.unique_elements.map((el, i) => (
-                      <Badge key={i} variant="secondary">{el}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Emoji Level */}
-              <div className="space-y-2">
-                <Label>Empfohlenes Emoji-Level</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">
-                    {analysisResult.emoji_level === 0 ? "😐" : 
-                     analysisResult.emoji_level === 1 ? "🙂" :
-                     analysisResult.emoji_level === 2 ? "😊" : "🎉"}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    Level {analysisResult.emoji_level}/3
-                  </span>
-                </div>
-              </div>
-
-              {/* Apply Button */}
-              <div className="flex gap-3 pt-4 border-t">
-                <Button variant="outline" onClick={() => setShowAnalysisDialog(false)} className="flex-1">
-                  Abbrechen
-                </Button>
-                <Button onClick={applyAnalysis} className="flex-1">
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Analyse übernehmen
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </AppLayout>
   );
 }

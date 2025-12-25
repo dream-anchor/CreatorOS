@@ -131,8 +131,18 @@ ${additional_context}
 ` 
       : '';
 
+    // Use custom system prompt from style analysis if available
+    const styleSystemPrompt = brand?.style_system_prompt 
+      ? `
+
+STIL-INSTRUKTION (aus Analyse):
+${brand.style_system_prompt}
+` 
+      : '';
+
     const systemPrompt = `Du bist ein professioneller Instagram Content Creator für den deutschen Markt.
 Erstelle einen Instagram-Post basierend auf dem gegebenen Thema.
+${styleSystemPrompt}
 ${postTypeInstructions}
 
 Brand Guidelines:
