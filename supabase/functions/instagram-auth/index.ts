@@ -11,31 +11,25 @@ function maskToken(token: string): string {
   return token.substring(0, 6) + "..." + token.substring(token.length - 4);
 }
 
+interface InstagramAccount {
+  ig_user_id: string;
+  ig_username: string;
+  profile_picture_url?: string;
+  page_id: string;
+  page_name: string;
+  page_access_token: string;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { code, redirect_uri } = await req.json();
+    const body = await req.json();
+    const { code, redirect_uri, action, selected_account } = body;
     
-    console.log("[instagram-auth] Received request");
-    console.log("[instagram-auth] redirect_uri:", redirect_uri);
-    console.log("[instagram-auth] code present:", !!code);
-
-    if (!code) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Kein Autorisierungscode erhalten" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (!redirect_uri) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Keine redirect_uri angegeben" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    console.log("[instagram-auth] Received request, action:", action || "exchange_code");
 
     // Get environment variables
     const META_APP_ID = Deno.env.get("META_APP_ID");
@@ -73,6 +67,68 @@ serve(async (req) => {
     }
 
     console.log("[instagram-auth] User ID:", user.id);
+
+    // Handle action: select_account - save selected account
+    if (action === "select_account" && selected_account) {
+      console.log("[instagram-auth] Selecting account:", selected_account.ig_username);
+      
+      const { error: upsertError } = await supabase
+        .from("meta_connections")
+        .upsert({
+          user_id: user.id,
+          page_id: selected_account.page_id,
+          page_name: selected_account.page_name,
+          ig_user_id: selected_account.ig_user_id,
+          ig_username: selected_account.ig_username,
+          token_encrypted: selected_account.page_access_token,
+          token_expires_at: selected_account.token_expires_at,
+          connected_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+
+      if (upsertError) {
+        console.error("[instagram-auth] Database error:", upsertError);
+        return new Response(
+          JSON.stringify({ success: false, error: "Fehler beim Speichern der Verbindung", details: upsertError }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Log the connection
+      await supabase.from("logs").insert({
+        user_id: user.id,
+        event_type: "instagram_connected",
+        level: "info",
+        details: { ig_username: selected_account.ig_username, page_name: selected_account.page_name },
+      });
+
+      console.log("[instagram-auth] Account selected and saved successfully!");
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          ig_username: selected_account.ig_username,
+          page_name: selected_account.page_name
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Default action: exchange code for tokens and return all accounts
+    if (!code) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Kein Autorisierungscode erhalten" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!redirect_uri) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Keine redirect_uri angegeben" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log("[instagram-auth] redirect_uri:", redirect_uri);
 
     // Exchange code for short-lived token
     console.log("[instagram-auth] Exchanging code for token...");
@@ -147,16 +203,16 @@ serve(async (req) => {
       );
     }
 
-    const accessToken = longLivedData.access_token;
+    const userAccessToken = longLivedData.access_token;
     const expiresIn = longLivedData.expires_in || 5184000; // Default 60 days
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
-    console.log("[instagram-auth] Got long-lived token:", maskToken(accessToken));
+    console.log("[instagram-auth] Got long-lived user token:", maskToken(userAccessToken));
     console.log("[instagram-auth] Expires at:", expiresAt);
 
     // Get user's pages
     console.log("[instagram-auth] Getting user pages...");
     const pagesResponse = await fetch(
-      `https://graph.facebook.com/v20.0/me/accounts?access_token=${accessToken}`
+      `https://graph.facebook.com/v20.0/me/accounts?access_token=${userAccessToken}`
     );
     const pagesData = await pagesResponse.json();
 
@@ -176,89 +232,73 @@ serve(async (req) => {
       );
     }
 
-    // Use the first page
-    const page = pagesData.data[0];
-    const pageId = page.id;
-    const pageName = page.name;
-    const pageAccessToken = page.access_token;
+    console.log("[instagram-auth] Found", pagesData.data.length, "pages");
 
-    console.log("[instagram-auth] Using page:", pageName, "(", pageId, ")");
+    // Collect all Instagram accounts from all pages
+    const instagramAccounts: InstagramAccount[] = [];
 
-    // Get Instagram Business Account linked to the page
-    console.log("[instagram-auth] Getting Instagram account...");
-    const igResponse = await fetch(
-      `https://graph.facebook.com/v20.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`
-    );
-    const igData = await igResponse.json();
+    for (const page of pagesData.data) {
+      const pageId = page.id;
+      const pageName = page.name;
+      const pageAccessToken = page.access_token;
 
-    if (igData.error) {
-      console.error("[instagram-auth] IG account error:", igData.error);
-      return new Response(
-        JSON.stringify({ success: false, error: "Fehler beim Abrufen des Instagram-Kontos", details: igData.error }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      console.log("[instagram-auth] Checking page:", pageName, "(", pageId, ")");
+
+      // Get Instagram Business Account linked to the page
+      const igResponse = await fetch(
+        `https://graph.facebook.com/v20.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`
       );
-    }
+      const igData = await igResponse.json();
 
-    if (!igData.instagram_business_account?.id) {
-      console.error("[instagram-auth] No IG account linked to page");
-      return new Response(
-        JSON.stringify({ success: false, error: "Kein Instagram Business-Konto mit dieser Seite verknüpft. Bitte verbinden Sie Ihr Instagram-Konto mit Ihrer Facebook-Seite." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      if (igData.error) {
+        console.log("[instagram-auth] Page", pageName, "- IG error:", igData.error.message);
+        continue;
+      }
+
+      if (!igData.instagram_business_account?.id) {
+        console.log("[instagram-auth] Page", pageName, "- No IG account linked");
+        continue;
+      }
+
+      const igUserId = igData.instagram_business_account.id;
+
+      // Get Instagram username and profile picture
+      const igUserResponse = await fetch(
+        `https://graph.facebook.com/v20.0/${igUserId}?fields=username,profile_picture_url&access_token=${pageAccessToken}`
       );
-    }
+      const igUserData = await igUserResponse.json();
+      const igUsername = igUserData.username || "unknown";
+      const profilePictureUrl = igUserData.profile_picture_url || null;
 
-    const igUserId = igData.instagram_business_account.id;
+      console.log("[instagram-auth] Found IG account:", igUsername, "on page", pageName);
 
-    // Get Instagram username
-    console.log("[instagram-auth] Getting Instagram username...");
-    const igUserResponse = await fetch(
-      `https://graph.facebook.com/v20.0/${igUserId}?fields=username&access_token=${pageAccessToken}`
-    );
-    const igUserData = await igUserResponse.json();
-    const igUsername = igUserData.username || "unknown";
-
-    console.log("[instagram-auth] Instagram username:", igUsername);
-
-    // Save to meta_connections table
-    console.log("[instagram-auth] Saving connection...");
-    const { error: upsertError } = await supabase
-      .from("meta_connections")
-      .upsert({
-        user_id: user.id,
-        page_id: pageId,
-        page_name: pageName,
+      instagramAccounts.push({
         ig_user_id: igUserId,
         ig_username: igUsername,
-        token_encrypted: pageAccessToken, // Using page token for Graph API calls
-        token_expires_at: expiresAt,
-        connected_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
+        profile_picture_url: profilePictureUrl,
+        page_id: pageId,
+        page_name: pageName,
+        page_access_token: pageAccessToken,
+      });
+    }
 
-    if (upsertError) {
-      console.error("[instagram-auth] Database error:", upsertError);
+    if (instagramAccounts.length === 0) {
+      console.error("[instagram-auth] No Instagram accounts found on any page");
       return new Response(
-        JSON.stringify({ success: false, error: "Fehler beim Speichern der Verbindung", details: upsertError }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ success: false, error: "Kein Instagram Business-Konto mit einer Facebook-Seite verknüpft. Bitte verbinden Sie Ihr Instagram-Konto mit Ihrer Facebook-Seite." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Log the connection
-    await supabase.from("logs").insert({
-      user_id: user.id,
-      event_type: "instagram_connected",
-      level: "info",
-      details: { ig_username: igUsername, page_name: pageName },
-    });
+    console.log("[instagram-auth] Found", instagramAccounts.length, "Instagram accounts total");
 
-    console.log("[instagram-auth] Connection saved successfully!");
-
+    // Return all accounts for user selection
     return new Response(
       JSON.stringify({ 
-        success: true, 
-        ig_username: igUsername,
-        page_name: pageName,
-        expires_at: expiresAt
+        success: true,
+        action: "select_account",
+        accounts: instagramAccounts,
+        token_expires_at: expiresAt
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
