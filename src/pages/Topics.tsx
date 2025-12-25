@@ -11,8 +11,35 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Topic } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Plus, Pencil, Trash2, Upload, Star, Leaf, Calendar } from "lucide-react";
+import { 
+  Loader2, Plus, Pencil, Trash2, Upload, Star, Leaf, Calendar,
+  Sparkles, Archive, Lightbulb, ArrowRight, Check, FileText
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+
+interface PostIdea {
+  angle: string;
+  hook: string;
+  outline: string;
+  hashtag_suggestions: string[];
+  best_time: string;
+  format_suggestion: string;
+}
+
+interface TopicResearch {
+  ideas: PostIdea[];
+  trend_insights?: string;
+  warning?: string;
+}
+
+interface ArchivePost {
+  id: string;
+  caption: string;
+  likes?: number;
+  created_at: string;
+}
+
+type WizardStep = 'input' | 'options' | 'archive' | 'research' | 'results';
 
 export default function TopicsPage() {
   const { user } = useAuth();
@@ -23,6 +50,17 @@ export default function TopicsPage() {
   const [csvInput, setCsvInput] = useState("");
   const [editingTopic, setEditingTopic] = useState<Topic | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Wizard state
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<WizardStep>('input');
+  const [wizardTopic, setWizardTopic] = useState("");
+  const [wizardContext, setWizardContext] = useState("");
+  const [researching, setResearching] = useState(false);
+  const [researchResults, setResearchResults] = useState<TopicResearch | null>(null);
+  const [archivePosts, setArchivePosts] = useState<ArchivePost[]>([]);
+  const [searchingArchive, setSearchingArchive] = useState(false);
+  const [selectedIdeas, setSelectedIdeas] = useState<Set<number>>(new Set());
 
   const [form, setForm] = useState({
     title: "",
@@ -66,19 +104,22 @@ export default function TopicsPage() {
         seasonal_start: topic.seasonal_start || "",
         seasonal_end: topic.seasonal_end || "",
       });
+      setDialogOpen(true);
     } else {
-      setEditingTopic(null);
-      setForm({
-        title: "",
-        description: "",
-        keywords: "",
-        priority: 3,
-        evergreen: false,
-        seasonal_start: "",
-        seasonal_end: "",
-      });
+      // Open wizard for new topics
+      resetWizard();
+      setWizardOpen(true);
     }
-    setDialogOpen(true);
+  };
+
+  const resetWizard = () => {
+    setWizardStep('input');
+    setWizardTopic("");
+    setWizardContext("");
+    setResearchResults(null);
+    setArchivePosts([]);
+    setSelectedIdeas(new Set());
+    setEditingTopic(null);
   };
 
   const handleSave = async () => {
@@ -168,6 +209,209 @@ export default function TopicsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Wizard: Search archive for similar posts
+  const handleArchiveScan = async () => {
+    if (!wizardTopic.trim()) {
+      toast.error("Bitte gib ein Thema ein");
+      return;
+    }
+
+    setSearchingArchive(true);
+    setWizardStep('archive');
+
+    try {
+      // Search posts by caption containing the topic keywords
+      const keywords = wizardTopic.toLowerCase().split(' ');
+      
+      const { data: posts, error } = await supabase
+        .from("posts")
+        .select("id, caption, created_at")
+        .not("caption", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      // Filter posts that contain any of the keywords
+      const matchingPosts = (posts || [])
+        .filter(post => {
+          const caption = (post.caption || '').toLowerCase();
+          return keywords.some(kw => caption.includes(kw));
+        })
+        .slice(0, 5) as ArchivePost[];
+
+      setArchivePosts(matchingPosts);
+
+      if (matchingPosts.length === 0) {
+        toast.info("Keine passenden Posts im Archiv gefunden");
+      }
+    } catch (error: any) {
+      toast.error("Archiv-Suche fehlgeschlagen: " + error.message);
+    } finally {
+      setSearchingArchive(false);
+    }
+  };
+
+  // Wizard: AI Research
+  const handleResearch = async () => {
+    if (!wizardTopic.trim()) {
+      toast.error("Bitte gib ein Thema ein");
+      return;
+    }
+
+    setResearching(true);
+    setWizardStep('research');
+
+    try {
+      const { data, error } = await supabase.functions.invoke('topic-research', {
+        body: { 
+          topic: wizardTopic,
+          context: wizardContext
+        }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      setResearchResults(data.research);
+      setWizardStep('results');
+      toast.success("Recherche abgeschlossen!");
+    } catch (error: any) {
+      toast.error("Recherche fehlgeschlagen: " + error.message);
+      setWizardStep('options');
+    } finally {
+      setResearching(false);
+    }
+  };
+
+  // Save selected ideas as drafts
+  const handleSaveIdeasAsDrafts = async () => {
+    if (!researchResults || selectedIdeas.size === 0) {
+      toast.error("Bitte wähle mindestens eine Idee aus");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // First, create the topic
+      const { data: topicData, error: topicError } = await supabase
+        .from("topics")
+        .insert({
+          title: wizardTopic,
+          description: `KI-generierte Ideen zum Thema "${wizardTopic}"`,
+          keywords: [wizardTopic.toLowerCase()],
+          priority: 3,
+          evergreen: false,
+          user_id: user!.id,
+        })
+        .select()
+        .single();
+
+      if (topicError) throw topicError;
+
+      // Create drafts for selected ideas
+      const selectedIdeasArray = Array.from(selectedIdeas);
+      const drafts = selectedIdeasArray.map(index => {
+        const idea = researchResults.ideas[index];
+        return {
+          user_id: user!.id,
+          topic_id: topicData.id,
+          caption: `${idea.hook}\n\n${idea.outline}`,
+          hashtags: idea.hashtag_suggestions?.join(' ') || '',
+          status: 'IDEA' as const,
+        };
+      });
+
+      const { error: draftsError } = await supabase
+        .from("posts")
+        .insert(drafts);
+
+      if (draftsError) throw draftsError;
+
+      toast.success(`Thema und ${selectedIdeasArray.length} Entwürfe erstellt!`);
+      setWizardOpen(false);
+      resetWizard();
+      loadTopics();
+    } catch (error: any) {
+      toast.error("Fehler beim Speichern: " + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Save archive post as draft
+  const handleSaveArchivePostAsDraft = async (post: ArchivePost) => {
+    setSaving(true);
+    try {
+      // First, create the topic if it doesn't exist
+      const { data: topicData, error: topicError } = await supabase
+        .from("topics")
+        .insert({
+          title: wizardTopic,
+          description: `Recycling-Thema basierend auf Archiv`,
+          keywords: [wizardTopic.toLowerCase()],
+          priority: 3,
+          evergreen: false,
+          user_id: user!.id,
+        })
+        .select()
+        .single();
+
+      if (topicError) throw topicError;
+
+      // Create a new draft inspired by the old post
+      const { error: draftError } = await supabase
+        .from("posts")
+        .insert({
+          user_id: user!.id,
+          topic_id: topicData.id,
+          caption: `[RECYCLING-IDEE basierend auf altem Post]\n\nOriginal:\n${post.caption}\n\n---\nNEUE VERSION:\n[Hier deine neue Version schreiben]`,
+          status: 'IDEA' as const,
+        });
+
+      if (draftError) throw draftError;
+
+      toast.success("Als Entwurf gespeichert!");
+      setWizardOpen(false);
+      resetWizard();
+      loadTopics();
+    } catch (error: any) {
+      toast.error("Fehler: " + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Create topic without wizard
+  const handleQuickCreate = () => {
+    if (!wizardTopic.trim()) {
+      toast.error("Bitte gib ein Thema ein");
+      return;
+    }
+
+    setForm({
+      title: wizardTopic,
+      description: wizardContext,
+      keywords: "",
+      priority: 3,
+      evergreen: false,
+      seasonal_start: "",
+      seasonal_end: "",
+    });
+    setWizardOpen(false);
+    setDialogOpen(true);
+  };
+
+  const toggleIdeaSelection = (index: number) => {
+    const newSelected = new Set(selectedIdeas);
+    if (newSelected.has(index)) {
+      newSelected.delete(index);
+    } else {
+      newSelected.add(index);
+    }
+    setSelectedIdeas(newSelected);
   };
 
   if (loading) {
@@ -306,7 +550,310 @@ Thema 2;Andere Beschreibung;keyword3"
         </div>
       )}
 
-      {/* Edit/Create Dialog */}
+      {/* Topic Wizard Dialog */}
+      <Dialog open={wizardOpen} onOpenChange={(open) => {
+        setWizardOpen(open);
+        if (!open) resetWizard();
+      }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              {wizardStep === 'input' && 'Neues Thema erstellen'}
+              {wizardStep === 'options' && 'Wie möchtest du vorgehen?'}
+              {wizardStep === 'archive' && 'Dein Archiv durchsuchen'}
+              {wizardStep === 'research' && 'KI recherchiert...'}
+              {wizardStep === 'results' && 'Post-Ideen'}
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Step 1: Input */}
+          {wizardStep === 'input' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="wizard-topic">Worüber möchtest du posten?</Label>
+                <Input
+                  id="wizard-topic"
+                  value={wizardTopic}
+                  onChange={(e) => setWizardTopic(e.target.value)}
+                  placeholder="z.B. Set-Leben, Gedanken, Behind the Scenes..."
+                  className="text-lg"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="wizard-context">Zusätzlicher Kontext (optional)</Label>
+                <Textarea
+                  id="wizard-context"
+                  value={wizardContext}
+                  onChange={(e) => setWizardContext(e.target.value)}
+                  placeholder="Gibt es einen besonderen Anlass oder Fokus?"
+                  className="min-h-[80px]"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button 
+                  onClick={() => setWizardStep('options')}
+                  disabled={!wizardTopic.trim()}
+                  className="flex-1"
+                >
+                  Weiter
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={handleQuickCreate}
+                  disabled={!wizardTopic.trim()}
+                >
+                  Direkt erstellen
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Options */}
+          {wizardStep === 'options' && (
+            <div className="space-y-4">
+              <p className="text-muted-foreground">
+                Thema: <span className="font-medium text-foreground">"{wizardTopic}"</span>
+              </p>
+              
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Option A: Archive Scan */}
+                <Card 
+                  className="cursor-pointer hover:border-primary transition-colors"
+                  onClick={handleArchiveScan}
+                >
+                  <CardContent className="p-6 text-center space-y-3">
+                    <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                      <Archive className="h-6 w-6 text-primary" />
+                    </div>
+                    <h3 className="font-semibold">Mein Archiv scannen</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Durchsuche deine alten Posts nach diesem Thema und finde bewährte Inhalte zum Recyceln.
+                    </p>
+                    <Badge variant="secondary">Recycling</Badge>
+                  </CardContent>
+                </Card>
+
+                {/* Option B: AI Research */}
+                <Card 
+                  className="cursor-pointer hover:border-primary transition-colors"
+                  onClick={handleResearch}
+                >
+                  <CardContent className="p-6 text-center space-y-3">
+                    <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                      <Lightbulb className="h-6 w-6 text-primary" />
+                    </div>
+                    <h3 className="font-semibold">Inspiration & Recherche</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Die KI entwickelt 5 unkonventionelle Blickwinkel mit provokanten Hooks.
+                    </p>
+                    <Badge variant="secondary">Fresh Content</Badge>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Button 
+                variant="ghost" 
+                onClick={() => setWizardStep('input')}
+                className="w-full"
+              >
+                Zurück
+              </Button>
+            </div>
+          )}
+
+          {/* Step 3a: Archive Results */}
+          {wizardStep === 'archive' && (
+            <div className="space-y-4">
+              <p className="text-muted-foreground">
+                Thema: <span className="font-medium text-foreground">"{wizardTopic}"</span>
+              </p>
+
+              {searchingArchive ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <span className="ml-3 text-muted-foreground">Durchsuche dein Archiv...</span>
+                </div>
+              ) : archivePosts.length === 0 ? (
+                <div className="text-center py-12">
+                  <Archive className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground mb-4">
+                    Keine passenden Posts gefunden.
+                  </p>
+                  <Button onClick={handleResearch}>
+                    <Lightbulb className="mr-2 h-4 w-4" />
+                    Stattdessen KI-Recherche starten
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {archivePosts.length} Posts gefunden. Klicke auf einen, um ihn als Vorlage zu nutzen.
+                  </p>
+                  {archivePosts.map((post) => (
+                    <Card 
+                      key={post.id} 
+                      className="cursor-pointer hover:border-primary transition-colors"
+                    >
+                      <CardContent className="p-4">
+                        <p className="text-sm line-clamp-3 mb-2">{post.caption}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(post.created_at).toLocaleDateString('de-DE')}
+                          </span>
+                          <Button 
+                            size="sm"
+                            onClick={() => handleSaveArchivePostAsDraft(post)}
+                            disabled={saving}
+                          >
+                            {saving ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <FileText className="mr-2 h-4 w-4" />
+                                Als Entwurf speichern
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              <Button 
+                variant="ghost" 
+                onClick={() => setWizardStep('options')}
+                className="w-full"
+              >
+                Zurück
+              </Button>
+            </div>
+          )}
+
+          {/* Step 3b: Researching */}
+          {wizardStep === 'research' && (
+            <div className="flex flex-col items-center justify-center py-12 space-y-4">
+              <div className="relative">
+                <Sparkles className="h-12 w-12 text-primary animate-pulse" />
+              </div>
+              <div className="text-center">
+                <h3 className="font-semibold mb-2">KI recherchiert...</h3>
+                <p className="text-sm text-muted-foreground">
+                  Die KI entwickelt unkonventionelle Blickwinkel für "{wizardTopic}"
+                </p>
+              </div>
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+          {/* Step 4: Results */}
+          {wizardStep === 'results' && researchResults && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-muted-foreground">
+                  <span className="font-medium text-foreground">{researchResults.ideas.length} Ideen</span> für "{wizardTopic}"
+                </p>
+                <Badge variant="outline">
+                  {selectedIdeas.size} ausgewählt
+                </Badge>
+              </div>
+
+              {researchResults.trend_insights && (
+                <Card className="bg-primary/5 border-primary/20">
+                  <CardContent className="p-4">
+                    <p className="text-sm">
+                      <span className="font-semibold">💡 Trend-Insight: </span>
+                      {researchResults.trend_insights}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {researchResults.ideas.map((idea, index) => (
+                  <Card 
+                    key={index}
+                    className={`cursor-pointer transition-all ${
+                      selectedIdeas.has(index) 
+                        ? 'border-primary ring-2 ring-primary/20' 
+                        : 'hover:border-primary/50'
+                    }`}
+                    onClick={() => toggleIdeaSelection(index)}
+                  >
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <Badge variant="secondary" className="shrink-0">{idea.angle}</Badge>
+                        <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                          selectedIdeas.has(index) 
+                            ? 'bg-primary border-primary text-primary-foreground' 
+                            : 'border-muted-foreground'
+                        }`}>
+                          {selectedIdeas.has(index) && <Check className="h-3 w-3" />}
+                        </div>
+                      </div>
+                      <p className="font-medium text-sm">"{idea.hook}"</p>
+                      <p className="text-sm text-muted-foreground">{idea.outline}</p>
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        <span className="text-xs text-muted-foreground">
+                          📅 {idea.best_time}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          📸 {idea.format_suggestion}
+                        </span>
+                      </div>
+                      {idea.hashtag_suggestions && idea.hashtag_suggestions.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {idea.hashtag_suggestions.slice(0, 3).map((tag, i) => (
+                            <span key={i} className="text-xs text-primary">#{tag}</span>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {researchResults.warning && (
+                <Card className="bg-destructive/5 border-destructive/20">
+                  <CardContent className="p-4">
+                    <p className="text-sm">
+                      <span className="font-semibold">⚠️ Achtung: </span>
+                      {researchResults.warning}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <Button 
+                  onClick={handleSaveIdeasAsDrafts}
+                  disabled={selectedIdeas.size === 0 || saving}
+                  className="flex-1"
+                >
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileText className="mr-2 h-4 w-4" />
+                  )}
+                  {selectedIdeas.size} Ideen als Entwürfe speichern
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => setWizardStep('options')}
+                >
+                  Zurück
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog (for existing topics) */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
