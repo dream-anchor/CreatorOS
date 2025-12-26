@@ -18,7 +18,9 @@ import {
   FolderOpen,
   Tag,
   X,
+  Sparkles,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -35,6 +37,8 @@ interface MediaAsset {
   used_count: number;
   last_used_at: string | null;
   created_at: string;
+  is_reference: boolean | null;
+  is_selfie: boolean | null;
 }
 
 const SUGGESTED_TAGS = [
@@ -74,6 +78,7 @@ export default function MediaArchivePage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [togglingReference, setTogglingReference] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) loadAssets();
@@ -198,6 +203,26 @@ export default function MediaArchivePage() {
       toast.error("Löschen fehlgeschlagen: " + error.message);
     } finally {
       setDeleting(null);
+    }
+  };
+
+  const handleToggleReference = async (asset: MediaAsset) => {
+    setTogglingReference(asset.id);
+    try {
+      const newValue = !asset.is_reference;
+      const { error } = await supabase
+        .from("media_assets")
+        .update({ is_reference: newValue })
+        .eq("id", asset.id);
+      
+      if (error) throw error;
+      
+      toast.success(newValue ? "Als AI-Referenz markiert" : "Referenz-Markierung entfernt");
+      loadAssets();
+    } catch (error: any) {
+      toast.error("Fehler: " + error.message);
+    } finally {
+      setTogglingReference(null);
     }
   };
 
@@ -377,6 +402,40 @@ export default function MediaArchivePage() {
                   </div>
 
                   <div className="p-3 space-y-2">
+                    {/* Reference Toggle */}
+                    <div 
+                      className={cn(
+                        "flex items-center justify-between gap-2 p-2 rounded-lg transition-colors cursor-pointer",
+                        asset.is_reference 
+                          ? "bg-primary/10 border border-primary/30" 
+                          : "bg-muted/50 hover:bg-muted"
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleReference(asset);
+                      }}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className={cn(
+                          "h-3.5 w-3.5",
+                          asset.is_reference ? "text-primary" : "text-muted-foreground"
+                        )} />
+                        <span className={cn(
+                          "text-xs font-medium",
+                          asset.is_reference ? "text-primary" : "text-muted-foreground"
+                        )}>
+                          AI-Referenz
+                        </span>
+                      </div>
+                      <Switch
+                        checked={asset.is_reference || false}
+                        disabled={togglingReference === asset.id}
+                        onCheckedChange={() => handleToggleReference(asset)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="scale-75"
+                      />
+                    </div>
+
                     <div className="flex flex-wrap gap-1">
                       {asset.tags?.slice(0, 3).map(tag => (
                         <Badge key={tag} variant="secondary" className="text-xs">

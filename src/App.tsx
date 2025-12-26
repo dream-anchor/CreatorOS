@@ -17,7 +17,6 @@ import Settings from "./pages/Settings";
 import ContentLibrary from "./pages/ContentLibrary";
 import MediaArchive from "./pages/MediaArchive";
 import Community from "./pages/Community";
-import MyPhotos from "./pages/MyPhotos";
 import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 
@@ -42,7 +41,6 @@ const App = () => (
             <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
             <Route path="/library" element={<ProtectedRoute><ContentLibrary /></ProtectedRoute>} />
             <Route path="/media" element={<ProtectedRoute><MediaArchive /></ProtectedRoute>} />
-            <Route path="/my-photos" element={<ProtectedRoute><MyPhotos /></ProtectedRoute>} />
             <Route path="/community" element={<ProtectedRoute><Community /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
