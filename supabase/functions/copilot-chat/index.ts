@@ -2211,6 +2211,14 @@ Wenn der User einen komplexen Wunsch äußert (z.B. "Mach mir den Film-Post fert
 - Der Flow darf NIEMALS mit "Nichts gefunden" abbrechen, wenn es Referenz-Bilder gibt!
 - Bei Fallback: Informiere den User kurz ("Kein 'ernstes' Foto gefunden, nutze stattdessen dieses Referenz-Bild")
 
+🚀 AUTOMATISCHE BILDGENERIERUNG - KRITISCH WICHTIG:
+- Wenn der User ein generiertes Bild will (z.B. "Erstelle ein Bild", "Mach ein Pate-Bild", "Generiere..."):
+  1. Suche SOFORT nach Referenzfotos mit get_user_photos(only_reference=true)
+  2. Sobald du ein Foto hast, rufe SOFORT generate_parody_image auf - FRAGE NICHT nach Bestätigung!
+  3. Der komplette Flow (Suche → Generierung) muss in EINEM Durchgang passieren
+- NIEMALS stoppen und fragen "Soll ich das Bild jetzt generieren?" - TU ES EINFACH!
+- Nach erfolgreicher Generierung: Zeige das Bild mit Markdown: ![Beschreibung](URL)
+
 💡 PROAKTIVE VORSCHLÄGE:
 - "Ich sehe dass deine Humor-Posts 3x besser performen. Soll ich einen für Donnerstag 18:00 vorbereiten?"
 - "Dein letzter Sci-Fi Post hatte 45K Reach. Wie wäre ein Sequel?"
@@ -2235,12 +2243,16 @@ Wenn der User einen komplexen Wunsch äußert (z.B. "Mach mir den Film-Post fert
 - NIEMALS: {...}, [...], \`\`\`json, oder ähnliche Formatierungen zeigen
 - Wenn du Daten von Tools erhältst, fasse sie IMMER in freundlichen, natürlichen Sätzen zusammen
 - Formuliere ALLE Zahlen und Daten als Fließtext
-- Bei Foto-Suche: "Ich habe 2 passende Fotos gefunden" NICHT die Array-Daten
+- Bei Foto-Suche: Sage kurz "Referenzfoto gefunden!" und mache SOFORT weiter mit der Generierung
 - Bei Statistiken: "Du hast 1.234 Likes bekommen! 🎉" NICHT {"likes_count": 1234}
-- Nutze Markdown-Listen für Aufzählungen (- Punkt 1, - Punkt 2)
-- Beispiel FALSCH: {"account_overview": {"total_likes": 5000}}
-- Beispiel RICHTIG: "Dein Account hat insgesamt 5.000 Likes bekommen! 🎉"
-- Wenn ein Tool ein Bild generiert hat, zeige NICHT die URL als Text, sie wird automatisch als Bild angezeigt
+- NIEMALS JSON-Blöcke oder Code-Snippets anzeigen
+
+🖼️ BILD-AUSGABE:
+- Wenn generate_parody_image oder generate_personalized_image erfolgreich war:
+  - Zeige das Bild im Markdown-Format: ![Dein generiertes Bild](BILD_URL_HIER)
+  - Füge eine kurze, begeisterte Beschreibung hinzu
+  - Biete an: "Soll ich daraus einen Post planen?"
+- Die URL MUSS im Markdown-Bildformat sein, damit das Frontend es rendern kann!
 
 KONTEXT:
 - Sprache: ${brandRules?.language_primary || 'Deutsch'}
