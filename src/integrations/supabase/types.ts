@@ -151,6 +151,84 @@ export type Database = {
         }
         Relationships: []
       }
+      content_plan: {
+        Row: {
+          ai_model_used: string | null
+          concept_note: string | null
+          content_type: string | null
+          converted_to_post_id: string | null
+          created_at: string
+          feedback_notes: string | null
+          generated_caption: string | null
+          generated_image_prompt: string | null
+          generated_image_url: string | null
+          generation_attempts: number | null
+          id: string
+          scheduled_for: string | null
+          source_media_id: string | null
+          status: string
+          target_audience: string | null
+          topic_keywords: string[] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_model_used?: string | null
+          concept_note?: string | null
+          content_type?: string | null
+          converted_to_post_id?: string | null
+          created_at?: string
+          feedback_notes?: string | null
+          generated_caption?: string | null
+          generated_image_prompt?: string | null
+          generated_image_url?: string | null
+          generation_attempts?: number | null
+          id?: string
+          scheduled_for?: string | null
+          source_media_id?: string | null
+          status?: string
+          target_audience?: string | null
+          topic_keywords?: string[] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_model_used?: string | null
+          concept_note?: string | null
+          content_type?: string | null
+          converted_to_post_id?: string | null
+          created_at?: string
+          feedback_notes?: string | null
+          generated_caption?: string | null
+          generated_image_prompt?: string | null
+          generated_image_url?: string | null
+          generation_attempts?: number | null
+          id?: string
+          scheduled_for?: string | null
+          source_media_id?: string | null
+          status?: string
+          target_audience?: string | null
+          topic_keywords?: string[] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_plan_converted_to_post_id_fkey"
+            columns: ["converted_to_post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_plan_source_media_id_fkey"
+            columns: ["source_media_id"]
+            isOneToOne: false
+            referencedRelation: "media_assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_snippets: {
         Row: {
           category: string | null
@@ -391,10 +469,12 @@ export type Database = {
       }
       media_assets: {
         Row: {
+          ai_usable: boolean | null
           created_at: string
           description: string | null
           filename: string | null
           id: string
+          is_selfie: boolean | null
           last_used_at: string | null
           mood: string | null
           public_url: string | null
@@ -405,10 +485,12 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          ai_usable?: boolean | null
           created_at?: string
           description?: string | null
           filename?: string | null
           id?: string
+          is_selfie?: boolean | null
           last_used_at?: string | null
           mood?: string | null
           public_url?: string | null
@@ -419,10 +501,12 @@ export type Database = {
           user_id: string
         }
         Update: {
+          ai_usable?: boolean | null
           created_at?: string
           description?: string | null
           filename?: string | null
           id?: string
+          is_selfie?: boolean | null
           last_used_at?: string | null
           mood?: string | null
           public_url?: string | null
