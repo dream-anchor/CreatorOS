@@ -199,7 +199,7 @@ export function SyncCockpit({ userId }: SyncCockpitProps) {
           <CardContent>
             <span className="font-semibold text-foreground">
               {autoSyncEnabled 
-                ? "Beim nächsten App-Start" 
+                ? "Beim nächsten Login"
                 : "Pausiert"
               }
             </span>
@@ -218,7 +218,7 @@ export function SyncCockpit({ userId }: SyncCockpitProps) {
                   Automatischer Import
                 </Label>
                 <p className="text-sm text-muted-foreground">
-                  Synchronisiert neue Posts bei jedem App-Start
+                  Checkt neue Instagram-Daten bei jedem Login in dieses Studio
                 </p>
               </div>
               <Switch
