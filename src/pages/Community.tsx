@@ -19,6 +19,7 @@ import { CommentWithContext } from "@/components/community/CommentCard";
 import { RulesConfigPanel } from "@/components/community/RulesConfigPanel";
 import { PostCard } from "@/components/community/PostCard";
 import { ActionBar } from "@/components/community/ActionBar";
+import { AiModelSelector } from "@/components/community/AiModelSelector";
 
 interface BlacklistTopic {
   id: string;
@@ -51,6 +52,7 @@ export default function Community() {
   const [emojiNogoTerms, setEmojiNogoTerms] = useState<EmojiNogoTerm[]>([]);
   const [smartStrategy, setSmartStrategy] = useState<SmartStrategy>(null);
   const [sanitizingComments, setSanitizingComments] = useState<Set<string>>(new Set());
+  const [selectedAiModel, setSelectedAiModel] = useState("google/gemini-2.5-flash");
 
   // Group comments by their parent post
   const postGroups = useMemo((): PostGroup[] => {
@@ -128,30 +130,48 @@ export default function Community() {
     // Get blacklist for filtering
     const blacklistLower = (topics || []).map((t) => t.topic.toLowerCase());
 
-    // Load comments with post context - filter blacklist already here
+    // Load comments
     const { data: allComments } = await supabase
       .from("instagram_comments")
-      .select(
-        `
-        *,
-        posts:post_id (
-          caption,
-          original_media_url,
-          original_ig_permalink,
-          ig_media_id,
-          published_at
-        )
-      `
-      )
+      .select("*")
       .eq("is_replied", false)
       .eq("is_hidden", false)
       .order("comment_timestamp", { ascending: false });
+
+    // Load all posts to join by ig_media_id
+    const { data: allPosts } = await supabase
+      .from("posts")
+      .select("id, caption, original_media_url, original_ig_permalink, ig_media_id, published_at");
+
+    // Create a map of ig_media_id -> post data for quick lookup
+    const postMap = new Map<string, {
+      id: string;
+      caption: string | null;
+      original_media_url: string | null;
+      original_ig_permalink: string | null;
+      published_at: string | null;
+    }>();
+
+    if (allPosts) {
+      allPosts.forEach((post) => {
+        if (post.ig_media_id) {
+          postMap.set(post.ig_media_id, {
+            id: post.id,
+            caption: post.caption,
+            original_media_url: post.original_media_url,
+            original_ig_permalink: post.original_ig_permalink,
+            published_at: post.published_at,
+          });
+        }
+      });
+    }
 
     if (allComments) {
       // Filter out comments containing blacklisted topics in comment OR caption
       const filteredComments = allComments.filter((c) => {
         const commentLower = c.comment_text.toLowerCase();
-        const captionLower = (c.posts?.caption || "").toLowerCase();
+        const postData = postMap.get(c.ig_media_id);
+        const captionLower = (postData?.caption || "").toLowerCase();
 
         // Check if any blacklist topic is in comment or caption
         const isBlacklisted = blacklistLower.some(
@@ -162,16 +182,19 @@ export default function Community() {
       });
 
       // Map to our interface with post context - default selected to TRUE (toggle on)
-      const mappedComments: CommentWithContext[] = filteredComments.map((c) => ({
-        ...c,
-        post_caption: c.posts?.caption || null,
-        post_image_url: c.posts?.original_media_url || null,
-        post_permalink: c.posts?.original_ig_permalink || null,
-        post_published_at: c.posts?.published_at || null,
-        selected: !c.is_critical && !!c.ai_reply_suggestion, // Default ON if has reply
-        editedReply: c.ai_reply_suggestion || "",
-        approved: false,
-      }));
+      const mappedComments: CommentWithContext[] = filteredComments.map((c) => {
+        const postData = postMap.get(c.ig_media_id);
+        return {
+          ...c,
+          post_caption: postData?.caption || null,
+          post_image_url: postData?.original_media_url || null,
+          post_permalink: postData?.original_ig_permalink || null,
+          post_published_at: postData?.published_at || null,
+          selected: !c.is_critical && !!c.ai_reply_suggestion, // Default ON if has reply
+          editedReply: c.ai_reply_suggestion || "",
+          approved: false,
+        };
+      });
 
       const critical = mappedComments.filter((c) => c.is_critical);
       const normal = mappedComments.filter((c) => !c.is_critical);
@@ -350,7 +373,7 @@ export default function Community() {
     for (const comment of violatingComments) {
       try {
         const { data, error } = await supabase.functions.invoke("regenerate-reply", {
-          body: { comment_id: comment.id },
+          body: { comment_id: comment.id, model: selectedAiModel },
         });
 
         if (!error && data?.new_reply) {
@@ -561,15 +584,23 @@ export default function Community() {
       description="Engagement-Zentrale für deine Instagram-Fans"
     >
       <div className="space-y-6 pb-28">
-        {/* Rules Configuration Panel */}
-        <RulesConfigPanel
-          emojiNogoTerms={emojiNogoTerms}
-          blacklistTopics={blacklistTopics}
-          onAddEmojiNogoTerms={addEmojiNogoTerms}
-          onRemoveEmojiNogoTerm={removeEmojiNogoTerm}
-          onAddBlacklistTopics={addBlacklistTopics}
-          onRemoveBlacklistTopic={removeBlacklistTopic}
-        />
+        {/* Header Controls */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex-1">
+            <RulesConfigPanel
+              emojiNogoTerms={emojiNogoTerms}
+              blacklistTopics={blacklistTopics}
+              onAddEmojiNogoTerms={addEmojiNogoTerms}
+              onRemoveEmojiNogoTerm={removeEmojiNogoTerm}
+              onAddBlacklistTopics={addBlacklistTopics}
+              onRemoveBlacklistTopic={removeBlacklistTopic}
+            />
+          </div>
+          <AiModelSelector
+            selectedModel={selectedAiModel}
+            onModelChange={setSelectedAiModel}
+          />
+        </div>
 
         {/* Fetch Button & Stats */}
         <div className="flex items-center justify-between p-4 rounded-xl bg-card border">
