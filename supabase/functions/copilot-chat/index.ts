@@ -1980,15 +1980,55 @@ Du:
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      console.error('[copilot] AI error:', errorText);
-      throw new Error('AI request failed');
+      console.error('[copilot] AI error:', aiResponse.status, errorText);
+      
+      // Handle rate limits
+      if (aiResponse.status === 429) {
+        return new Response(JSON.stringify({ 
+          message: "🚫 Ich bin gerade überlastet. Bitte warte kurz und versuche es nochmal.",
+          error: "rate_limit",
+          tool_results: []
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      // Handle payment required
+      if (aiResponse.status === 402) {
+        return new Response(JSON.stringify({ 
+          message: "💳 Die AI-Credits sind aufgebraucht. Bitte lade dein Konto auf.",
+          error: "payment_required",
+          tool_results: []
+        }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      // Generic error - don't fail silently
+      return new Response(JSON.stringify({ 
+        message: `❌ Es gab einen technischen Fehler bei der AI-Anfrage (Status ${aiResponse.status}). Bitte versuche es nochmal.`,
+        error: errorText,
+        tool_results: []
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const aiData = await aiResponse.json();
     const assistantMessage = aiData.choices?.[0]?.message;
 
     if (!assistantMessage) {
-      throw new Error('No response from AI');
+      console.error('[copilot] No message in AI response:', JSON.stringify(aiData).substring(0, 500));
+      return new Response(JSON.stringify({ 
+        message: "❓ Ich konnte keine Antwort generieren. Bitte formuliere deine Anfrage anders.",
+        error: "no_response",
+        tool_results: []
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Check if the AI wants to use tools
@@ -1999,56 +2039,79 @@ Du:
       
       for (const toolCall of assistantMessage.tool_calls) {
         const funcName = toolCall.function.name;
-        const params = JSON.parse(toolCall.function.arguments || '{}');
+        let params: any = {};
         
-        console.log(`[copilot] Executing tool: ${funcName}`, params);
+        // Safely parse parameters
+        try {
+          params = JSON.parse(toolCall.function.arguments || '{}');
+        } catch (parseError) {
+          console.error(`[copilot] Failed to parse params for ${funcName}:`, parseError);
+          toolResults.push({
+            tool_call_id: toolCall.id,
+            function_name: funcName,
+            result: { error: `Fehler beim Parsen der Parameter: ${parseError instanceof Error ? parseError.message : 'Unbekannt'}` }
+          });
+          continue;
+        }
+        
+        console.log(`[copilot] Executing tool: ${funcName}`, JSON.stringify(params).substring(0, 200));
         
         let result;
-        switch (funcName) {
-          case 'search_posts':
-            result = await executeSearchPosts(supabase, user.id, params);
-            break;
-          case 'analyze_sentiment':
-            result = await executeAnalyzeSentiment(supabase, user.id, params);
-            break;
-          case 'draft_reply':
-            result = await executeDraftReply(supabase, user.id, params, brandRules);
-            break;
-          case 'get_open_comments':
-            result = await executeGetOpenComments(supabase, user.id, params);
-            break;
-          case 'analyze_data':
-            result = await executeAnalyzeData(supabase, user.id, params);
-            break;
-          case 'get_account_summary':
-            result = await executeGetAccountSummary(supabase, user.id, params);
-            break;
-          case 'analyze_growth':
-            result = await executeAnalyzeGrowth(supabase, user.id, params);
-            break;
-          case 'trigger_insights_tracking':
-            result = await executeTriggerInsightsTracking(supabase, user.id, authHeader.replace("Bearer ", ""));
-            break;
-          case 'analyze_content_categories':
-            result = await executeAnalyzeContentCategories(supabase, user.id, params);
-            break;
-          case 'classify_posts_batch':
-            result = await executeClassifyPostsBatch(supabase, user.id, authHeader.replace("Bearer ", ""), params);
-            break;
-          case 'generate_personalized_image':
-            result = await executeGeneratePersonalizedImage(supabase, user.id, params);
-            break;
-          case 'analyze_best_time':
-            result = await executeAnalyzeBestTime(supabase, user.id, params);
-            break;
-          case 'plan_post':
-            result = await executePlanPost(supabase, user.id, params);
-            break;
-          case 'get_user_photos':
-            result = await executeGetUserPhotos(supabase, user.id, params);
-            break;
-          default:
-            result = { error: `Unknown tool: ${funcName}` };
+        try {
+          switch (funcName) {
+            case 'search_posts':
+              result = await executeSearchPosts(supabase, user.id, params);
+              break;
+            case 'analyze_sentiment':
+              result = await executeAnalyzeSentiment(supabase, user.id, params);
+              break;
+            case 'draft_reply':
+              result = await executeDraftReply(supabase, user.id, params, brandRules);
+              break;
+            case 'get_open_comments':
+              result = await executeGetOpenComments(supabase, user.id, params);
+              break;
+            case 'analyze_data':
+              result = await executeAnalyzeData(supabase, user.id, params);
+              break;
+            case 'get_account_summary':
+              result = await executeGetAccountSummary(supabase, user.id, params);
+              break;
+            case 'analyze_growth':
+              result = await executeAnalyzeGrowth(supabase, user.id, params);
+              break;
+            case 'trigger_insights_tracking':
+              result = await executeTriggerInsightsTracking(supabase, user.id, authHeader.replace("Bearer ", ""));
+              break;
+            case 'analyze_content_categories':
+              result = await executeAnalyzeContentCategories(supabase, user.id, params);
+              break;
+            case 'classify_posts_batch':
+              result = await executeClassifyPostsBatch(supabase, user.id, authHeader.replace("Bearer ", ""), params);
+              break;
+            case 'generate_personalized_image':
+              result = await executeGeneratePersonalizedImage(supabase, user.id, params);
+              break;
+            case 'analyze_best_time':
+              result = await executeAnalyzeBestTime(supabase, user.id, params);
+              break;
+            case 'plan_post':
+              result = await executePlanPost(supabase, user.id, params);
+              break;
+            case 'get_user_photos':
+              result = await executeGetUserPhotos(supabase, user.id, params);
+              break;
+            default:
+              result = { error: `Unbekanntes Tool: ${funcName}` };
+          }
+          
+          console.log(`[copilot] Tool ${funcName} completed successfully`);
+        } catch (toolError) {
+          console.error(`[copilot] Tool ${funcName} failed:`, toolError);
+          result = { 
+            error: `Tool-Fehler bei ${funcName}: ${toolError instanceof Error ? toolError.message : 'Unbekannter Fehler'}`,
+            details: toolError instanceof Error ? toolError.stack : undefined
+          };
         }
         
         toolResults.push({
@@ -2109,9 +2172,18 @@ Du:
     });
 
   } catch (error) {
-    console.error("[copilot] Error:", error);
+    console.error("[copilot] Unhandled error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unbekannter Fehler";
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    console.error("[copilot] Error details:", { message: errorMessage, stack: errorStack });
+    
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      JSON.stringify({ 
+        message: `❌ Es ist ein Fehler aufgetreten: ${errorMessage}. Bitte versuche es nochmal oder formuliere deine Anfrage anders.`,
+        error: errorMessage,
+        tool_results: []
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

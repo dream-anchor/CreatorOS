@@ -74,25 +74,42 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
         body: { messages: messageHistory },
       });
 
-      if (error) throw error;
+      // Handle function invoke errors
+      if (error) {
+        console.error("CoPilot invoke error:", error);
+        throw new Error(error.message || "Verbindungsfehler");
+      }
+
+      // Check if response contains an error message from the edge function
+      if (data?.error && !data?.message) {
+        throw new Error(data.error);
+      }
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: data.message,
-        toolResults: data.tool_results,
+        content: data?.message || "Ich konnte keine Antwort generieren.",
+        toolResults: data?.tool_results || [],
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      
+      // Show toast for specific errors
+      if (data?.error === "rate_limit") {
+        toast.warning("Rate-Limit erreicht. Warte kurz und versuche es nochmal.");
+      } else if (data?.error === "payment_required") {
+        toast.error("AI-Credits aufgebraucht. Bitte Konto aufladen.");
+      }
     } catch (error) {
       console.error("CoPilot error:", error);
-      toast.error("Fehler beim Senden der Nachricht");
+      const errorMsg = error instanceof Error ? error.message : "Unbekannter Fehler";
+      toast.error(`Fehler: ${errorMsg}`);
       
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "Entschuldige, es gab einen Fehler. Bitte versuche es erneut.",
+        content: `❌ Es gab einen Fehler: ${errorMsg}. Bitte versuche es erneut oder formuliere deine Anfrage anders.`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
