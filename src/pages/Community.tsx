@@ -12,7 +12,7 @@ import {
   EyeOff,
   Ban,
   Trash2,
-  Check,
+  Check as CheckIcon,
 } from "lucide-react";
 import { format, formatDistanceToNow, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
@@ -811,7 +811,7 @@ export default function Community() {
                         className="h-8 px-2 gap-1 text-xs border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600"
                         onClick={() => rehabilitateComment(comment)}
                       >
-                        <Check className="h-3.5 w-3.5" />
+                        <CheckIcon className="h-3.5 w-3.5" />
                         <span className="hidden sm:inline">Ist okay</span>
                       </Button>
                       <Button
