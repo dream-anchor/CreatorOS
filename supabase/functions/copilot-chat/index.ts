@@ -322,7 +322,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "get_user_photos",
-      description: "Holt alle verfügbaren Fotos aus der User-Bibliothek (media_assets). NUTZE DIES um ein passendes Referenzfoto für die Bildgenerierung zu finden.",
+      description: "Holt Fotos aus der User-Bibliothek (media_assets) mit KI-Analyse. Bilder werden automatisch von der KI getaggt und bewertet. NUTZE DIES um ein passendes Referenzfoto für die Bildgenerierung zu finden.",
       parameters: {
         type: "object",
         properties: {
@@ -332,12 +332,16 @@ const TOOLS = [
           },
           only_reference: {
             type: "boolean",
-            description: "Nur Referenz-Fotos (is_reference=true) - Das sind die besten Fotos von Antoine für Montagen"
+            description: "Nur von der KI als 'gute Referenz' bewertete Fotos (is_good_reference=true) - automatisch erkannt, keine manuelle Markierung nötig"
           },
           tags: {
             type: "array",
             items: { type: "string" },
-            description: "Filter nach Tags (z.B. ['Business', 'Lustig'])"
+            description: "Filter nach Tags - sucht in manuellen UND KI-generierten Tags (z.B. ['ernst', 'professionell', 'outdoor'])"
+          },
+          mood_filter: {
+            type: "string",
+            description: "Filter nach Stimmung aus der KI-Analyse (z.B. 'ernst', 'fröhlich', 'nachdenklich', 'cool', 'dramatisch')"
           },
           limit: {
             type: "number",
@@ -1794,16 +1798,16 @@ async function executePlanPost(supabase: any, userId: string, params: any) {
   }
 }
 
-// Tool: Get user photos from media library (with fallback logic)
+// Tool: Get user photos from media library (with AI analysis support)
 async function executeGetUserPhotos(supabase: any, userId: string, params: any) {
-  const { only_selfies = false, only_reference = false, tags, limit = 10 } = params;
+  const { only_selfies = false, only_reference = false, tags, mood_filter, limit = 10 } = params;
 
-  console.log(`[copilot] Getting user photos, selfies_only: ${only_selfies}, reference_only: ${only_reference}, tags: ${JSON.stringify(tags)}`);
+  console.log(`[copilot] Getting user photos, selfies_only: ${only_selfies}, reference_only: ${only_reference}, tags: ${JSON.stringify(tags)}, mood: ${mood_filter}`);
 
-  // Base query
+  // Base query - include AI analysis fields
   let query = supabase
     .from('media_assets')
-    .select('id, public_url, description, tags, mood, is_selfie, is_reference, ai_usable, created_at')
+    .select('id, public_url, description, tags, mood, is_selfie, is_reference, ai_usable, created_at, ai_tags, ai_description, analyzed, is_good_reference')
     .eq('user_id', userId)
     .eq('ai_usable', true)
     .order('created_at', { ascending: false });
@@ -1812,11 +1816,12 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
     query = query.eq('is_selfie', true);
   }
 
+  // Use is_good_reference from AI analysis instead of manual is_reference
   if (only_reference) {
-    query = query.eq('is_reference', true);
+    query = query.eq('is_good_reference', true);
   }
 
-  const { data: photos, error } = await query.limit(limit);
+  const { data: photos, error } = await query.limit(limit * 2); // Get more to filter
 
   if (error) {
     console.error('[copilot] Get user photos error:', error);
@@ -1826,67 +1831,89 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
   if (!photos || photos.length === 0) {
     return {
       error: only_reference ? 'Keine Referenz-Fotos gefunden' : 'Keine Fotos gefunden',
-      suggestion: only_reference 
-        ? 'Markiere Fotos unter "Meine Bilder" als "AI-Referenz", um sie für Montagen zu nutzen.'
-        : 'Lade Fotos unter "Meine Bilder" hoch, um sie für die Bildgenerierung zu nutzen.'
+      suggestion: 'Lade Fotos unter "Meine Bilder" hoch und starte die KI-Analyse.'
     };
   }
 
-  // Filter by tags if specified
+  // Filter by tags (check both manual tags and AI tags)
   let filteredPhotos = photos;
   let usedFallback = false;
   let searchedTags: string[] = [];
 
   if (tags && Array.isArray(tags) && tags.length > 0) {
-    searchedTags = tags;
+    searchedTags = tags.map((t: string) => t.toLowerCase());
+    
     filteredPhotos = photos.filter((p: any) => {
-      const photoTags = (p.tags || []).map((t: string) => t.toLowerCase());
-      return tags.some((tag: string) => photoTags.includes(tag.toLowerCase()));
+      const manualTags = (p.tags || []).map((t: string) => t.toLowerCase());
+      const aiTags = (p.ai_tags || []).map((t: string) => t.toLowerCase());
+      const allTags = [...manualTags, ...aiTags];
+      
+      // Also check AI description for semantic matching
+      const description = (p.ai_description || '').toLowerCase();
+      
+      return searchedTags.some((tag: string) => 
+        allTags.includes(tag) || 
+        allTags.some(t => t.includes(tag) || tag.includes(t)) ||
+        description.includes(tag)
+      );
     });
 
-    // FALLBACK LOGIC: If tag filter returns 0 results, show all reference images instead
+    // FALLBACK LOGIC: If tag filter returns 0 results, use AI-analyzed good references
     if (filteredPhotos.length === 0) {
-      console.log(`[copilot] No photos found with tags [${tags.join(', ')}], falling back to all reference images`);
+      console.log(`[copilot] No photos found with tags [${tags.join(', ')}], falling back to good references`);
       
-      // Get all reference images as fallback
-      const { data: referencePhotos } = await supabase
-        .from('media_assets')
-        .select('id, public_url, description, tags, mood, is_selfie, is_reference, ai_usable, created_at')
-        .eq('user_id', userId)
-        .eq('ai_usable', true)
-        .eq('is_reference', true)
-        .order('created_at', { ascending: false })
-        .limit(limit);
-
-      if (referencePhotos && referencePhotos.length > 0) {
-        filteredPhotos = referencePhotos;
+      // Get all AI-analyzed good references as fallback
+      const goodRefs = photos.filter((p: any) => p.is_good_reference === true);
+      
+      if (goodRefs.length > 0) {
+        filteredPhotos = goodRefs;
         usedFallback = true;
       } else {
-        // Last resort: just use any available photos
-        filteredPhotos = photos;
+        // Last resort: just use any analyzed photos
+        const analyzedPhotos = photos.filter((p: any) => p.analyzed === true);
+        filteredPhotos = analyzedPhotos.length > 0 ? analyzedPhotos : photos;
         usedFallback = true;
       }
     }
   }
+
+  // If mood_filter specified, also try to match
+  if (mood_filter && filteredPhotos.length > 0) {
+    const moodLower = mood_filter.toLowerCase();
+    const moodMatches = filteredPhotos.filter((p: any) => {
+      const aiTags = (p.ai_tags || []).map((t: string) => t.toLowerCase());
+      const description = (p.ai_description || '').toLowerCase();
+      return aiTags.includes(moodLower) || description.includes(moodLower);
+    });
+    
+    if (moodMatches.length > 0) {
+      filteredPhotos = moodMatches;
+    }
+  }
+
+  // Limit results
+  filteredPhotos = filteredPhotos.slice(0, limit);
 
   const result: any = {
     total: filteredPhotos.length,
     photos: filteredPhotos.map((p: any) => ({
       id: p.id,
       url: p.public_url,
-      description: p.description,
-      tags: p.tags || [],
+      description: p.ai_description || p.description,
+      tags: [...(p.tags || []), ...(p.ai_tags || [])],
       mood: p.mood,
       is_selfie: p.is_selfie,
-      is_reference: p.is_reference
+      is_good_reference: p.is_good_reference,
+      analyzed: p.analyzed
     })),
     selfie_count: filteredPhotos.filter((p: any) => p.is_selfie).length,
-    reference_count: filteredPhotos.filter((p: any) => p.is_reference).length
+    reference_count: filteredPhotos.filter((p: any) => p.is_good_reference).length,
+    analyzed_count: filteredPhotos.filter((p: any) => p.analyzed).length
   };
 
   // Add warning if fallback was used
   if (usedFallback && searchedTags.length > 0) {
-    result.warning = `Keine Fotos mit den Tags [${searchedTags.join(', ')}] gefunden. Zeige stattdessen ${result.reference_count > 0 ? 'alle Referenz-Bilder' : 'alle verfügbaren Bilder'}.`;
+    result.warning = `Keine Fotos mit den Tags [${searchedTags.join(', ')}] gefunden. Zeige stattdessen ${result.reference_count > 0 ? 'beste Referenz-Bilder (von KI analysiert)' : 'alle verfügbaren Bilder'}.`;
     result.fallback_used = true;
   }
 

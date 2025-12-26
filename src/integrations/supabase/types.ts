@@ -469,11 +469,15 @@ export type Database = {
       }
       media_assets: {
         Row: {
+          ai_description: string | null
+          ai_tags: string[] | null
           ai_usable: boolean | null
+          analyzed: boolean | null
           created_at: string
           description: string | null
           filename: string | null
           id: string
+          is_good_reference: boolean | null
           is_reference: boolean | null
           is_selfie: boolean | null
           last_used_at: string | null
@@ -486,11 +490,15 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          ai_description?: string | null
+          ai_tags?: string[] | null
           ai_usable?: boolean | null
+          analyzed?: boolean | null
           created_at?: string
           description?: string | null
           filename?: string | null
           id?: string
+          is_good_reference?: boolean | null
           is_reference?: boolean | null
           is_selfie?: boolean | null
           last_used_at?: string | null
@@ -503,11 +511,15 @@ export type Database = {
           user_id: string
         }
         Update: {
+          ai_description?: string | null
+          ai_tags?: string[] | null
           ai_usable?: boolean | null
+          analyzed?: boolean | null
           created_at?: string
           description?: string | null
           filename?: string | null
           id?: string
+          is_good_reference?: boolean | null
           is_reference?: boolean | null
           is_selfie?: boolean | null
           last_used_at?: string | null
