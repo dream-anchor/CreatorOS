@@ -1,5 +1,5 @@
 export type PostStatus = 'IDEA' | 'DRAFT' | 'READY_FOR_REVIEW' | 'APPROVED' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED' | 'REJECTED';
-export type PostFormat = 'single';
+export type PostFormat = 'single' | 'carousel';
 export type AssetSource = 'upload' | 'generate';
 export type UserRole = 'owner' | 'editor' | 'reviewer';
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -64,16 +64,36 @@ export interface Post {
   hashtags: string | null;
   alt_text: string | null;
   format: PostFormat;
+  slides: SlideContent[] | Record<string, unknown>[] | null;
   scheduled_at: string | null;
   approved_at: string | null;
   approved_by: string | null;
   published_at: string | null;
   ig_media_id: string | null;
   error_message: string | null;
+  slides: SlideContent[] | null;
+  // Engagement metrics
+  likes_count: number;
+  comments_count: number;
+  saved_count: number;
+  impressions_count: number;
+  is_imported: boolean;
+  original_ig_permalink: string | null;
+  original_media_url: string | null;
+  // Remix tracking
+  remixed_from_id: string | null;
+  remix_reason: string | null;
   created_at: string;
   updated_at: string;
   topic?: Topic;
   assets?: Asset[];
+}
+
+export interface SlideContent {
+  slide_number: number;
+  type: 'hook' | 'content' | 'cta';
+  headline: string;
+  body: string;
 }
 
 export interface Asset {
@@ -130,5 +150,21 @@ export interface DraftGenerationResult {
   hashtags: string;
   alt_text: string;
   asset_prompt: string;
-  format: 'single';
+  format: PostFormat;
+  slides?: SlideContent[];
+  suggested_tags?: string[];
+  mood?: string;
+}
+
+// For the Remix feature
+export interface TopPerformingPost extends Post {
+  virality_score: number;
+  performance_label: 'high_engagement' | 'discussion_starter' | 'viral_hit' | 'unicorn';
+}
+
+export interface RemasterResult extends DraftGenerationResult {
+  original_analysis: string;
+  format_flip_reason: string | null;
+  new_hooks: string[];
+  reuse_original_image: boolean;
 }

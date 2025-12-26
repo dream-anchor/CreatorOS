@@ -5,13 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Topic, Post, DraftGenerationResult } from "@/types/database";
+import { Topic, Post, DraftGenerationResult, TopPerformingPost, RemasterResult } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Sparkles, Copy, Check, ImagePlus, Camera, Brain, Laugh, Heart, Lightbulb, Star, ArrowRight, ArrowLeft } from "lucide-react";
+import { 
+  Loader2, Sparkles, Copy, Check, ImagePlus, Camera, Brain, Laugh, Heart, 
+  Lightbulb, Star, ArrowRight, ArrowLeft, Recycle, TrendingUp, MessageSquare, 
+  Flame, BookmarkCheck, Eye, Zap
+} from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface PostType {
@@ -74,7 +78,8 @@ const POST_TYPES: PostType[] = [
   }
 ];
 
-type WizardStep = "type" | "topic" | "context" | "generate";
+type WizardStep = "mode" | "type" | "topic" | "context" | "generate" | "remix_select" | "remix_generate";
+type GeneratorMode = "new" | "remix";
 
 export default function GeneratorPage() {
   const { user } = useAuth();
@@ -84,12 +89,20 @@ export default function GeneratorPage() {
   const [draft, setDraft] = useState<DraftGenerationResult | null>(null);
   const [createdPost, setCreatedPost] = useState<Post | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [assetUrl, setAssetUrl] = useState<string | null>(null);
 
   // Wizard State
-  const [wizardStep, setWizardStep] = useState<WizardStep>("type");
+  const [wizardStep, setWizardStep] = useState<WizardStep>("mode");
+  const [generatorMode, setGeneratorMode] = useState<GeneratorMode | null>(null);
   const [selectedPostType, setSelectedPostType] = useState<string | null>(null);
   const [selectedTopicId, setSelectedTopicId] = useState<string>("");
   const [additionalContext, setAdditionalContext] = useState("");
+
+  // Remix State
+  const [remixCandidates, setRemixCandidates] = useState<TopPerformingPost[]>([]);
+  const [selectedRemixPost, setSelectedRemixPost] = useState<TopPerformingPost | null>(null);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [remixInfo, setRemixInfo] = useState<any>(null);
 
   useEffect(() => {
     if (user) loadTopics();
@@ -111,6 +124,26 @@ export default function GeneratorPage() {
     }
   };
 
+  const loadRemixCandidates = async () => {
+    setLoadingCandidates(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-draft", {
+        body: { get_remix_candidates: true },
+      });
+
+      if (error) throw error;
+      setRemixCandidates(data.candidates || []);
+      
+      if (data.candidates?.length === 0) {
+        toast.info("Keine importierten Posts gefunden. Importiere zuerst deine Instagram-Posts.");
+      }
+    } catch (error: any) {
+      toast.error("Fehler beim Laden: " + error.message);
+    } finally {
+      setLoadingCandidates(false);
+    }
+  };
+
   const handleGenerate = async () => {
     if (!selectedTopicId || !selectedPostType) {
       toast.error("Bitte wähle Typ und Thema");
@@ -120,6 +153,7 @@ export default function GeneratorPage() {
     setGenerating(true);
     setDraft(null);
     setCreatedPost(null);
+    setAssetUrl(null);
 
     try {
       const postType = POST_TYPES.find(t => t.id === selectedPostType);
@@ -137,9 +171,45 @@ export default function GeneratorPage() {
 
       setDraft(data.draft as DraftGenerationResult);
       setCreatedPost(data.post as Post);
+      setAssetUrl(data.asset_url);
       toast.success("Entwurf erfolgreich generiert!");
     } catch (error: any) {
       toast.error("Generierung fehlgeschlagen: " + error.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleRemixGenerate = async () => {
+    if (!selectedRemixPost) {
+      toast.error("Bitte wähle einen Post zum Remastern");
+      return;
+    }
+
+    setGenerating(true);
+    setDraft(null);
+    setCreatedPost(null);
+    setAssetUrl(null);
+    setRemixInfo(null);
+    setWizardStep("remix_generate");
+
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-draft", {
+        body: { 
+          remix_mode: true,
+          remix_post_id: selectedRemixPost.id
+        },
+      });
+
+      if (error) throw error;
+
+      setDraft(data.draft as DraftGenerationResult);
+      setCreatedPost(data.post as Post);
+      setAssetUrl(data.asset_url);
+      setRemixInfo(data.remix_info);
+      toast.success("Remaster erfolgreich erstellt!");
+    } catch (error: any) {
+      toast.error("Remaster fehlgeschlagen: " + error.message);
     } finally {
       setGenerating(false);
     }
@@ -152,21 +222,41 @@ export default function GeneratorPage() {
   };
 
   const resetWizard = () => {
-    setWizardStep("type");
+    setWizardStep("mode");
+    setGeneratorMode(null);
     setSelectedPostType(null);
     setSelectedTopicId("");
     setAdditionalContext("");
     setDraft(null);
     setCreatedPost(null);
+    setAssetUrl(null);
+    setSelectedRemixPost(null);
+    setRemixInfo(null);
+  };
+
+  const getPerformanceLabelDisplay = (label: string) => {
+    switch (label) {
+      case 'discussion_starter':
+        return { icon: <MessageSquare className="h-4 w-4" />, text: 'Diskussions-Starter', color: 'bg-blue-500/10 text-blue-500' };
+      case 'viral_hit':
+        return { icon: <Flame className="h-4 w-4" />, text: 'Viral Hit', color: 'bg-orange-500/10 text-orange-500' };
+      case 'high_value':
+        return { icon: <BookmarkCheck className="h-4 w-4" />, text: 'High Value', color: 'bg-purple-500/10 text-purple-500' };
+      default:
+        return { icon: <TrendingUp className="h-4 w-4" />, text: 'High Engagement', color: 'bg-green-500/10 text-green-500' };
+    }
   };
 
   const getStepNumber = () => {
     switch (wizardStep) {
+      case "mode": return 0;
       case "type": return 1;
       case "topic": return 2;
       case "context": return 3;
       case "generate": return 4;
-      default: return 1;
+      case "remix_select": return 1;
+      case "remix_generate": return 2;
+      default: return 0;
     }
   };
 
@@ -188,35 +278,190 @@ export default function GeneratorPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Wizard Section */}
         <div className="space-y-6">
-          {/* Progress Steps */}
-          <div className="flex items-center justify-between mb-4">
-            {["Typ", "Thema", "Kontext", "Generieren"].map((step, index) => (
-              <div key={step} className="flex items-center">
-                <div
-                  className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors",
-                    getStepNumber() > index + 1
-                      ? "bg-primary text-primary-foreground"
-                      : getStepNumber() === index + 1
-                      ? "bg-primary text-primary-foreground ring-4 ring-primary/20"
-                      : "bg-muted text-muted-foreground"
-                  )}
+          {/* Step 0: Mode Selection */}
+          {wizardStep === "mode" && (
+            <Card className="glass-card border-primary/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  Was möchtest du erstellen?
+                </CardTitle>
+                <CardDescription>
+                  Wähle zwischen neuem Content oder dem Remaster eines Erfolgs-Posts
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <button
+                  onClick={() => {
+                    setGeneratorMode("new");
+                    setWizardStep("type");
+                  }}
+                  className="w-full p-6 rounded-xl border-2 text-left transition-all hover:border-primary/50 hover:bg-primary/5 border-border"
                 >
-                  {index + 1}
-                </div>
-                {index < 3 && (
-                  <div
-                    className={cn(
-                      "w-12 lg:w-20 h-0.5 mx-1",
-                      getStepNumber() > index + 1 ? "bg-primary" : "bg-muted"
-                    )}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 rounded-xl bg-primary/10 text-primary">
+                      <Sparkles className="h-8 w-8" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-lg font-semibold">Neuer Post</h4>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Erstelle frischen Content basierend auf deinen Themen und Brand-Richtlinien
+                      </p>
+                    </div>
+                  </div>
+                </button>
 
-          {/* Step 1: Post Type Selection */}
+                <button
+                  onClick={() => {
+                    setGeneratorMode("remix");
+                    setWizardStep("remix_select");
+                    loadRemixCandidates();
+                  }}
+                  className="w-full p-6 rounded-xl border-2 text-left transition-all hover:border-primary/50 hover:bg-primary/5 border-border group"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 rounded-xl bg-gradient-to-br from-orange-500/10 to-pink-500/10 text-orange-500 group-hover:from-orange-500/20 group-hover:to-pink-500/20 transition-colors">
+                      <Recycle className="h-8 w-8" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-lg font-semibold">♻️ Alten Hit neu auflegen</h4>
+                        <Badge variant="secondary" className="text-xs">Remix</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Nimm deinen erfolgreichsten Content und transformiere ihn in ein neues Format
+                      </p>
+                      <div className="flex gap-2 mt-3">
+                        <span className="text-xs px-2 py-1 rounded-full bg-muted">Viralitäts-Score</span>
+                        <span className="text-xs px-2 py-1 rounded-full bg-muted">Format-Flip</span>
+                        <span className="text-xs px-2 py-1 rounded-full bg-muted">Hook-Update</span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Remix: Select Post */}
+          {wizardStep === "remix_select" && (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Recycle className="h-5 w-5 text-orange-500" />
+                  Wähle deinen Top-Performer
+                </CardTitle>
+                <CardDescription>
+                  Diese Posts haben die höchsten Viralitäts-Scores (Likes + Kommentare×3 + Saves×2)
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {loadingCandidates ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : remixCandidates.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Recycle className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>Keine importierten Posts gefunden.</p>
+                    <p className="text-sm mt-2">Importiere zuerst deine Instagram-Posts, um diese Funktion zu nutzen.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                    {remixCandidates.map((post) => {
+                      const labelInfo = getPerformanceLabelDisplay(post.performance_label);
+                      return (
+                        <button
+                          key={post.id}
+                          onClick={() => setSelectedRemixPost(post)}
+                          className={cn(
+                            "w-full p-4 rounded-xl border-2 text-left transition-all hover:border-primary/50",
+                            selectedRemixPost?.id === post.id
+                              ? "border-primary bg-primary/10"
+                              : "border-border hover:bg-muted/50"
+                          )}
+                        >
+                          <div className="flex items-start gap-3">
+                            {post.original_media_url && (
+                              <img 
+                                src={post.original_media_url} 
+                                alt="" 
+                                className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
+                              />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge className={cn("flex items-center gap-1", labelInfo.color)}>
+                                  {labelInfo.icon}
+                                  {labelInfo.text}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  Score: {post.virality_score.toFixed(0)}
+                                </span>
+                              </div>
+                              <p className="text-sm line-clamp-2">
+                                {post.caption?.substring(0, 100)}...
+                              </p>
+                              <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  <Heart className="h-3 w-3" /> {post.likes_count || 0}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <MessageSquare className="h-3 w-3" /> {post.comments_count || 0}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <BookmarkCheck className="h-3 w-3" /> {post.saved_count || 0}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setWizardStep("mode");
+                      setGeneratorMode(null);
+                    }}
+                    className="flex-1"
+                  >
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Zurück
+                  </Button>
+                  <Button
+                    onClick={handleRemixGenerate}
+                    disabled={!selectedRemixPost}
+                    className="flex-1 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600"
+                  >
+                    <Zap className="mr-2 h-4 w-4" />
+                    Remastern
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Remix: Generating */}
+          {wizardStep === "remix_generate" && !draft && (
+            <Card className="glass-card">
+              <CardContent className="py-12 text-center">
+                <Loader2 className="h-12 w-12 mx-auto mb-4 animate-spin text-orange-500" />
+                <p className="text-muted-foreground mb-2">
+                  KI analysiert und remastert deinen Top-Post...
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Format-Flip • Hook-Update • Vibe-Check
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Step 1: Post Type Selection (New Mode) */}
           {wizardStep === "type" && (
             <Card className="glass-card border-primary/20">
               <CardHeader>
@@ -257,6 +502,19 @@ export default function GeneratorPage() {
                       </div>
                     </button>
                   ))}
+                </div>
+                <div className="mt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setWizardStep("mode");
+                      setGeneratorMode(null);
+                    }}
+                    className="w-full"
+                  >
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Zurück zur Auswahl
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -340,7 +598,6 @@ export default function GeneratorPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Show selected post type structure */}
                 <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
                   <div className="flex items-center gap-2 mb-2">
                     {POST_TYPES.find(t => t.id === selectedPostType)?.icon}
@@ -416,7 +673,7 @@ export default function GeneratorPage() {
             </Button>
           )}
 
-          {topics.length === 0 && (
+          {topics.length === 0 && wizardStep !== "mode" && wizardStep !== "remix_select" && (
             <Card className="glass-card border-warning/50">
               <CardContent className="py-6 text-center">
                 <p className="text-muted-foreground">
@@ -432,6 +689,57 @@ export default function GeneratorPage() {
 
         {/* Output Section */}
         <div className="space-y-6">
+          {/* Remix Info Card */}
+          {remixInfo && (
+            <Card className="glass-card border-orange-500/30 bg-gradient-to-br from-orange-500/5 to-pink-500/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Recycle className="h-5 w-5 text-orange-500" />
+                  Remaster Analyse
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Warum war der Original-Post erfolgreich?</Label>
+                  <p className="text-sm mt-1">{remixInfo.original_analysis}</p>
+                </div>
+                {remixInfo.format_flip_reason && (
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Format-Änderung</Label>
+                    <p className="text-sm mt-1">{remixInfo.format_flip_reason}</p>
+                  </div>
+                )}
+                <div>
+                  <Label className="text-xs text-muted-foreground">Neue Hook-Optionen</Label>
+                  <div className="space-y-2 mt-2">
+                    {remixInfo.new_hooks?.map((hook: string, i: number) => (
+                      <div
+                        key={i}
+                        className="flex items-start gap-2 p-3 rounded-lg bg-background/50 border border-border"
+                      >
+                        <span className="text-xs text-orange-500 font-medium mt-0.5">
+                          {i + 1}.
+                        </span>
+                        <p className="text-sm flex-1">{hook}</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(hook, `remix_hook_${i}`)}
+                        >
+                          {copied === `remix_hook_${i}` ? (
+                            <Check className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {draft && createdPost && (
             <>
               <div className="flex items-center gap-3 mb-2">
@@ -440,6 +748,17 @@ export default function GeneratorPage() {
                   Post wurde erstellt und wartet auf Review
                 </span>
               </div>
+
+              {/* Image Preview */}
+              {assetUrl && (
+                <Card className="glass-card overflow-hidden">
+                  <img 
+                    src={assetUrl} 
+                    alt="Post Bild" 
+                    className="w-full aspect-square object-cover"
+                  />
+                </Card>
+              )}
 
               <Card className="glass-card">
                 <CardContent className="pt-6 space-y-4">
@@ -452,7 +771,7 @@ export default function GeneratorPage() {
                         onClick={() => copyToClipboard(draft.caption, "caption")}
                       >
                         {copied === "caption" ? (
-                          <Check className="h-4 w-4 text-success" />
+                          <Check className="h-4 w-4 text-green-500" />
                         ) : (
                           <Copy className="h-4 w-4" />
                         )}
@@ -474,7 +793,7 @@ export default function GeneratorPage() {
                         onClick={() => copyToClipboard(draft.hashtags, "hashtags")}
                       >
                         {copied === "hashtags" ? (
-                          <Check className="h-4 w-4 text-success" />
+                          <Check className="h-4 w-4 text-green-500" />
                         ) : (
                           <Copy className="h-4 w-4" />
                         )}
@@ -492,17 +811,19 @@ export default function GeneratorPage() {
                     </p>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Bild-Prompt (für Generierung)</Label>
-                    <div className="flex gap-2">
-                      <p className="flex-1 text-sm text-muted-foreground p-3 rounded-lg bg-muted/50 border border-border">
-                        {draft.asset_prompt}
-                      </p>
-                      <Button variant="outline" size="icon">
-                        <ImagePlus className="h-4 w-4" />
-                      </Button>
+                  {draft.asset_prompt && (
+                    <div className="space-y-2">
+                      <Label>Bild-Prompt (für Generierung)</Label>
+                      <div className="flex gap-2">
+                        <p className="flex-1 text-sm text-muted-foreground p-3 rounded-lg bg-muted/50 border border-border">
+                          {draft.asset_prompt}
+                        </p>
+                        <Button variant="outline" size="icon">
+                          <ImagePlus className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -525,7 +846,7 @@ export default function GeneratorPage() {
                             }
                           >
                             {copied === "caption_alt" ? (
-                              <Check className="h-4 w-4 text-success" />
+                              <Check className="h-4 w-4 text-green-500" />
                             ) : (
                               <Copy className="h-4 w-4" />
                             )}
@@ -550,7 +871,7 @@ export default function GeneratorPage() {
                             }
                           >
                             {copied === "caption_short" ? (
-                              <Check className="h-4 w-4 text-success" />
+                              <Check className="h-4 w-4 text-green-500" />
                             ) : (
                               <Copy className="h-4 w-4" />
                             )}
@@ -585,7 +906,7 @@ export default function GeneratorPage() {
                           onClick={() => copyToClipboard(hook, `hook_${i}`)}
                         >
                           {copied === `hook_${i}` ? (
-                            <Check className="h-4 w-4 text-success" />
+                            <Check className="h-4 w-4 text-green-500" />
                           ) : (
                             <Copy className="h-4 w-4" />
                           )}
@@ -598,11 +919,11 @@ export default function GeneratorPage() {
             </>
           )}
 
-          {wizardStep === "type" && (
+          {wizardStep === "mode" && (
             <Card className="glass-card">
               <CardContent className="py-12 text-center text-muted-foreground">
                 <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>Wähle einen Post-Typ um zu starten</p>
+                <p>Wähle einen Modus um zu starten</p>
               </CardContent>
             </Card>
           )}
