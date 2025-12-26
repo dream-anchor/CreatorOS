@@ -1,14 +1,11 @@
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Brain, ChevronDown, Check } from "lucide-react";
-import { toast } from "sonner";
+import { Brain, ChevronDown, Check, RefreshCw } from "lucide-react";
 
 interface AiModel {
   id: string;
@@ -42,18 +39,19 @@ const AI_MODELS: AiModel[] = [
 interface AiModelSelectorProps {
   selectedModel: string;
   onModelChange: (modelId: string) => void;
+  isRegenerating?: boolean;
 }
 
 export function AiModelSelector({
   selectedModel,
   onModelChange,
+  isRegenerating = false,
 }: AiModelSelectorProps) {
   const currentModel = AI_MODELS.find((m) => m.id === selectedModel) || AI_MODELS[0];
 
   const handleSelectModel = (model: AiModel) => {
-    if (model.id !== selectedModel) {
+    if (model.id !== selectedModel && !isRegenerating) {
       onModelChange(model.id);
-      toast.success(`🧠 KI gewechselt auf ${model.name}`);
     }
   };
 
@@ -64,10 +62,20 @@ export function AiModelSelector({
           variant="outline"
           size="sm"
           className="h-9 gap-2 bg-card hover:bg-muted/50"
+          disabled={isRegenerating}
         >
-          <Brain className="h-4 w-4 text-primary" />
-          <span className="hidden sm:inline">{currentModel.name}</span>
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          {isRegenerating ? (
+            <>
+              <RefreshCw className="h-4 w-4 text-primary animate-spin" />
+              <span className="hidden sm:inline">Regeneriere...</span>
+            </>
+          ) : (
+            <>
+              <Brain className="h-4 w-4 text-primary" />
+              <span className="hidden sm:inline">{currentModel.name}</span>
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </>
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56 bg-popover z-50">
@@ -76,6 +84,7 @@ export function AiModelSelector({
             key={model.id}
             onClick={() => handleSelectModel(model)}
             className="flex items-center justify-between cursor-pointer"
+            disabled={isRegenerating}
           >
             <div className="flex flex-col">
               <span className="font-medium text-sm">{model.name}</span>

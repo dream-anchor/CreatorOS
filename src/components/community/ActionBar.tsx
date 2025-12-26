@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Rocket, PlayCircle, RefreshCw } from "lucide-react";
+import { Rocket, RefreshCw } from "lucide-react";
 
 type SmartStrategy = "warmup" | "afterglow" | "natural" | null;
 
@@ -10,7 +10,6 @@ interface ActionBarProps {
   smartStrategy: SmartStrategy;
   sending: boolean;
   onSmartReply: () => void;
-  onTestRun: () => void;
 }
 
 export function ActionBar({
@@ -19,7 +18,6 @@ export function ActionBar({
   smartStrategy,
   sending,
   onSmartReply,
-  onTestRun,
 }: ActionBarProps) {
   const getStrategyInfo = () => {
     switch (smartStrategy) {
@@ -56,17 +54,6 @@ export function ActionBar({
 
           {/* Right side: Actions */}
           <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onTestRun}
-              disabled={selectedCount === 0 || sending}
-              className="h-10 px-4 gap-2"
-            >
-              <PlayCircle className="h-4 w-4" />
-              Test-Lauf
-            </Button>
-
             <Button
               size="lg"
               onClick={onSmartReply}
