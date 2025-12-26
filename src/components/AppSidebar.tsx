@@ -17,6 +17,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { ThemeToggle } from "./ThemeToggle";
 
 const studioNav = [
   { name: "Cockpit", href: "/dashboard", icon: LayoutDashboard },
@@ -78,16 +79,19 @@ export function AppSidebar() {
     <aside className="fixed left-0 top-0 z-40 h-screen w-72 bg-card/80 backdrop-blur-xl border-r border-border">
       <div className="flex h-full flex-col">
         {/* Logo */}
-        <div className="flex h-20 items-center gap-4 px-6 border-b border-border">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-accent/15 border border-primary/20">
-            <Sparkles className="h-5 w-5 text-primary" />
+        <div className="flex h-20 items-center justify-between px-6 border-b border-border">
+          <div className="flex items-center gap-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-accent/15 border border-primary/20">
+              <Sparkles className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="font-display font-semibold text-lg text-foreground tracking-tight">
+                Creator Studio
+              </h1>
+              <p className="text-xs text-muted-foreground">AI Content Engine</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-display font-semibold text-lg text-foreground tracking-tight">
-              Creator Studio
-            </h1>
-            <p className="text-xs text-muted-foreground">AI Content Engine</p>
-          </div>
+          <ThemeToggle />
         </div>
 
         {/* Navigation */}
