@@ -47,10 +47,8 @@ export default function Community() {
   const [comments, setComments] = useState<CommentWithContext[]>([]);
   const [criticalComments, setCriticalComments] = useState<CommentWithContext[]>([]);
   const [blacklistTopics, setBlacklistTopics] = useState<BlacklistTopic[]>([]);
-  const [newTopic, setNewTopic] = useState("");
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
   const [emojiNogoTerms, setEmojiNogoTerms] = useState<EmojiNogoTerm[]>([]);
-  const [newEmojiTerm, setNewEmojiTerm] = useState("");
   const [smartStrategy, setSmartStrategy] = useState<SmartStrategy>(null);
   const [sanitizingComments, setSanitizingComments] = useState<Set<string>>(new Set());
 
@@ -257,17 +255,30 @@ export default function Community() {
     }
   };
 
-  const addBlacklistTopic = async () => {
-    if (!newTopic.trim()) return;
-
+  // Add multiple blacklist topics at once
+  const addBlacklistTopics = async (topics: string[]) => {
     const { data: user } = await supabase.auth.getUser();
     if (!user.user) return;
 
+    const existingTopics = blacklistTopics.map((t) => t.topic.toLowerCase());
+    const newTopics = topics.filter(
+      (topic) => !existingTopics.includes(topic.toLowerCase())
+    );
+
+    if (newTopics.length === 0) {
+      toast.info("Alle Begriffe sind bereits auf der Blacklist");
+      return;
+    }
+
+    const insertData = newTopics.map((topic) => ({
+      topic,
+      user_id: user.user.id,
+    }));
+
     const { data, error } = await supabase
       .from("blacklist_topics")
-      .insert({ topic: newTopic.trim(), user_id: user.user.id })
-      .select()
-      .single();
+      .insert(insertData)
+      .select();
 
     if (error) {
       toast.error("Fehler beim Hinzufügen");
@@ -275,9 +286,12 @@ export default function Community() {
     }
 
     if (data) {
-      setBlacklistTopics([data, ...blacklistTopics]);
-      setNewTopic("");
-      toast.success(`"${data.topic}" zur Blacklist hinzugefügt`);
+      setBlacklistTopics([...data, ...blacklistTopics]);
+      toast.success(
+        newTopics.length === 1
+          ? `"${newTopics[0]}" zur Blacklist hinzugefügt`
+          : `${newTopics.length} Begriffe zur Blacklist hinzugefügt`
+      );
       // Reload to filter out newly blacklisted comments
       await loadData();
     }
@@ -359,19 +373,30 @@ export default function Community() {
     toast.success(`✨ ${violatingComments.length} Antworten bereinigt!`);
   };
 
-  const addEmojiNogoTerm = async () => {
-    if (!newEmojiTerm.trim()) return;
-
+  // Add multiple emoji nogo terms at once
+  const addEmojiNogoTerms = async (terms: string[]) => {
     const { data: user } = await supabase.auth.getUser();
     if (!user.user) return;
 
-    const termToAdd = newEmojiTerm.trim();
+    const existingTerms = emojiNogoTerms.map((t) => t.term.toLowerCase());
+    const newTerms = terms.filter(
+      (term) => !existingTerms.includes(term.toLowerCase())
+    );
+
+    if (newTerms.length === 0) {
+      toast.info("Alle Begriffe sind bereits in der Liste");
+      return;
+    }
+
+    const insertData = newTerms.map((term) => ({
+      term,
+      user_id: user.user.id,
+    }));
 
     const { data, error } = await supabase
       .from("emoji_nogo_terms")
-      .insert({ term: termToAdd, user_id: user.user.id })
-      .select()
-      .single();
+      .insert(insertData)
+      .select();
 
     if (error) {
       toast.error("Fehler beim Hinzufügen");
@@ -379,12 +404,17 @@ export default function Community() {
     }
 
     if (data) {
-      setEmojiNogoTerms([data, ...emojiNogoTerms]);
-      setNewEmojiTerm("");
-      toast.success(`"${data.term}" zu Emoji-No-Gos hinzugefügt`);
+      setEmojiNogoTerms([...data, ...emojiNogoTerms]);
+      toast.success(
+        newTerms.length === 1
+          ? `"${newTerms[0]}" zu Emoji-No-Gos hinzugefügt`
+          : `${newTerms.length} Begriffe zu Emoji-No-Gos hinzugefügt`
+      );
 
-      // Retroactive sanitization
-      await sanitizeExistingReplies(termToAdd);
+      // Retroactive sanitization for all new terms
+      for (const term of newTerms) {
+        await sanitizeExistingReplies(term);
+      }
     }
   };
 
@@ -535,13 +565,9 @@ export default function Community() {
         <RulesConfigPanel
           emojiNogoTerms={emojiNogoTerms}
           blacklistTopics={blacklistTopics}
-          newEmojiTerm={newEmojiTerm}
-          newTopic={newTopic}
-          onNewEmojiTermChange={setNewEmojiTerm}
-          onNewTopicChange={setNewTopic}
-          onAddEmojiNogoTerm={addEmojiNogoTerm}
+          onAddEmojiNogoTerms={addEmojiNogoTerms}
           onRemoveEmojiNogoTerm={removeEmojiNogoTerm}
-          onAddBlacklistTopic={addBlacklistTopic}
+          onAddBlacklistTopics={addBlacklistTopics}
           onRemoveBlacklistTopic={removeBlacklistTopic}
         />
 
