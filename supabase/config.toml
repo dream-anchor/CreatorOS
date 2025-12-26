@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.copilot-chat]
 verify_jwt = false
+
+[functions.fetch-daily-insights]
+verify_jwt = false

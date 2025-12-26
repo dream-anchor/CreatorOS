@@ -150,6 +150,42 @@ const TOOLS = [
         }
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_growth",
+      description: "Analysiert Follower-Wachstum, Reichweite und Account-Performance über Zeit. NUTZE DIES bei Fragen zu Wachstum, Stagnation, Reichweite, Trends, 'Warum sinkt...', 'Wie entwickelt sich...'",
+      parameters: {
+        type: "object",
+        properties: {
+          start_date: {
+            type: "string",
+            description: "Start-Datum (YYYY-MM-DD)"
+          },
+          end_date: {
+            type: "string",
+            description: "End-Datum (YYYY-MM-DD), default: heute"
+          },
+          include_strategy: {
+            type: "boolean",
+            description: "Strategische Empfehlungen basierend auf Best-Performer Posts generieren"
+          }
+        },
+        required: ["start_date"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "trigger_insights_tracking",
+      description: "Startet manuell das Tracking der täglichen Instagram-Insights. Nutze dies wenn der User 'Tracke meine Insights' oder 'Hol aktuelle Zahlen' sagt.",
+      parameters: {
+        type: "object",
+        properties: {}
+      }
+    }
   }
 ];
 
@@ -829,8 +865,242 @@ async function executeGetAccountSummary(supabase: any, userId: string, params: a
       priority: t.priority,
       evergreen: t.evergreen
     })),
-    hint: "WICHTIG: Follower-Zahlen werden nicht historisch gespeichert. Für Wachstum nutze Engagement-Daten (Likes + Comments) als Proxy."
+    hint: "Nutze die daily_account_stats Tabelle für historische Follower- und Reichweiten-Daten."
   };
+}
+
+// Tool: Analyze Growth - Uses daily_account_stats for historical data
+async function executeAnalyzeGrowth(supabase: any, userId: string, params: any) {
+  const { start_date, end_date, include_strategy = true } = params;
+  
+  const endDateStr = end_date || new Date().toISOString().split('T')[0];
+  
+  console.log(`[copilot] Analyzing growth from ${start_date} to ${endDateStr}`);
+
+  // Get daily stats for the period
+  const { data: dailyStats, error: statsError } = await supabase
+    .from('daily_account_stats')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('date', start_date)
+    .lte('date', endDateStr)
+    .order('date', { ascending: true });
+
+  if (statsError) {
+    console.error('[copilot] Stats query error:', statsError);
+    return { error: 'Fehler beim Laden der Statistiken' };
+  }
+
+  const stats = dailyStats || [];
+  
+  if (stats.length === 0) {
+    // Try to get engagement data from posts as fallback
+    const { data: posts } = await supabase
+      .from('posts')
+      .select('id, published_at, likes_count, comments_count, impressions_count')
+      .eq('user_id', userId)
+      .eq('status', 'PUBLISHED')
+      .gte('published_at', start_date)
+      .lte('published_at', endDateStr)
+      .order('published_at', { ascending: true });
+
+    if (!posts || posts.length === 0) {
+      return {
+        error: 'Keine historischen Daten für diesen Zeitraum. Nutze "Tracke meine Insights" um mit dem Tracking zu starten.',
+        suggestion: 'Starte das tägliche Tracking, um Wachstumsdaten zu sammeln.'
+      };
+    }
+
+    // Fallback: Calculate engagement-based growth
+    const totalLikes = posts.reduce((sum: number, p: any) => sum + (p.likes_count || 0), 0);
+    const totalComments = posts.reduce((sum: number, p: any) => sum + (p.comments_count || 0), 0);
+    const totalImpressions = posts.reduce((sum: number, p: any) => sum + (p.impressions_count || 0), 0);
+
+    return {
+      period: { start: start_date, end: endDateStr },
+      data_source: 'posts_engagement',
+      note: 'Keine täglichen Insights verfügbar. Analyse basiert auf Post-Engagement.',
+      engagement_summary: {
+        total_posts: posts.length,
+        total_likes: totalLikes,
+        total_comments: totalComments,
+        total_impressions: totalImpressions,
+        avg_engagement_per_post: posts.length > 0 ? Math.round((totalLikes + totalComments) / posts.length) : 0
+      },
+      recommendation: 'Aktiviere das tägliche Insights-Tracking für präzisere Wachstumsanalysen.'
+    };
+  }
+
+  // Calculate growth metrics from daily stats
+  const firstDay = stats[0];
+  const lastDay = stats[stats.length - 1];
+  
+  const followerGrowth = lastDay.follower_count - firstDay.follower_count;
+  const followerGrowthPercent = firstDay.follower_count > 0 
+    ? ((followerGrowth / firstDay.follower_count) * 100).toFixed(2) 
+    : 'N/A';
+
+  const totalImpressions = stats.reduce((sum: number, s: any) => sum + (s.impressions_day || 0), 0);
+  const totalReach = stats.reduce((sum: number, s: any) => sum + (s.reach_day || 0), 0);
+  const totalProfileViews = stats.reduce((sum: number, s: any) => sum + (s.profile_views || 0), 0);
+  const totalWebsiteClicks = stats.reduce((sum: number, s: any) => sum + (s.website_clicks || 0), 0);
+
+  const avgImpressions = stats.length > 0 ? Math.round(totalImpressions / stats.length) : 0;
+  const avgReach = stats.length > 0 ? Math.round(totalReach / stats.length) : 0;
+
+  // Trend analysis (compare first half vs second half)
+  const midpoint = Math.floor(stats.length / 2);
+  const firstHalf = stats.slice(0, midpoint);
+  const secondHalf = stats.slice(midpoint);
+
+  const firstHalfReach = firstHalf.reduce((sum: number, s: any) => sum + (s.reach_day || 0), 0);
+  const secondHalfReach = secondHalf.reduce((sum: number, s: any) => sum + (s.reach_day || 0), 0);
+  
+  const reachTrend = firstHalfReach > 0 
+    ? (((secondHalfReach - firstHalfReach) / firstHalfReach) * 100).toFixed(1)
+    : 'N/A';
+
+  const firstHalfImpressions = firstHalf.reduce((sum: number, s: any) => sum + (s.impressions_day || 0), 0);
+  const secondHalfImpressions = secondHalf.reduce((sum: number, s: any) => sum + (s.impressions_day || 0), 0);
+  
+  const impressionsTrend = firstHalfImpressions > 0
+    ? (((secondHalfImpressions - firstHalfImpressions) / firstHalfImpressions) * 100).toFixed(1)
+    : 'N/A';
+
+  // Get best performing posts for strategy
+  let strategyRecommendations: any = null;
+  if (include_strategy) {
+    const { data: topPosts } = await supabase
+      .from('posts')
+      .select('id, caption, published_at, likes_count, comments_count, format')
+      .eq('user_id', userId)
+      .eq('status', 'PUBLISHED')
+      .gte('published_at', start_date)
+      .lte('published_at', endDateStr)
+      .order('likes_count', { ascending: false })
+      .limit(5);
+
+    const bestPosts = topPosts || [];
+    
+    // Analyze patterns
+    const dayOfWeekCounts: Record<string, number> = {};
+    const formatCounts: Record<string, { count: number; engagement: number }> = {};
+    
+    for (const post of bestPosts) {
+      const day = new Date(post.published_at).toLocaleDateString('de-DE', { weekday: 'long' });
+      dayOfWeekCounts[day] = (dayOfWeekCounts[day] || 0) + 1;
+      
+      const format = post.format || 'single';
+      if (!formatCounts[format]) {
+        formatCounts[format] = { count: 0, engagement: 0 };
+      }
+      formatCounts[format].count++;
+      formatCounts[format].engagement += (post.likes_count || 0) + (post.comments_count || 0);
+    }
+
+    const bestDay = Object.entries(dayOfWeekCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+    const bestFormat = Object.entries(formatCounts)
+      .sort((a, b) => b[1].engagement - a[1].engagement)[0]?.[0] || 'single';
+
+    strategyRecommendations = {
+      best_posting_day: bestDay,
+      best_format: bestFormat,
+      top_posts: bestPosts.slice(0, 3).map((p: any) => ({
+        caption_preview: (p.caption || '').substring(0, 60) + '...',
+        likes: p.likes_count,
+        comments: p.comments_count,
+        format: p.format
+      })),
+      insights: []
+    };
+
+    // Generate insights based on trends
+    if (parseFloat(reachTrend) < -10) {
+      strategyRecommendations.insights.push(`⚠️ Reichweite sinkt um ${reachTrend}%. Poste mehr Shareable Content (Carousels, Tipps).`);
+    }
+    if (parseFloat(reachTrend) > 10) {
+      strategyRecommendations.insights.push(`✅ Reichweite steigt um ${reachTrend}%. Weiter so!`);
+    }
+    if (totalProfileViews < avgReach * 0.05) {
+      strategyRecommendations.insights.push(`💡 Profil-Besuche sind niedrig. Füge mehr CTAs in deine Captions ein.`);
+    }
+    if (bestFormat === 'carousel') {
+      strategyRecommendations.insights.push(`📊 Carousels performen besser. Erstelle mehr davon.`);
+    }
+    if (followerGrowth < 0) {
+      strategyRecommendations.insights.push(`📉 Follower-Verlust. Fokussiere auf Community-Building und Interaktion.`);
+    }
+  }
+
+  return {
+    period: {
+      start: start_date,
+      end: endDateStr,
+      days_tracked: stats.length
+    },
+    follower_growth: {
+      start_count: firstDay.follower_count,
+      end_count: lastDay.follower_count,
+      absolute_change: followerGrowth,
+      percent_change: `${followerGrowthPercent}%`,
+      trend: followerGrowth > 0 ? '📈 Wachstum' : followerGrowth < 0 ? '📉 Rückgang' : '➡️ Stabil'
+    },
+    reach_analysis: {
+      total_reach: totalReach,
+      avg_daily_reach: avgReach,
+      trend: `${reachTrend}%`,
+      trend_label: parseFloat(reachTrend) > 0 ? '📈 Steigend' : parseFloat(reachTrend) < 0 ? '📉 Sinkend' : '➡️ Stabil'
+    },
+    impressions_analysis: {
+      total_impressions: totalImpressions,
+      avg_daily_impressions: avgImpressions,
+      trend: `${impressionsTrend}%`
+    },
+    engagement: {
+      total_profile_views: totalProfileViews,
+      total_website_clicks: totalWebsiteClicks,
+      conversion_rate: totalReach > 0 ? `${((totalProfileViews / totalReach) * 100).toFixed(2)}%` : 'N/A'
+    },
+    strategy: strategyRecommendations
+  };
+}
+
+// Tool: Trigger manual insights tracking
+async function executeTriggerInsightsTracking(supabase: any, userId: string, authToken: string) {
+  console.log(`[copilot] Triggering insights tracking for user ${userId}`);
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/fetch-daily-insights`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({})
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      return { 
+        error: `Tracking fehlgeschlagen: ${errorData.error || 'Unbekannter Fehler'}`,
+        suggestion: 'Stelle sicher, dass dein Instagram-Account verbunden ist.'
+      };
+    }
+
+    const result = await response.json();
+    return {
+      success: true,
+      message: 'Tägliche Insights wurden erfolgreich getrackt!',
+      data: result.stats || result
+    };
+  } catch (err) {
+    console.error('[copilot] Trigger tracking error:', err);
+    return { 
+      error: `Fehler: ${err instanceof Error ? err.message : 'Unbekannt'}` 
+    };
+  }
 }
 
 serve(async (req) => {
@@ -880,55 +1150,55 @@ serve(async (req) => {
       .maybeSingle();
 
     // System prompt for the agent with full database schema knowledge
-    const systemPrompt = `Du bist Antoine's Community Co-Pilot, ein intelligenter Daten-Analyst und Assistent für Social Media Management.
+    const systemPrompt = `Du bist Antoine's Community Co-Pilot, ein intelligenter Daten-Analyst und Stratege für Social Media Management.
 
 DU HAST VOLLSTÄNDIGEN ZUGRIFF AUF DIE DATENBANK:
 
 📊 TABELLEN-SCHEMA:
-1. posts: id, caption, published_at, likes_count, comments_count, saved_count, impressions_count, status, format (single/carousel), ig_media_id, original_media_url
-2. instagram_comments: id, comment_text, commenter_username, sentiment_score (-1 bis +1), is_critical, is_replied, comment_timestamp, ig_media_id
-3. topics: id, title, description, priority, evergreen, seasonal_start, seasonal_end
-4. brand_rules: tone_style, writing_style, formality_mode, emoji_level
+1. posts: id, caption, published_at, likes_count, comments_count, saved_count, impressions_count, status, format
+2. instagram_comments: id, comment_text, commenter_username, sentiment_score, is_critical, is_replied
+3. topics: id, title, description, priority, evergreen
+4. brand_rules: tone_style, writing_style, formality_mode
+5. daily_account_stats: date, follower_count, impressions_day, reach_day, profile_views, website_clicks (HISTORISCHE DATEN!)
 
 DEINE TOOLS:
-- search_posts: Durchsuche Posts nach Stichworten
-- analyze_sentiment: Analysiere Stimmung eines Posts
-- draft_reply: Erstelle Antwort-Entwurf
-- get_open_comments: Finde unbeantwortete Kommentare
-- analyze_data: 📈 STATISTIKEN & REPORTS - Nutze dies für ALLE Fragen zu Zahlen, Performance, Zeiträumen!
-- get_account_summary: Gesamtübersicht des Accounts
+- search_posts: Suche nach Posts/Stichworten
+- analyze_sentiment: Stimmung eines Posts
+- draft_reply: Antwort-Entwurf erstellen
+- get_open_comments: Offene Kommentare finden
+- analyze_data: Post-Statistiken & Engagement
+- get_account_summary: Gesamtübersicht
+- analyze_growth: 📈 WACHSTUMS-ANALYSE mit historischen Follower/Reach-Daten!
+- trigger_insights_tracking: Manuell Insights tracken
 
-⚠️ WICHTIGE REGELN:
-1. NUTZE IMMER analyze_data wenn nach Statistiken, Zahlen oder Performance gefragt wird!
-2. Sage NIEMALS "Ich habe keinen Zugriff" - du HAST Zugriff!
-3. Bei Fragen wie "Wie war mein Dezember?" → analyze_data mit time_period="custom", start_date="2025-12-01", end_date="2025-12-31"
-4. Bei "Wie läuft es?" → get_account_summary
-5. Follower-Zahlen werden NICHT gespeichert → Nutze Engagement (Likes+Comments) als Wachstums-Proxy
+⚠️ KRITISCHE REGELN:
+1. Bei "Warum stagniert...", "Wachstum", "Reichweite sinkt" → NUTZE analyze_growth!
+2. analyze_growth hat ECHTE historische Daten aus daily_account_stats
+3. Sage NIEMALS "Ich habe keinen Zugriff" - du HAST Zugriff!
+4. Wenn keine historischen Daten: Schlage vor "Tracke meine Insights"
+5. Bei Strategie-Fragen: Analysiere Best-Performer und gib konkrete Empfehlungen
+
+STRATEGIE-MODUS:
+Wenn Wachstum sinkt oder stagniert:
+1. Analysiere die Reichweiten-Trends
+2. Finde Best-Performer Posts (nach Likes/Comments)
+3. Erkenne Muster (Wochentag, Format, Thema)
+4. Gib KONKRETE Empfehlungen: "Poste mehr Carousels am Dienstag"
 
 KONTEXT:
 - Sprache: ${brandRules?.language_primary || 'Deutsch'}
 - Tonalität: ${brandRules?.tone_style || 'locker und authentisch'}
-- Formalität: ${brandRules?.formality_mode || 'smart'}
 
-BEISPIEL-INTERAKTIONEN:
-User: "Wie war mein Dezember?"
-→ analyze_data(time_period="custom", start_date="2025-12-01", end_date="2025-12-31", metric_type="overview", compare_with_previous=true)
-→ Antworte: "Im Dezember hast du 12 Posts veröffentlicht mit 45.000 Likes (+20% vs November)..."
+BEISPIELE:
+User: "Warum stagniert mein Wachstum?"
+→ analyze_growth(start_date="7 Tage zurück", include_strategy=true)
+→ "Deine Reichweite ist um 15% gesunken. Aber: Carousels am Dienstag liefen 40% besser. Empfehlung: Mehr Carousel-Content!"
 
-User: "Zeig mir meine Top-Posts diese Woche"
-→ analyze_data(time_period="last_week", metric_type="top_posts")
+User: "Tracke meine Insights"
+→ trigger_insights_tracking()
 
-User: "Wie viele offene Kommentare habe ich?"
-→ get_open_comments()
-
-User: "Wie ist mein Account insgesamt aufgestellt?"
-→ get_account_summary()
-
-VERHALTEN:
-- Antworte auf Deutsch
-- Nutze IMMER die passenden Tools - rate nie!
-- Fasse Ergebnisse kurz und übersichtlich zusammen
-- Bei Wachstumsfragen: Berechne prozentuale Veränderungen basierend auf Engagement`;
+User: "Wie entwickeln sich meine Follower?"
+→ analyze_growth(start_date="30 Tage zurück")`;
 
     // First call: Let the AI decide if it needs tools
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -992,6 +1262,12 @@ VERHALTEN:
             break;
           case 'get_account_summary':
             result = await executeGetAccountSummary(supabase, user.id, params);
+            break;
+          case 'analyze_growth':
+            result = await executeAnalyzeGrowth(supabase, user.id, params);
+            break;
+          case 'trigger_insights_tracking':
+            result = await executeTriggerInsightsTracking(supabase, user.id, authHeader.replace("Bearer ", ""));
             break;
           default:
             result = { error: `Unknown tool: ${funcName}` };
