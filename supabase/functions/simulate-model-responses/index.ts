@@ -42,10 +42,10 @@ serve(async (req) => {
       });
     }
 
-    // Get 3 random unanswered comments
+    // Get 3 random unanswered comments WITH their post context
     const { data: comments, error: commentsError } = await supabase
       .from("instagram_comments")
-      .select("id, comment_text, commenter_username")
+      .select("id, comment_text, commenter_username, ig_media_id")
       .eq("user_id", user.id)
       .eq("is_replied", false)
       .eq("is_hidden", false)
@@ -66,6 +66,22 @@ serve(async (req) => {
       });
     }
 
+    // Get all unique ig_media_ids to fetch post captions
+    const mediaIds = [...new Set(comments.map(c => c.ig_media_id).filter(Boolean))];
+    
+    // Fetch all related posts for context
+    const { data: posts } = await supabase
+      .from("posts")
+      .select("ig_media_id, caption")
+      .in("ig_media_id", mediaIds);
+
+    const postCaptionMap = new Map<string, string>();
+    posts?.forEach(p => {
+      if (p.ig_media_id && p.caption) {
+        postCaptionMap.set(p.ig_media_id, p.caption);
+      }
+    });
+
     // Shuffle and pick 3 random comments
     const shuffled = comments.sort(() => Math.random() - 0.5);
     const selectedComments = shuffled.slice(0, 3);
@@ -85,24 +101,29 @@ serve(async (req) => {
       });
     }
 
-    // Build system prompt
-    const toneStyle = brandRules?.tone_style || "freundlich und authentisch";
+    // Build system prompt with strict constraints
+    const toneStyle = brandRules?.tone_style || "locker und authentisch";
     const writingStyle = brandRules?.writing_style || "";
     const language = brandRules?.language_primary || "DE";
-    const doList = brandRules?.do_list?.join(", ") || "";
-    const dontList = brandRules?.dont_list?.join(", ") || "";
 
-    const systemPrompt = `Du bist ein Social-Media-Manager und antwortest auf Instagram-Kommentare.
-Sprache: ${language === "DE" ? "Deutsch" : language}
-Ton: ${toneStyle}
-${writingStyle ? `Schreibstil: ${writingStyle}` : ""}
-${doList ? `Was du tun sollst: ${doList}` : ""}
-${dontList ? `Was du vermeiden sollst: ${dontList}` : ""}
+    const systemPrompt = `Du bist Antoine, ein Instagram-Creator. Du antwortest persönlich auf Fan-Kommentare.
 
-WICHTIGE EINSCHRÄNKUNG - ABSOLUTES HASHTAG-VERBOT:
-Du darfst unter KEINEN Umständen Hashtags (#) verwenden. Keine #hashtags, niemals. Schreibe wie ein Mensch in einem Chat, nicht wie ein Marketer.
+SPRACHE: ${language === "DE" ? "Deutsch" : language}
+TONALITÄT: ${toneStyle}
+${writingStyle ? `STIL: ${writingStyle}` : ""}
 
-Schreibe kurze, authentische Antworten (1-2 Sätze). Nutze passende Emojis sparsam.`;
+===== ABSOLUTE VERBOTE (NIEMALS BRECHEN!) =====
+❌ KEINE Hashtags (#) - Niemals, unter keinen Umständen
+❌ KEINE Signaturen ("Dein Team", "@support", "Liebe Grüße, das Team")
+❌ KEINE CTAs ("Link in Bio", "Schau mal hier", "Mehr Infos")
+❌ KEINE Marketing-Sprache ("Wir freuen uns", "Vielen Dank für Ihr Feedback")
+❌ KEINE Support-Ticket-Floskeln ("Gerne geschehen", "Bei Fragen stehen wir zur Verfügung")
+===================================================
+
+DU BIST EIN MENSCH, KEINE MARKE.
+Schreibe wie jemand, der kurz vom Handy antwortet - direkt, knackig, authentisch.
+Verstehe Witze und Anspielungen und reagiere darauf.
+Kurze Antworten (1-2 Sätze), passende Emojis sparsam nutzen.`;
 
     // Generate responses for each comment from each model
     const results: Array<{
@@ -114,12 +135,25 @@ Schreibe kurze, authentische Antworten (1-2 Sätze). Nutze passende Emojis spars
 
     for (const comment of selectedComments) {
       const responses: Record<string, string> = {};
+      
+      // Get post context for this comment
+      const postCaption = postCaptionMap.get(comment.ig_media_id) || '';
+      const contextSection = postCaption 
+        ? `\n\nKONTEXT - MEIN ORIGINAL-POST:\n"${postCaption.substring(0, 300)}${postCaption.length > 300 ? '...' : ''}"`
+        : '';
 
       // Generate from all models in parallel
       const modelPromises = MODELS.map(async (model) => {
         try {
           console.log(`Generating response for comment ${comment.id} with model ${model.id}`);
           
+          const userMessage = `${contextSection}
+
+KOMMENTAR VON @${comment.commenter_username || "Fan"}:
+"${comment.comment_text}"
+
+Antworte KURZ (1-2 Sätze), DIREKT auf den Kommentar, im Kontext meines Posts.`;
+
           const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -130,10 +164,7 @@ Schreibe kurze, authentische Antworten (1-2 Sätze). Nutze passende Emojis spars
               model: model.id,
               messages: [
                 { role: "system", content: systemPrompt },
-                { 
-                  role: "user", 
-                  content: `Beantworte diesen Instagram-Kommentar von @${comment.commenter_username || "Fan"}:\n\n"${comment.comment_text}"` 
-                },
+                { role: "user", content: userMessage },
               ],
             }),
           });
