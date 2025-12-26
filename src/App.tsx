@@ -13,6 +13,7 @@ import Generator from "./pages/Generator";
 import Review from "./pages/Review";
 import Calendar from "./pages/Calendar";
 import Settings from "./pages/Settings";
+import ContentLibrary from "./pages/ContentLibrary";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/generator" element={<ProtectedRoute><Generator /></ProtectedRoute>} />
           <Route path="/review" element={<ProtectedRoute><Review /></ProtectedRoute>} />
           <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
+          <Route path="/library" element={<ProtectedRoute><ContentLibrary /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="/settings/*" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />

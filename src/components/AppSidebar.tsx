@@ -9,6 +9,8 @@ import {
   Settings,
   LogOut,
   Zap,
+  ClipboardCheck,
+  FolderOpen,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -17,12 +19,14 @@ import { toast } from "sonner";
 const studioNav = [
   { name: "Cockpit", href: "/dashboard", icon: LayoutDashboard },
   { name: "Magic Create", href: "/generator", icon: Sparkles, highlight: true },
+  { name: "Tinder Review", href: "/review", icon: ClipboardCheck },
   { name: "Planung", href: "/calendar", icon: CalendarClock },
 ];
 
 const brandNav = [
   { name: "Meine DNA", href: "/brand", icon: Fingerprint },
   { name: "Themen", href: "/topics", icon: Hash },
+  { name: "Content-Pool", href: "/library", icon: FolderOpen },
 ];
 
 export function AppSidebar() {

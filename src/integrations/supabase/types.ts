@@ -127,6 +127,45 @@ export type Database = {
         }
         Relationships: []
       }
+      content_snippets: {
+        Row: {
+          category: string | null
+          created_at: string
+          id: string
+          last_used_at: string | null
+          public_url: string | null
+          storage_path: string
+          title: string | null
+          updated_at: string
+          used_count: number | null
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          id?: string
+          last_used_at?: string | null
+          public_url?: string | null
+          storage_path: string
+          title?: string | null
+          updated_at?: string
+          used_count?: number | null
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          id?: string
+          last_used_at?: string | null
+          public_url?: string | null
+          storage_path?: string
+          title?: string | null
+          updated_at?: string
+          used_count?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       instagram_tokens: {
         Row: {
           access_token: string
