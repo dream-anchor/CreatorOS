@@ -71,31 +71,38 @@ export default function GeneralSettingsTab() {
     setSaving(true);
 
     try {
-      // Update profile
+      // Update profile - use id as conflict target
       const { error: profileError } = await supabase
         .from("profiles")
-        .upsert({
-          id: user.id,
-          display_name: displayName || null,
-          updated_at: new Date().toISOString(),
-        });
+        .upsert(
+          {
+            id: user.id,
+            display_name: displayName || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
 
       if (profileError) throw profileError;
 
-      // Update settings
+      // Update settings - use user_id as conflict target
       const { error: settingsError } = await supabase
         .from("settings")
-        .upsert({
-          user_id: user.id,
-          posts_per_week: postsPerWeek,
-          updated_at: new Date().toISOString(),
-        });
+        .upsert(
+          {
+            user_id: user.id,
+            posts_per_week: postsPerWeek,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' }
+        );
 
       if (settingsError) throw settingsError;
 
       toast.success("Einstellungen gespeichert");
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Fehler";
+    } catch (error: any) {
+      console.error("Save error:", error);
+      const msg = error?.message || error?.details || JSON.stringify(error) || "Unbekannter Fehler";
       toast.error("Speichern fehlgeschlagen: " + msg);
     } finally {
       setSaving(false);
