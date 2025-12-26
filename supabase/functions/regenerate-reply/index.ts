@@ -72,30 +72,59 @@ function sanitizeReply(text: string): string {
   return t.replace(/\s{2,}/g, " ").trim();
 }
 
+// Helper to validate if an image URL is accessible
+async function isImageUrlValid(url: string | null | undefined): Promise<boolean> {
+  if (!url) return false;
+  try {
+    const response = await fetch(url, { method: 'HEAD' });
+    const contentType = response.headers.get('content-type') || '';
+    return response.ok && (contentType.startsWith('image/') || contentType.startsWith('video/'));
+  } catch {
+    return false;
+  }
+}
+
 async function callLovableAi({
   lovableApiKey,
   model,
   systemPrompt,
   userMessage,
+  imageUrl,
 }: {
   lovableApiKey: string;
   model: string;
   systemPrompt: string;
   userMessage: string;
+  imageUrl?: string | null;
 }): Promise<string> {
+  // Build messages - use multimodal if image is provided
+  let messages: any[];
+  
+  if (imageUrl) {
+    messages = [
+      { role: "system", content: systemPrompt },
+      { 
+        role: "user", 
+        content: [
+          { type: "text", text: userMessage },
+          { type: "image_url", image_url: { url: imageUrl } }
+        ]
+      },
+    ];
+  } else {
+    messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ];
+  }
+
   const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${lovableApiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-    }),
+    body: JSON.stringify({ model, messages }),
   });
 
   if (!resp.ok) {
@@ -115,14 +144,16 @@ async function generateWithGuards({
   model,
   systemPrompt,
   userMessage,
+  imageUrl,
 }: {
   lovableApiKey: string;
   model: string;
   systemPrompt: string;
   userMessage: string;
+  imageUrl?: string | null;
 }): Promise<string> {
   // Attempt #1
-  let reply = await callLovableAi({ lovableApiKey, model, systemPrompt, userMessage });
+  let reply = await callLovableAi({ lovableApiKey, model, systemPrompt, userMessage, imageUrl });
   let v = validateReply(reply);
   if (v.ok) return reply;
 
@@ -136,6 +167,7 @@ async function generateWithGuards({
     model,
     systemPrompt: repairSystemPrompt,
     userMessage,
+    imageUrl,
   });
 
   v = validateReply(reply);
@@ -181,15 +213,33 @@ serve(async (req) => {
 
     if (commentError || !comment) throw new Error("Comment not found");
 
-    // Load post caption
+    // Load post data including image URL
     let postCaption = "";
+    let imageUrl: string | null = null;
+    let postFormat: string | null = null;
+    
     if (comment.ig_media_id) {
       const { data: post } = await supabase
         .from("posts")
-        .select("caption")
+        .select("caption, original_media_url, format")
         .eq("ig_media_id", comment.ig_media_id)
         .maybeSingle();
+      
       postCaption = post?.caption || "";
+      imageUrl = post?.original_media_url || null;
+      postFormat = post?.format || null;
+    }
+
+    // Validate image URL
+    let validatedImageUrl: string | null = null;
+    if (imageUrl) {
+      const isValid = await isImageUrlValid(imageUrl);
+      if (isValid) {
+        validatedImageUrl = imageUrl;
+        console.log(`[regenerate-reply] Using vision mode with image for comment ${comment_id}`);
+      } else {
+        console.log(`[regenerate-reply] Image URL invalid/expired, falling back to text-only`);
+      }
     }
 
     // Brand rules
@@ -236,20 +286,31 @@ serve(async (req) => {
       formalityInstruction = "Antworte IMMER mit \"Du\".";
     }
 
-    // System prompt (dynamic persona engine)
-    const systemPrompt = `ROLE: Du bist ICH (Antoine). Du bist kein Assistent und keine Marke.\n\nSTYLE-GUIDE (echte Beispiele von mir):\n${examplesBlock}\n\nANALYSE: Kopiere Vibe, Satzlänge, Kleinschreibung/Formatierung und Emoji-Nutzung dieser Beispiele so exakt wie möglich.\n\nREGELN (hart, niemals brechen):\n- Perspektive: IMMER 1. Person Singular (\"Ich\"). Niemals \"Wir/Uns/Unser\".\n- Keine Hashtags (#) – absolut verboten.\n- Keine Signaturen (z.B. \"LG\", \"Grüße\", \"Dein Team\", \"@support\", \"@team\").\n- Keine CTAs (\"Link in Bio\", \"schau mal vorbei\", \"mehr Infos\"), außer der Fan fragt explizit danach.\n- Schreibe kurz, natürlich, wie vom Handy (1–2 Sätze).\n\nSPRACHE: ${language === "DE" ? "Deutsch" : language}\nTONALITÄT: ${toneStyle}${writingStyle ? `\nSTIL-HINWEIS: ${writingStyle}` : ""}\nFORMALITÄT: ${formalityInstruction}`;
+    // Vision-enhanced section
+    const visionSection = validatedImageUrl ? `
+===== VISUELLER KONTEXT (WICHTIG!) =====
+Ein Bild des Posts ist beigefügt.
+ANALYSIERE das Bild: Was ist darauf zu sehen? (Landschaft, Person, Essen, Tier, Selfie, Produkt, etc.)
+NUTZE diese Info für eine kontextbezogene Antwort!
+Beispiel: Wenn jemand "Wow!" schreibt und auf dem Bild ist ein Hund → Antworte: "Ja, er ist echt süß, oder? 🐕"
+========================================` : '';
 
-    // User message (A/B context injection)
-    const userMessage = `CONTEXT (du MUSST dich auf BEIDE Teile beziehen):\n\nA) POST-CAPTION (worum ging's?):\n\"\"\"${(postCaption || "").slice(0, 700)}\"\"\"\n\nB) FAN-KOMMENTAR (worauf antworte ich?):\n\"\"\"${comment.comment_text}\"\"\"\n\nAUFGABE: Antworte spezifisch auf den Fan-Kommentar, aber immer im Kontext der Caption. NUR die Antwort.`;
+    // System prompt (dynamic persona engine)
+    const systemPrompt = `ROLE: Du bist ICH (Antoine). Du bist kein Assistent und keine Marke.\n\nSTYLE-GUIDE (echte Beispiele von mir):\n${examplesBlock}\n\nANALYSE: Kopiere Vibe, Satzlänge, Kleinschreibung/Formatierung und Emoji-Nutzung dieser Beispiele so exakt wie möglich.\n\nREGELN (hart, niemals brechen):\n- Perspektive: IMMER 1. Person Singular (\"Ich\"). Niemals \"Wir/Uns/Unser\".\n- Keine Hashtags (#) – absolut verboten.\n- Keine Signaturen (z.B. \"LG\", \"Grüße\", \"Dein Team\", \"@support\", \"@team\").\n- Keine CTAs (\"Link in Bio\", \"schau mal vorbei\", \"mehr Infos\"), außer der Fan fragt explizit danach.\n- Schreibe kurz, natürlich, wie vom Handy (1–2 Sätze).\n\nSPRACHE: ${language === "DE" ? "Deutsch" : language}\nTONALITÄT: ${toneStyle}${writingStyle ? `\nSTIL-HINWEIS: ${writingStyle}` : ""}\nFORMALITÄT: ${formalityInstruction}${visionSection}`;
+
+    // User message (A/B context injection) - mention image if present
+    const imageContextHint = validatedImageUrl ? "\n\nC) BILD (siehe beigefügtes Bild - beschreibe was du siehst und beziehe dich darauf!)" : "";
+    const userMessage = `CONTEXT (du MUSST dich auf BEIDE Teile beziehen):\n\nA) POST-CAPTION (worum ging's?):\n\"\"\"${(postCaption || "").slice(0, 700)}\"\"\"\n\nB) FAN-KOMMENTAR (worauf antworte ich?):\n\"\"\"${comment.comment_text}\"\"\"${imageContextHint}\n\nAUFGABE: Antworte spezifisch auf den Fan-Kommentar, aber immer im Kontext der Caption${validatedImageUrl ? " und des Bildes" : ""}. NUR die Antwort.`;
 
     const newReply = await generateWithGuards({
       lovableApiKey,
       model: aiModel,
       systemPrompt,
       userMessage,
+      imageUrl: validatedImageUrl,
     });
 
-    console.log(`[regenerate-reply] New reply: ${newReply.substring(0, 60)}...`);
+    console.log(`[regenerate-reply] New reply (vision: ${!!validatedImageUrl}): ${newReply.substring(0, 60)}...`);
 
     const { error: updateError } = await supabase
       .from("instagram_comments")
@@ -258,7 +319,12 @@ serve(async (req) => {
 
     if (updateError) throw new Error("Failed to update comment");
 
-    return new Response(JSON.stringify({ success: true, comment_id, new_reply: newReply }), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      comment_id, 
+      new_reply: newReply,
+      vision_enabled: !!validatedImageUrl
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
