@@ -1794,12 +1794,13 @@ async function executePlanPost(supabase: any, userId: string, params: any) {
   }
 }
 
-// Tool: Get user photos from media library
+// Tool: Get user photos from media library (with fallback logic)
 async function executeGetUserPhotos(supabase: any, userId: string, params: any) {
   const { only_selfies = false, only_reference = false, tags, limit = 10 } = params;
 
-  console.log(`[copilot] Getting user photos, selfies_only: ${only_selfies}, reference_only: ${only_reference}`);
+  console.log(`[copilot] Getting user photos, selfies_only: ${only_selfies}, reference_only: ${only_reference}, tags: ${JSON.stringify(tags)}`);
 
+  // Base query
   let query = supabase
     .from('media_assets')
     .select('id, public_url, description, tags, mood, is_selfie, is_reference, ai_usable, created_at')
@@ -1826,21 +1827,49 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
     return {
       error: only_reference ? 'Keine Referenz-Fotos gefunden' : 'Keine Fotos gefunden',
       suggestion: only_reference 
-        ? 'Markiere Fotos unter "Meine Fotos" als Referenz-Bilder, um sie für Montagen zu nutzen.'
-        : 'Lade Fotos unter "Meine Fotos" hoch, um sie für die Bildgenerierung zu nutzen.'
+        ? 'Markiere Fotos unter "Meine Bilder" als "AI-Referenz", um sie für Montagen zu nutzen.'
+        : 'Lade Fotos unter "Meine Bilder" hoch, um sie für die Bildgenerierung zu nutzen.'
     };
   }
 
   // Filter by tags if specified
   let filteredPhotos = photos;
+  let usedFallback = false;
+  let searchedTags: string[] = [];
+
   if (tags && Array.isArray(tags) && tags.length > 0) {
+    searchedTags = tags;
     filteredPhotos = photos.filter((p: any) => {
-      const photoTags = p.tags || [];
-      return tags.some((tag: string) => photoTags.includes(tag));
+      const photoTags = (p.tags || []).map((t: string) => t.toLowerCase());
+      return tags.some((tag: string) => photoTags.includes(tag.toLowerCase()));
     });
+
+    // FALLBACK LOGIC: If tag filter returns 0 results, show all reference images instead
+    if (filteredPhotos.length === 0) {
+      console.log(`[copilot] No photos found with tags [${tags.join(', ')}], falling back to all reference images`);
+      
+      // Get all reference images as fallback
+      const { data: referencePhotos } = await supabase
+        .from('media_assets')
+        .select('id, public_url, description, tags, mood, is_selfie, is_reference, ai_usable, created_at')
+        .eq('user_id', userId)
+        .eq('ai_usable', true)
+        .eq('is_reference', true)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (referencePhotos && referencePhotos.length > 0) {
+        filteredPhotos = referencePhotos;
+        usedFallback = true;
+      } else {
+        // Last resort: just use any available photos
+        filteredPhotos = photos;
+        usedFallback = true;
+      }
+    }
   }
 
-  return {
+  const result: any = {
     total: filteredPhotos.length,
     photos: filteredPhotos.map((p: any) => ({
       id: p.id,
@@ -1854,6 +1883,14 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
     selfie_count: filteredPhotos.filter((p: any) => p.is_selfie).length,
     reference_count: filteredPhotos.filter((p: any) => p.is_reference).length
   };
+
+  // Add warning if fallback was used
+  if (usedFallback && searchedTags.length > 0) {
+    result.warning = `Keine Fotos mit den Tags [${searchedTags.join(', ')}] gefunden. Zeige stattdessen ${result.reference_count > 0 ? 'alle Referenz-Bilder' : 'alle verfügbaren Bilder'}.`;
+    result.fallback_used = true;
+  }
+
+  return result;
 }
 
 // Tool: Generate DALL-E 3 parody image
@@ -2140,6 +2177,12 @@ Wenn der User einen komplexen Wunsch äußert (z.B. "Mach mir den Film-Post fert
 5. Wenn keine Fotos da: Sage dem User er soll welche hochladen
 6. Bei generate_personalized_image: Wähle automatisch das beste Selfie
 7. Nach plan_post: Sage dem User dass er den Entwurf genehmigen kann
+
+📸 FOTO-SUCHE MIT FALLBACK:
+- Wenn der User ein Adjektiv nennt (z.B. "ernst", "lustig", "professionell"), versuche zuerst nach diesem Tag zu filtern
+- WICHTIG: Wenn die Tag-Suche KEINE Treffer liefert, nimm IRGENDEIN verfügbares Referenz-Bild
+- Der Flow darf NIEMALS mit "Nichts gefunden" abbrechen, wenn es Referenz-Bilder gibt!
+- Bei Fallback: Informiere den User kurz ("Kein 'ernstes' Foto gefunden, nutze stattdessen dieses Referenz-Bild")
 
 💡 PROAKTIVE VORSCHLÄGE:
 - "Ich sehe dass deine Humor-Posts 3x besser performen. Soll ich einen für Donnerstag 18:00 vorbereiten?"
