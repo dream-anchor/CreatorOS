@@ -19,6 +19,9 @@ import {
   Tag,
   X,
   Sparkles,
+  Wand2,
+  CheckCircle,
+  Eye,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { format } from "date-fns";
@@ -39,6 +42,10 @@ interface MediaAsset {
   created_at: string;
   is_reference: boolean | null;
   is_selfie: boolean | null;
+  ai_tags: string[] | null;
+  ai_description: string | null;
+  analyzed: boolean | null;
+  is_good_reference: boolean | null;
 }
 
 const SUGGESTED_TAGS = [
@@ -79,6 +86,8 @@ export default function MediaArchivePage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [togglingReference, setTogglingReference] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [viewingAsset, setViewingAsset] = useState<MediaAsset | null>(null);
 
   useEffect(() => {
     if (user) loadAssets();
@@ -226,10 +235,41 @@ export default function MediaArchivePage() {
     }
   };
 
-  const allTags = [...new Set(assets.flatMap(a => a.tags || []))];
+  const handleAnalyzeLibrary = async () => {
+    setAnalyzing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("analyze-media-vision", {
+        body: { mode: "batch" }
+      });
+
+      if (error) throw error;
+
+      if (data?.analyzed > 0) {
+        toast.success(`✨ ${data.analyzed} Bilder analysiert!`);
+        loadAssets();
+      } else {
+        toast.info(data?.message || "Alle Bilder sind bereits analysiert");
+      }
+    } catch (error: any) {
+      toast.error("Analyse fehlgeschlagen: " + error.message);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // Combine manual tags with AI tags for filtering
+  const allTags = [...new Set([
+    ...assets.flatMap(a => a.tags || []),
+    ...assets.flatMap(a => a.ai_tags || [])
+  ])];
   const filteredAssets = filterTag
-    ? assets.filter(a => a.tags?.includes(filterTag))
+    ? assets.filter(a => 
+        a.tags?.includes(filterTag) || 
+        a.ai_tags?.map(t => t.toLowerCase()).includes(filterTag.toLowerCase())
+      )
     : assets;
+  
+  const unanalyzedCount = assets.filter(a => !a.analyzed).length;
 
   if (loading) {
     return (
@@ -306,7 +346,7 @@ export default function MediaArchivePage() {
 
       {assets.length > 0 && (
         <div className="space-y-6">
-          {/* Stats & Filter */}
+          {/* Stats, AI Analyze & Filter */}
           <div className="flex flex-wrap items-center gap-4">
             <div className="glass-card px-4 py-3 rounded-xl">
               <p className="text-2xl font-bold text-foreground">{assets.length}</p>
@@ -314,10 +354,38 @@ export default function MediaArchivePage() {
             </div>
             <div className="glass-card px-4 py-3 rounded-xl">
               <p className="text-2xl font-bold text-foreground">
-                {assets.filter(a => a.used_count === 0).length}
+                {assets.filter(a => a.is_good_reference).length}
               </p>
-              <p className="text-sm text-muted-foreground">Unbenutzt</p>
+              <p className="text-sm text-muted-foreground">AI-Referenzen</p>
             </div>
+            <div className="glass-card px-4 py-3 rounded-xl">
+              <p className="text-2xl font-bold text-foreground">
+                {assets.filter(a => a.analyzed).length}
+              </p>
+              <p className="text-sm text-muted-foreground">Analysiert</p>
+            </div>
+
+            {/* AI Analyze Button */}
+            {unanalyzedCount > 0 && (
+              <Button
+                onClick={handleAnalyzeLibrary}
+                disabled={analyzing}
+                variant="outline"
+                className="border-primary/30 hover:bg-primary/10"
+              >
+                {analyzing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Analysiere...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="mr-2 h-4 w-4 text-primary" />
+                    ✨ KI-Analyse starten ({unanalyzedCount})
+                  </>
+                )}
+              </Button>
+            )}
 
             <div className="flex-1" />
 
@@ -330,11 +398,11 @@ export default function MediaArchivePage() {
               >
                 Alle
               </Badge>
-              {allTags.slice(0, 6).map(tag => (
+              {allTags.slice(0, 8).map(tag => (
                 <Badge
                   key={tag}
                   variant={filterTag === tag ? "default" : "outline"}
-                  className="cursor-pointer"
+                  className="cursor-pointer capitalize"
                   onClick={() => setFilterTag(tag)}
                 >
                   {tag}
@@ -370,6 +438,13 @@ export default function MediaArchivePage() {
                     {/* Overlay */}
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                       <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setViewingAsset(asset)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
                         variant="destructive"
                         size="sm"
                         onClick={() => handleDelete(asset)}
@@ -383,71 +458,63 @@ export default function MediaArchivePage() {
                       </Button>
                     </div>
 
-                    {/* Badges */}
+                    {/* Status Badges */}
+                    <div className="absolute top-2 left-2 flex flex-col gap-1">
+                      {asset.is_good_reference && (
+                        <div className="px-2 py-0.5 rounded-full bg-green-500/90 text-white text-xs flex items-center gap-1">
+                          <CheckCircle className="h-3 w-3" />
+                          REF
+                        </div>
+                      )}
+                      {asset.analyzed && (
+                        <div className="px-2 py-0.5 rounded-full bg-primary/80 text-white text-xs flex items-center gap-1">
+                          <Sparkles className="h-3 w-3" />
+                          AI
+                        </div>
+                      )}
+                    </div>
+                    
                     {asset.used_count > 0 && (
                       <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-xs">
                         {asset.used_count}×
                       </div>
                     )}
-                    {asset.used_count === 0 && (
-                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-primary text-white text-xs">
-                        Neu
-                      </div>
-                    )}
-                    {asset.mood && (
-                      <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full bg-cyan-500/80 text-white text-xs">
-                        {asset.mood}
-                      </div>
-                    )}
                   </div>
 
                   <div className="p-3 space-y-2">
-                    {/* Reference Toggle */}
-                    <div 
-                      className={cn(
-                        "flex items-center justify-between gap-2 p-2 rounded-lg transition-colors cursor-pointer",
-                        asset.is_reference 
-                          ? "bg-primary/10 border border-primary/30" 
-                          : "bg-muted/50 hover:bg-muted"
-                      )}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleReference(asset);
-                      }}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Sparkles className={cn(
-                          "h-3.5 w-3.5",
-                          asset.is_reference ? "text-primary" : "text-muted-foreground"
-                        )} />
-                        <span className={cn(
-                          "text-xs font-medium",
-                          asset.is_reference ? "text-primary" : "text-muted-foreground"
-                        )}>
-                          AI-Referenz
-                        </span>
+                    {/* AI Analysis Info */}
+                    {asset.analyzed ? (
+                      <div className="space-y-1">
+                        {asset.ai_description && (
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {asset.ai_description}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {asset.ai_tags?.slice(0, 3).map(tag => (
+                            <Badge key={tag} variant="secondary" className="text-xs capitalize">
+                              {tag}
+                            </Badge>
+                          ))}
+                          {(asset.ai_tags?.length || 0) > 3 && (
+                            <Badge variant="secondary" className="text-xs">
+                              +{(asset.ai_tags?.length || 0) - 3}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                      <Switch
-                        checked={asset.is_reference || false}
-                        disabled={togglingReference === asset.id}
-                        onCheckedChange={() => handleToggleReference(asset)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="scale-75"
-                      />
-                    </div>
-
-                    <div className="flex flex-wrap gap-1">
-                      {asset.tags?.slice(0, 3).map(tag => (
-                        <Badge key={tag} variant="secondary" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))}
-                      {(asset.tags?.length || 0) > 3 && (
-                        <Badge variant="secondary" className="text-xs">
-                          +{(asset.tags?.length || 0) - 3}
-                        </Badge>
-                      )}
-                    </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {asset.tags?.slice(0, 3).map(tag => (
+                          <Badge key={tag} variant="outline" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                        {!asset.tags?.length && (
+                          <span className="text-xs text-muted-foreground italic">Nicht analysiert</span>
+                        )}
+                      </div>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       {format(new Date(asset.created_at), "dd. MMM", { locale: de })}
                     </p>
@@ -570,6 +637,102 @@ export default function MediaArchivePage() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Asset Detail Dialog */}
+      <Dialog open={!!viewingAsset} onOpenChange={() => setViewingAsset(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {viewingAsset?.is_good_reference && (
+                <Badge className="bg-green-500">Referenz-Bild</Badge>
+              )}
+              {viewingAsset?.analyzed && (
+                <Badge variant="secondary">KI-analysiert</Badge>
+              )}
+              {!viewingAsset?.analyzed && (
+                <Badge variant="outline">Nicht analysiert</Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {viewingAsset && (
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="aspect-square rounded-xl overflow-hidden bg-muted">
+                <img
+                  src={viewingAsset.public_url || ""}
+                  alt={viewingAsset.filename || "Bild"}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              
+              <div className="space-y-4">
+                {viewingAsset.ai_description && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">KI-Beschreibung</Label>
+                    <p className="text-sm mt-1">{viewingAsset.ai_description}</p>
+                  </div>
+                )}
+                
+                {viewingAsset.ai_tags && viewingAsset.ai_tags.length > 0 && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">KI-Tags</Label>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {viewingAsset.ai_tags.map(tag => (
+                        <Badge key={tag} variant="secondary" className="capitalize">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {viewingAsset.tags && viewingAsset.tags.length > 0 && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Manuelle Tags</Label>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {viewingAsset.tags.map(tag => (
+                        <Badge key={tag} variant="outline">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Für Montagen geeignet</Label>
+                    <p className="flex items-center gap-1 mt-1">
+                      {viewingAsset.is_good_reference ? (
+                        <>
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                          Ja
+                        </>
+                      ) : (
+                        <>
+                          <X className="h-4 w-4 text-muted-foreground" />
+                          Nein
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Verwendet</Label>
+                    <p className="mt-1">{viewingAsset.used_count}×</p>
+                  </div>
+                </div>
+                
+                <div>
+                  <Label className="text-muted-foreground text-xs">Hochgeladen</Label>
+                  <p className="text-sm mt-1">
+                    {format(new Date(viewingAsset.created_at), "dd. MMMM yyyy, HH:mm", { locale: de })}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </AppLayout>

@@ -77,3 +77,6 @@ verify_jwt = false
 
 [functions.generate-personalized-image]
 verify_jwt = false
+
+[functions.analyze-media-vision]
+verify_jwt = false
