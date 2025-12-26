@@ -21,6 +21,33 @@ function detectFormalLanguage(text: string): boolean {
   return formalPatterns.some(pattern => pattern.test(text));
 }
 
+// Helper to validate if an image URL is accessible
+async function isImageUrlValid(url: string | null | undefined): Promise<boolean> {
+  if (!url) return false;
+  try {
+    // Quick HEAD request to check if URL is accessible
+    const response = await fetch(url, { method: 'HEAD' });
+    const contentType = response.headers.get('content-type') || '';
+    return response.ok && (contentType.startsWith('image/') || contentType.startsWith('video/'));
+  } catch {
+    return false;
+  }
+}
+
+// Build multimodal message content with image if available
+function buildMultimodalContent(textContent: string, imageUrl: string | null): any[] {
+  const content: any[] = [{ type: "text", text: textContent }];
+  
+  if (imageUrl) {
+    content.push({
+      type: "image_url",
+      image_url: { url: imageUrl }
+    });
+  }
+  
+  return content;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -90,19 +117,23 @@ serve(async (req) => {
       });
     }
 
-    // Get all unique ig_media_ids to fetch post captions
+    // Get all unique ig_media_ids to fetch post data INCLUDING image URLs
     const mediaIds = [...new Set(comments.map(c => c.ig_media_id).filter(Boolean))];
     
-    // Fetch all related posts for context
+    // Fetch all related posts for context - now including original_media_url and format
     const { data: posts } = await supabase
       .from('posts')
-      .select('ig_media_id, caption')
+      .select('ig_media_id, caption, original_media_url, format')
       .in('ig_media_id', mediaIds);
 
-    const postCaptionMap = new Map<string, string>();
+    const postDataMap = new Map<string, { caption: string; imageUrl: string | null; format: string | null }>();
     posts?.forEach(p => {
-      if (p.ig_media_id && p.caption) {
-        postCaptionMap.set(p.ig_media_id, p.caption);
+      if (p.ig_media_id) {
+        postDataMap.set(p.ig_media_id, {
+          caption: p.caption || '',
+          imageUrl: p.original_media_url || null,
+          format: p.format || null
+        });
       }
     });
 
@@ -142,9 +173,26 @@ LERNE VON DIESEN ECHTEN ANTWORTEN DES USERS (kopiere den Vibe und die Satzlänge
 ${validExamples.map((ex, i) => `${i + 1}. "${ex}"`).join('\n')}`
       : '';
 
-    // Batch analyze comments with AI - include post context AND formality detection
-    const commentsToAnalyze = comments.map(c => {
-      const postCaption = postCaptionMap.get(c.ig_media_id) || '';
+    // Validate image URLs and prepare comments for analysis
+    const commentsToAnalyze: any[] = [];
+    let hasAnyValidImage = false;
+
+    for (const c of comments) {
+      const postData = postDataMap.get(c.ig_media_id);
+      const postCaption = postData?.caption || '';
+      let imageUrl = postData?.imageUrl || null;
+      
+      // Validate image URL
+      if (imageUrl) {
+        const isValid = await isImageUrlValid(imageUrl);
+        if (!isValid) {
+          console.log(`[analyze-comments] Image URL invalid/expired for media ${c.ig_media_id}, falling back to text-only`);
+          imageUrl = null;
+        } else {
+          hasAnyValidImage = true;
+        }
+      }
+      
       const fanUsesFormal = detectFormalLanguage(c.comment_text);
       
       let formalityHint = '';
@@ -156,14 +204,15 @@ ${validExamples.map((ex, i) => `${i + 1}. "${ex}"`).join('\n')}`
         formalityHint = 'use_du';
       }
 
-      return {
+      commentsToAnalyze.push({
         id: c.id,
         text: c.comment_text,
         username: c.commenter_username,
         post_context: postCaption.substring(0, 300),
+        image_url: imageUrl,
         formality: formalityHint
-      };
-    });
+      });
+    }
 
     // Build emoji constraint section for prompt
     let emojiConstraint = '';
@@ -173,6 +222,16 @@ EMOJI-EINSCHRÄNKUNG:
 Vermeide Emojis zu diesen Themen: ${emojiNogoList.join(', ')}.
 Nutze stattdessen neutrale: 🙌 👍 😎 🔥 ✨ 💪 🎯 👏 ⚡ 🚀 💯`;
     }
+
+    // Vision-enhanced prompt
+    const visionSection = hasAnyValidImage ? `
+===== VISUELLER KONTEXT (WICHTIG!) =====
+Einige Kommentare haben ein beigefügtes Bild des Posts.
+ANALYSIERE das Bild: Was ist darauf zu sehen? (Landschaft, Person, Essen, Tier, Selfie, etc.)
+NUTZE diese Info für kontextbezogene Antworten!
+Beispiel: Wenn jemand "Wow!" schreibt und auf dem Bild ist ein Hund → Antworte: "Ja, er ist echt süß, oder? 🐕"
+Falls kein Bild vorhanden ist, basiere die Antwort nur auf dem Text.
+========================================` : '';
 
     const analysisPrompt = `ROLLE: Du BIST der User (Antoine). Du bist KEIN Assistent. Du analysierst Kommentare und schreibst persönliche Antworten.
 
@@ -188,6 +247,7 @@ ${fewShotSection}
 ❌ KEINE CTAs ("Link in Bio", "Schau mal hier")
 ❌ KEINE Marketing-Sprache ("Wir freuen uns")
 ============================================================
+${visionSection}
 
 ANSPRACHE:
 - Wenn "formality": "use_sie" → Antworte mit "Sie" (formell)
@@ -197,17 +257,47 @@ ${emojiConstraint}
 Analysiere jeden Kommentar:
 1. sentiment_score: -1.0 (Hass) bis 1.0 (sehr positiv)
 2. is_critical: true bei Hass, Beleidigung, Spam, heftiger Kritik
-3. reply_suggestion: Kurze Antwort (1-2 Sätze), die auf den POST-KONTEXT eingeht
+3. reply_suggestion: Kurze Antwort (1-2 Sätze), die auf den POST-KONTEXT und ggf. das BILD eingeht
 
 WICHTIG: Jeder Kommentar hat:
 - "post_context": Caption meines Posts → Beziehe dich darauf, verstehe Witze!
+- "image_url": URL des Post-Bildes (falls vorhanden) → Beschreibe was du siehst und beziehe dich darauf!
 - "formality": Ob du siezen oder duzen sollst
 
 Kommentare als JSON:
-${JSON.stringify(commentsToAnalyze)}
+${JSON.stringify(commentsToAnalyze.map(c => ({ ...c, image_url: c.image_url ? "[BILD VORHANDEN - ANALYSIERE ES]" : null })))}
 
 Antworte NUR mit JSON-Array:
 [{"id": "uuid", "sentiment_score": 0.8, "is_critical": false, "reply_suggestion": "Haha ja genau! 😎"}]`;
+
+    // Build multimodal messages if we have images
+    let messages: any[];
+    
+    if (hasAnyValidImage) {
+      // Use multimodal content with images
+      const contentParts: any[] = [{ type: "text", text: analysisPrompt }];
+      
+      // Add valid images as separate image parts
+      for (const c of commentsToAnalyze) {
+        if (c.image_url) {
+          contentParts.push({
+            type: "text",
+            text: `[Bild für Kommentar-ID ${c.id}]:`
+          });
+          contentParts.push({
+            type: "image_url",
+            image_url: { url: c.image_url }
+          });
+        }
+      }
+      
+      messages = [{ role: 'user', content: contentParts }];
+    } else {
+      // Text-only fallback
+      messages = [{ role: 'user', content: analysisPrompt }];
+    }
+
+    console.log(`[analyze-comments] Sending request with ${hasAnyValidImage ? 'vision (multimodal)' : 'text-only'} mode`);
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -217,9 +307,7 @@ Antworte NUR mit JSON-Array:
       },
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'user', content: analysisPrompt }
-        ],
+        messages,
       }),
     });
 
@@ -272,12 +360,13 @@ Antworte NUR mit JSON-Array:
       }
     }
 
-    console.log(`[analyze-comments] Updated ${updatedCount} comments`);
+    console.log(`[analyze-comments] Updated ${updatedCount} comments (vision: ${hasAnyValidImage})`);
 
     return new Response(JSON.stringify({
       success: true,
       analyzed: updatedCount,
-      critical: analysisResults.filter(r => r.is_critical).length
+      critical: analysisResults.filter(r => r.is_critical).length,
+      vision_enabled: hasAnyValidImage
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
