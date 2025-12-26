@@ -63,23 +63,36 @@ export default function Community() {
 
   const loadData = async () => {
     // Load blacklist topics
-    const { data: topics } = await supabase
+    const { data: topics, error: topicsError } = await supabase
       .from('blacklist_topics')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (topics) {
+    if (topicsError) {
+      console.error('Failed to load blacklist topics:', topicsError);
+    }
+
+    if (topics && topics.length > 0) {
       setBlacklistTopics(topics);
     } else {
       // Create default topic if none exists
-      const { data: newTopic } = await supabase
-        .from('blacklist_topics')
-        .insert({ topic: 'Pater Brown', user_id: (await supabase.auth.getUser()).data.user?.id })
-        .select()
-        .single();
-      
-      if (newTopic) {
-        setBlacklistTopics([newTopic]);
+      const { data: userRes } = await supabase.auth.getUser();
+      const userId = userRes.user?.id;
+
+      if (userId) {
+        const { data: created, error: createErr } = await supabase
+          .from('blacklist_topics')
+          .insert({ topic: 'Pater Brown', user_id: userId })
+          .select()
+          .maybeSingle();
+
+        if (!createErr && created) {
+          setBlacklistTopics([created]);
+        } else {
+          setBlacklistTopics([]);
+        }
+      } else {
+        setBlacklistTopics([]);
       }
     }
 
