@@ -101,6 +101,55 @@ const TOOLS = [
         }
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_data",
+      description: "Analysiert Statistiken und Daten aus der Datenbank. Nutze dies für Performance-Reports, Zeitraum-Vergleiche und Engagement-Analysen. IMMER nutzen wenn der User nach Zahlen, Statistiken oder Performance fragt.",
+      parameters: {
+        type: "object",
+        properties: {
+          time_period: {
+            type: "string",
+            description: "Zeitraum: 'today', 'yesterday', 'last_week', 'last_month', 'this_month', 'last_3_months', 'custom'"
+          },
+          start_date: {
+            type: "string",
+            description: "Start-Datum für custom Zeitraum (YYYY-MM-DD)"
+          },
+          end_date: {
+            type: "string",
+            description: "End-Datum für custom Zeitraum (YYYY-MM-DD)"
+          },
+          metric_type: {
+            type: "string",
+            description: "Was analysieren: 'overview' (Gesamt), 'engagement' (Likes/Comments), 'posts' (Post-Anzahl), 'top_posts' (Best-Performer), 'comments' (Kommentar-Analyse), 'comparison' (Zeitraum-Vergleich)"
+          },
+          compare_with_previous: {
+            type: "boolean",
+            description: "Mit vorherigem Zeitraum vergleichen (für Wachstum/Trend)"
+          }
+        },
+        required: ["time_period", "metric_type"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_account_summary",
+      description: "Holt eine Gesamtübersicht des Accounts: Alle Posts, Gesamtstatistiken, Themen. Nutze dies für allgemeine Fragen wie 'Wie läuft es?' oder 'Gib mir einen Überblick'.",
+      parameters: {
+        type: "object",
+        properties: {
+          include_topics: {
+            type: "boolean",
+            description: "Themen/Topics mit einbeziehen"
+          }
+        }
+      }
+    }
   }
 ];
 
@@ -447,6 +496,343 @@ async function executeGetOpenComments(supabase: any, userId: string, params: any
   };
 }
 
+// Helper to calculate date ranges
+function getDateRange(timePeriod: string, startDate?: string, endDate?: string): { start: string; end: string; previousStart?: string; previousEnd?: string } {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  
+  let start: Date;
+  let end = new Date(now);
+  
+  switch (timePeriod) {
+    case 'today':
+      start = new Date(today);
+      break;
+    case 'yesterday':
+      start = new Date(now);
+      start.setDate(start.getDate() - 1);
+      end = new Date(today);
+      break;
+    case 'last_week':
+      start = new Date(now);
+      start.setDate(start.getDate() - 7);
+      break;
+    case 'last_month':
+      start = new Date(now);
+      start.setMonth(start.getMonth() - 1);
+      break;
+    case 'this_month':
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case 'last_3_months':
+      start = new Date(now);
+      start.setMonth(start.getMonth() - 3);
+      break;
+    case 'custom':
+      if (startDate && endDate) {
+        start = new Date(startDate);
+        end = new Date(endDate);
+      } else {
+        start = new Date(now);
+        start.setMonth(start.getMonth() - 1);
+      }
+      break;
+    default:
+      start = new Date(now);
+      start.setMonth(start.getMonth() - 1);
+  }
+  
+  // Calculate previous period for comparison
+  const periodLength = end.getTime() - start.getTime();
+  const previousEnd = new Date(start);
+  const previousStart = new Date(previousEnd.getTime() - periodLength);
+  
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+    previousStart: previousStart.toISOString(),
+    previousEnd: previousEnd.toISOString()
+  };
+}
+
+// Tool: Analyze Data - Real database queries
+async function executeAnalyzeData(supabase: any, userId: string, params: any) {
+  const { time_period, start_date, end_date, metric_type, compare_with_previous = true } = params;
+  
+  console.log(`[copilot] Analyzing data: ${metric_type} for ${time_period}`);
+  
+  const dateRange = getDateRange(time_period, start_date, end_date);
+  
+  // Current period data
+  const { data: currentPosts, error: postsError } = await supabase
+    .from('posts')
+    .select('id, caption, published_at, likes_count, comments_count, saved_count, impressions_count, status, format')
+    .eq('user_id', userId)
+    .eq('status', 'PUBLISHED')
+    .gte('published_at', dateRange.start)
+    .lte('published_at', dateRange.end)
+    .order('published_at', { ascending: false });
+  
+  if (postsError) {
+    console.error('[copilot] Posts query error:', postsError);
+    return { error: 'Fehler beim Laden der Posts' };
+  }
+  
+  const posts = currentPosts || [];
+  
+  // Calculate current period stats
+  const totalPosts = posts.length;
+  const totalLikes = posts.reduce((sum: number, p: any) => sum + (p.likes_count || 0), 0);
+  const totalComments = posts.reduce((sum: number, p: any) => sum + (p.comments_count || 0), 0);
+  const totalSaved = posts.reduce((sum: number, p: any) => sum + (p.saved_count || 0), 0);
+  const totalImpressions = posts.reduce((sum: number, p: any) => sum + (p.impressions_count || 0), 0);
+  const avgLikesPerPost = totalPosts > 0 ? Math.round(totalLikes / totalPosts) : 0;
+  const avgCommentsPerPost = totalPosts > 0 ? Math.round(totalComments / totalPosts) : 0;
+  
+  // Get comment data for this period
+  const { data: periodComments } = await supabase
+    .from('instagram_comments')
+    .select('id, sentiment_score, is_critical, is_replied')
+    .eq('user_id', userId)
+    .gte('comment_timestamp', dateRange.start)
+    .lte('comment_timestamp', dateRange.end);
+  
+  const comments = periodComments || [];
+  const openComments = comments.filter((c: any) => !c.is_replied).length;
+  const criticalComments = comments.filter((c: any) => c.is_critical).length;
+  const avgSentiment = comments.length > 0 
+    ? comments.reduce((sum: number, c: any) => sum + (c.sentiment_score || 0), 0) / comments.length 
+    : 0;
+  
+  // Previous period comparison
+  let comparison: any = null;
+  if (compare_with_previous && dateRange.previousStart && dateRange.previousEnd) {
+    const { data: previousPosts } = await supabase
+      .from('posts')
+      .select('id, likes_count, comments_count')
+      .eq('user_id', userId)
+      .eq('status', 'PUBLISHED')
+      .gte('published_at', dateRange.previousStart)
+      .lt('published_at', dateRange.start);
+    
+    const prevPosts = previousPosts || [];
+    const prevTotalPosts = prevPosts.length;
+    const prevTotalLikes = prevPosts.reduce((sum: number, p: any) => sum + (p.likes_count || 0), 0);
+    const prevTotalComments = prevPosts.reduce((sum: number, p: any) => sum + (p.comments_count || 0), 0);
+    
+    comparison = {
+      posts_change: prevTotalPosts > 0 ? Math.round(((totalPosts - prevTotalPosts) / prevTotalPosts) * 100) : null,
+      likes_change: prevTotalLikes > 0 ? Math.round(((totalLikes - prevTotalLikes) / prevTotalLikes) * 100) : null,
+      comments_change: prevTotalComments > 0 ? Math.round(((totalComments - prevTotalComments) / prevTotalComments) * 100) : null,
+      previous_period: {
+        posts: prevTotalPosts,
+        likes: prevTotalLikes,
+        comments: prevTotalComments
+      }
+    };
+  }
+  
+  // Build response based on metric_type
+  const baseResult = {
+    period: {
+      label: time_period === 'custom' ? `${start_date} bis ${end_date}` : time_period,
+      start: dateRange.start.split('T')[0],
+      end: dateRange.end.split('T')[0]
+    }
+  };
+  
+  switch (metric_type) {
+    case 'overview':
+      return {
+        ...baseResult,
+        overview: {
+          total_posts: totalPosts,
+          total_likes: totalLikes,
+          total_comments: totalComments,
+          total_saved: totalSaved,
+          total_impressions: totalImpressions,
+          avg_likes_per_post: avgLikesPerPost,
+          avg_comments_per_post: avgCommentsPerPost,
+          engagement_rate: totalImpressions > 0 
+            ? `${((totalLikes + totalComments) / totalImpressions * 100).toFixed(2)}%` 
+            : 'N/A (keine Impressions)',
+          open_comments: openComments,
+          critical_comments: criticalComments,
+          avg_sentiment: avgSentiment > 0.3 ? '😊 Positiv' : avgSentiment < -0.3 ? '😠 Negativ' : '😐 Neutral'
+        },
+        comparison,
+        hint: "WICHTIG: Wir speichern keine Follower-Historie. Für Wachstums-Analysen nutze Engagement (Likes+Comments) als Proxy."
+      };
+      
+    case 'engagement':
+      return {
+        ...baseResult,
+        engagement: {
+          total_likes: totalLikes,
+          total_comments: totalComments,
+          total_saved: totalSaved,
+          avg_likes_per_post: avgLikesPerPost,
+          avg_comments_per_post: avgCommentsPerPost,
+          best_like_post: posts.sort((a: any, b: any) => (b.likes_count || 0) - (a.likes_count || 0))[0] || null,
+          most_discussed_post: posts.sort((a: any, b: any) => (b.comments_count || 0) - (a.comments_count || 0))[0] || null
+        },
+        comparison
+      };
+      
+    case 'posts':
+      return {
+        ...baseResult,
+        posts_analysis: {
+          total_count: totalPosts,
+          by_format: {
+            single: posts.filter((p: any) => p.format === 'single').length,
+            carousel: posts.filter((p: any) => p.format === 'carousel').length
+          },
+          recent_posts: posts.slice(0, 5).map((p: any) => ({
+            id: p.id,
+            caption: (p.caption || '').substring(0, 80) + '...',
+            published_at: p.published_at,
+            likes: p.likes_count,
+            comments: p.comments_count
+          }))
+        },
+        comparison
+      };
+      
+    case 'top_posts':
+      const sortedByLikes = [...posts].sort((a: any, b: any) => (b.likes_count || 0) - (a.likes_count || 0));
+      const sortedByComments = [...posts].sort((a: any, b: any) => (b.comments_count || 0) - (a.comments_count || 0));
+      
+      return {
+        ...baseResult,
+        top_posts: {
+          by_likes: sortedByLikes.slice(0, 3).map((p: any) => ({
+            id: p.id,
+            caption: (p.caption || '').substring(0, 80) + '...',
+            likes: p.likes_count,
+            comments: p.comments_count
+          })),
+          by_comments: sortedByComments.slice(0, 3).map((p: any) => ({
+            id: p.id,
+            caption: (p.caption || '').substring(0, 80) + '...',
+            likes: p.likes_count,
+            comments: p.comments_count
+          }))
+        }
+      };
+      
+    case 'comments':
+      return {
+        ...baseResult,
+        comments_analysis: {
+          total_received: comments.length,
+          open_comments: openComments,
+          replied_comments: comments.filter((c: any) => c.is_replied).length,
+          critical_comments: criticalComments,
+          reply_rate: comments.length > 0 ? `${Math.round((comments.filter((c: any) => c.is_replied).length / comments.length) * 100)}%` : 'N/A',
+          avg_sentiment_score: Math.round(avgSentiment * 100) / 100,
+          sentiment_label: avgSentiment > 0.3 ? '😊 Überwiegend positiv' : avgSentiment < -0.3 ? '😠 Überwiegend negativ' : '😐 Gemischt/Neutral'
+        }
+      };
+      
+    case 'comparison':
+      if (!comparison) {
+        return { ...baseResult, error: 'Kein Vergleichszeitraum verfügbar' };
+      }
+      return {
+        ...baseResult,
+        current_period: {
+          posts: totalPosts,
+          likes: totalLikes,
+          comments: totalComments
+        },
+        comparison,
+        growth_summary: {
+          posts: comparison.posts_change !== null ? `${comparison.posts_change > 0 ? '+' : ''}${comparison.posts_change}%` : 'N/A',
+          likes: comparison.likes_change !== null ? `${comparison.likes_change > 0 ? '+' : ''}${comparison.likes_change}%` : 'N/A',
+          comments: comparison.comments_change !== null ? `${comparison.comments_change > 0 ? '+' : ''}${comparison.comments_change}%` : 'N/A'
+        }
+      };
+      
+    default:
+      return { ...baseResult, error: 'Unbekannter metric_type' };
+  }
+}
+
+// Tool: Get Account Summary
+async function executeGetAccountSummary(supabase: any, userId: string, params: any) {
+  const { include_topics = true } = params;
+  
+  console.log(`[copilot] Getting account summary`);
+  
+  // All-time stats
+  const { data: allPosts } = await supabase
+    .from('posts')
+    .select('id, likes_count, comments_count, status, published_at')
+    .eq('user_id', userId);
+  
+  const posts = allPosts || [];
+  const publishedPosts = posts.filter((p: any) => p.status === 'PUBLISHED');
+  
+  const totalLikes = publishedPosts.reduce((sum: number, p: any) => sum + (p.likes_count || 0), 0);
+  const totalComments = publishedPosts.reduce((sum: number, p: any) => sum + (p.comments_count || 0), 0);
+  
+  // Draft/scheduled counts
+  const draftPosts = posts.filter((p: any) => p.status === 'DRAFT').length;
+  const scheduledPosts = posts.filter((p: any) => p.status === 'SCHEDULED').length;
+  
+  // Open comments
+  const { data: openComments } = await supabase
+    .from('instagram_comments')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('is_replied', false)
+    .eq('is_hidden', false);
+  
+  // Topics
+  let topics: any[] = [];
+  if (include_topics) {
+    const { data: topicsData } = await supabase
+      .from('topics')
+      .select('id, title, priority, evergreen')
+      .eq('user_id', userId)
+      .order('priority', { ascending: false })
+      .limit(10);
+    topics = topicsData || [];
+  }
+  
+  // Last 30 days activity
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
+  const recentPosts = publishedPosts.filter((p: any) => 
+    p.published_at && new Date(p.published_at) >= thirtyDaysAgo
+  );
+  
+  return {
+    account_overview: {
+      total_published_posts: publishedPosts.length,
+      total_likes: totalLikes,
+      total_comments: totalComments,
+      drafts_pending: draftPosts,
+      scheduled_posts: scheduledPosts,
+      open_comments: openComments?.length || 0
+    },
+    last_30_days: {
+      posts_published: recentPosts.length,
+      likes_received: recentPosts.reduce((sum: number, p: any) => sum + (p.likes_count || 0), 0),
+      comments_received: recentPosts.reduce((sum: number, p: any) => sum + (p.comments_count || 0), 0),
+      avg_posts_per_week: Math.round((recentPosts.length / 4) * 10) / 10
+    },
+    topics: topics.map((t: any) => ({
+      title: t.title,
+      priority: t.priority,
+      evergreen: t.evergreen
+    })),
+    hint: "WICHTIG: Follower-Zahlen werden nicht historisch gespeichert. Für Wachstum nutze Engagement-Daten (Likes + Comments) als Proxy."
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -493,36 +879,56 @@ serve(async (req) => {
       .eq('user_id', user.id)
       .maybeSingle();
 
-    // System prompt for the agent
-    const systemPrompt = `Du bist Antoine's Community Co-Pilot, ein intelligenter Assistent für Social Media Management.
+    // System prompt for the agent with full database schema knowledge
+    const systemPrompt = `Du bist Antoine's Community Co-Pilot, ein intelligenter Daten-Analyst und Assistent für Social Media Management.
 
-DEINE FÄHIGKEITEN:
-- Posts und Kommentare durchsuchen (search_posts)
-- Stimmung/Reaktionen analysieren (analyze_sentiment)
-- Antwort-Entwürfe erstellen (draft_reply)
-- Offene Kommentare finden (get_open_comments)
+DU HAST VOLLSTÄNDIGEN ZUGRIFF AUF DIE DATENBANK:
+
+📊 TABELLEN-SCHEMA:
+1. posts: id, caption, published_at, likes_count, comments_count, saved_count, impressions_count, status, format (single/carousel), ig_media_id, original_media_url
+2. instagram_comments: id, comment_text, commenter_username, sentiment_score (-1 bis +1), is_critical, is_replied, comment_timestamp, ig_media_id
+3. topics: id, title, description, priority, evergreen, seasonal_start, seasonal_end
+4. brand_rules: tone_style, writing_style, formality_mode, emoji_level
+
+DEINE TOOLS:
+- search_posts: Durchsuche Posts nach Stichworten
+- analyze_sentiment: Analysiere Stimmung eines Posts
+- draft_reply: Erstelle Antwort-Entwurf
+- get_open_comments: Finde unbeantwortete Kommentare
+- analyze_data: 📈 STATISTIKEN & REPORTS - Nutze dies für ALLE Fragen zu Zahlen, Performance, Zeiträumen!
+- get_account_summary: Gesamtübersicht des Accounts
+
+⚠️ WICHTIGE REGELN:
+1. NUTZE IMMER analyze_data wenn nach Statistiken, Zahlen oder Performance gefragt wird!
+2. Sage NIEMALS "Ich habe keinen Zugriff" - du HAST Zugriff!
+3. Bei Fragen wie "Wie war mein Dezember?" → analyze_data mit time_period="custom", start_date="2025-12-01", end_date="2025-12-31"
+4. Bei "Wie läuft es?" → get_account_summary
+5. Follower-Zahlen werden NICHT gespeichert → Nutze Engagement (Likes+Comments) als Wachstums-Proxy
 
 KONTEXT:
 - Sprache: ${brandRules?.language_primary || 'Deutsch'}
 - Tonalität: ${brandRules?.tone_style || 'locker und authentisch'}
 - Formalität: ${brandRules?.formality_mode || 'smart'}
 
-VERHALTEN:
-- Antworte immer auf Deutsch
-- Nutze die Tools aktiv, wenn der User nach Daten fragt
-- Fasse Tool-Ergebnisse kurz und hilfreich zusammen
-- Bei mehreren Ergebnissen: Zeige die wichtigsten und biete an, mehr zu zeigen
-- Wenn du Posts/Kommentare findest, beschreibe sie kurz und biete Aktionen an
-
 BEISPIEL-INTERAKTIONEN:
-User: "Zeig mir alle Posts über Tatort"
-→ Nutze search_posts mit query="Tatort"
+User: "Wie war mein Dezember?"
+→ analyze_data(time_period="custom", start_date="2025-12-01", end_date="2025-12-31", metric_type="overview", compare_with_previous=true)
+→ Antworte: "Im Dezember hast du 12 Posts veröffentlicht mit 45.000 Likes (+20% vs November)..."
 
-User: "Wie war die Reaktion auf mein letztes Bild?"
-→ Nutze get_open_comments oder analyze_sentiment
+User: "Zeig mir meine Top-Posts diese Woche"
+→ analyze_data(time_period="last_week", metric_type="top_posts")
 
-User: "Beantworte diesen Kommentar witzig"
-→ Nutze draft_reply mit instruction="witzig"`;
+User: "Wie viele offene Kommentare habe ich?"
+→ get_open_comments()
+
+User: "Wie ist mein Account insgesamt aufgestellt?"
+→ get_account_summary()
+
+VERHALTEN:
+- Antworte auf Deutsch
+- Nutze IMMER die passenden Tools - rate nie!
+- Fasse Ergebnisse kurz und übersichtlich zusammen
+- Bei Wachstumsfragen: Berechne prozentuale Veränderungen basierend auf Engagement`;
 
     // First call: Let the AI decide if it needs tools
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -580,6 +986,12 @@ User: "Beantworte diesen Kommentar witzig"
             break;
           case 'get_open_comments':
             result = await executeGetOpenComments(supabase, user.id, params);
+            break;
+          case 'analyze_data':
+            result = await executeAnalyzeData(supabase, user.id, params);
+            break;
+          case 'get_account_summary':
+            result = await executeGetAccountSummary(supabase, user.id, params);
             break;
           default:
             result = { error: `Unknown tool: ${funcName}` };
