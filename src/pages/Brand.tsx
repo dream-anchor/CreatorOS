@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { BrandRules } from "@/types/database";
-import { toast } from "sonner";
-import { Loader2, Save, Plus, X, Sparkles, Brain, Wand2, CheckCircle2, Clock, Database, ExternalLink } from "lucide-react";
+import { Loader2, Plus, X, Sparkles, Brain, CheckCircle2, Clock, Database, ExternalLink, PenLine, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { formatDistanceToNow, format } from "date-fns";
+import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
 const AI_MODELS = [
@@ -23,11 +22,12 @@ const AI_MODELS = [
   { value: "openai/gpt-5", label: "GPT-5", description: "Kreativ & präzise" },
 ];
 
+type SaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
+
 export default function BrandPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [brand, setBrand] = useState<BrandRules | null>(null);
   const [doInput, setDoInput] = useState("");
   const [dontInput, setDontInput] = useState("");
@@ -35,6 +35,12 @@ export default function BrandPage() {
   
   // Data source state
   const [postCount, setPostCount] = useState(0);
+  
+  // Autosave state
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [lastError, setLastError] = useState<string | null>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isInitialLoad = useRef(true);
 
   useEffect(() => {
     if (user) {
@@ -43,40 +49,41 @@ export default function BrandPage() {
     }
   }, [user]);
 
-  const loadBrandRules = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("brand_rules")
-        .select("*")
-        .single();
-
-      if (error && error.code !== "PGRST116") throw error;
-      if (data) setBrand(data as BrandRules);
-    } catch (error: any) {
-      toast.error("Fehler beim Laden: " + error.message);
-    } finally {
-      setLoading(false);
+  // Autosave effect - triggers when brand changes
+  useEffect(() => {
+    // Skip initial load
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      return;
     }
-  };
+    
+    if (!brand || !brand.id) return;
 
-  const loadPostCount = async () => {
-    try {
-      const { count, error } = await supabase
-        .from("posts")
-        .select("*", { count: "exact", head: true })
-        .eq("is_imported", true);
+    // Set status to pending (typing detected)
+    setSaveStatus("pending");
+    setLastError(null);
 
-      if (!error && count !== null) {
-        setPostCount(count);
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Set new timeout for debounced save (1 second)
+    saveTimeoutRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 1000);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
       }
-    } catch (error) {
-      console.error("Error loading post count:", error);
-    }
-  };
+    };
+  }, [brand]);
 
-  const handleSave = async () => {
-    if (!brand) return;
-    setSaving(true);
+  const performAutoSave = useCallback(async () => {
+    if (!brand || !brand.id) return;
+    
+    setSaveStatus("saving");
 
     try {
       const { error } = await supabase
@@ -100,11 +107,52 @@ export default function BrandPage() {
         .eq("id", brand.id);
 
       if (error) throw error;
-      toast.success("Brand-Regeln gespeichert!");
+      
+      setSaveStatus("saved");
+      
+      // Reset to idle after 2 seconds
+      setTimeout(() => {
+        setSaveStatus((current) => current === "saved" ? "idle" : current);
+      }, 2000);
+      
     } catch (error: any) {
-      toast.error("Fehler beim Speichern: " + error.message);
+      console.error("Autosave error:", error);
+      setSaveStatus("error");
+      setLastError(error.message);
+    }
+  }, [brand]);
+
+  const loadBrandRules = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("brand_rules")
+        .select("*")
+        .single();
+
+      if (error && error.code !== "PGRST116") throw error;
+      if (data) {
+        setBrand(data as BrandRules);
+        isInitialLoad.current = true; // Reset flag after setting data
+      }
+    } catch (error: any) {
+      console.error("Fehler beim Laden:", error.message);
     } finally {
-      setSaving(false);
+      setLoading(false);
+    }
+  };
+
+  const loadPostCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from("posts")
+        .select("*", { count: "exact", head: true })
+        .eq("is_imported", true);
+
+      if (!error && count !== null) {
+        setPostCount(count);
+      }
+    } catch (error) {
+      console.error("Error loading post count:", error);
     }
   };
 
@@ -139,15 +187,39 @@ export default function BrandPage() {
     });
   };
 
-  const formatLastAnalysis = () => {
-    if (!brand?.last_style_analysis_at) return null;
-    try {
-      return formatDistanceToNow(new Date(brand.last_style_analysis_at), { 
-        addSuffix: true, 
-        locale: de 
-      });
-    } catch {
-      return null;
+  // Autosave Status Component
+  const AutosaveStatus = () => {
+    switch (saveStatus) {
+      case "pending":
+        return (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <PenLine className="h-4 w-4" />
+            <span>Änderungen erkannt...</span>
+          </div>
+        );
+      case "saving":
+        return (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Speichert...</span>
+          </div>
+        );
+      case "saved":
+        return (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <CheckCircle2 className="h-4 w-4 text-success" />
+            <span className="text-success">Gespeichert</span>
+          </div>
+        );
+      case "error":
+        return (
+          <div className="flex items-center gap-2 text-destructive text-sm">
+            <AlertCircle className="h-4 w-4" />
+            <span>Fehler: {lastError || "Speichern fehlgeschlagen"}</span>
+          </div>
+        );
+      default:
+        return null;
     }
   };
 
@@ -165,12 +237,7 @@ export default function BrandPage() {
     <AppLayout
       title="Marke & Regeln"
       description="Definiere deinen Markenstil und Content-Richtlinien"
-      actions={
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Speichern
-        </Button>
-      }
+      actions={<AutosaveStatus />}
     >
       <div className="space-y-6">
         {/* Datenquelle Info-Box */}
@@ -471,10 +538,10 @@ Beispiel 3:"
             <CardHeader>
               <CardTitle className="text-success">Do's</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-2">
+            <CardContent>
+              <div className="flex gap-2 mb-4">
                 <Input
-                  placeholder="Neues Do hinzufügen..."
+                  placeholder="z.B. Call-to-Action am Ende..."
                   value={doInput}
                   onChange={(e) => setDoInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addItem("do_list")}
@@ -485,18 +552,18 @@ Beispiel 3:"
               </div>
               <div className="flex flex-wrap gap-2">
                 {(brand?.do_list || []).map((item, index) => (
-                  <Badge key={index} variant="secondary" className="gap-1 pl-3">
+                  <Badge key={index} variant="outline" className="gap-1 pl-3 border-success/50 text-success">
                     {item}
                     <button
                       onClick={() => removeItem("do_list", index)}
-                      className="ml-1 hover:text-destructive"
+                      className="ml-1 hover:opacity-70"
                     >
                       <X className="h-3 w-3" />
                     </button>
                   </Badge>
                 ))}
                 {(brand?.do_list || []).length === 0 && (
-                  <p className="text-sm text-muted-foreground">Noch keine Einträge</p>
+                  <p className="text-sm text-muted-foreground">Regeln, die immer befolgt werden</p>
                 )}
               </div>
             </CardContent>
@@ -507,10 +574,10 @@ Beispiel 3:"
             <CardHeader>
               <CardTitle className="text-destructive">Don'ts</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-2">
+            <CardContent>
+              <div className="flex gap-2 mb-4">
                 <Input
-                  placeholder="Neues Don't hinzufügen..."
+                  placeholder="z.B. Keine Clickbait-Titel..."
                   value={dontInput}
                   onChange={(e) => setDontInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addItem("dont_list")}
@@ -521,18 +588,18 @@ Beispiel 3:"
               </div>
               <div className="flex flex-wrap gap-2">
                 {(brand?.dont_list || []).map((item, index) => (
-                  <Badge key={index} variant="secondary" className="gap-1 pl-3">
+                  <Badge key={index} variant="outline" className="gap-1 pl-3 border-destructive/50 text-destructive">
                     {item}
                     <button
                       onClick={() => removeItem("dont_list", index)}
-                      className="ml-1 hover:text-destructive"
+                      className="ml-1 hover:opacity-70"
                     >
                       <X className="h-3 w-3" />
                     </button>
                   </Badge>
                 ))}
                 {(brand?.dont_list || []).length === 0 && (
-                  <p className="text-sm text-muted-foreground">Noch keine Einträge</p>
+                  <p className="text-sm text-muted-foreground">Dinge, die vermieden werden</p>
                 )}
               </div>
             </CardContent>
