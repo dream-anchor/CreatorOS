@@ -71,6 +71,8 @@ serve(async (req) => {
       const body = await req.json();
       if (body?.mode === 'sync_recent') {
         mode = 'sync_recent';
+      } else if (body?.mode === 'force_resync') {
+        mode = 'force_resync';
       }
     } catch {
       // No body or invalid JSON - use default mode
@@ -134,9 +136,9 @@ serve(async (req) => {
     }
 
     // Mode-specific settings
-    const MAX_POSTS = mode === 'sync_recent' ? 50 : 1000;
-    const BATCH_SIZE = mode === 'sync_recent' ? 50 : 50;
-    const logPrefix = mode === 'sync_recent' ? 'Smart Sync' : 'Deep Import';
+    const MAX_POSTS = mode === 'force_resync' ? 20 : (mode === 'sync_recent' ? 50 : 1000);
+    const BATCH_SIZE = mode === 'force_resync' ? 20 : (mode === 'sync_recent' ? 50 : 50);
+    const logPrefix = mode === 'force_resync' ? 'Force Resync' : (mode === 'sync_recent' ? 'Smart Sync' : 'Deep Import');
 
     console.log(`${logPrefix} starting for user ${user.id}, IG user ${igUserId}, mode: ${mode}`);
 
@@ -159,17 +161,24 @@ serve(async (req) => {
         const errorData = await response.json();
         console.error('Instagram API error:', errorData);
         
-        // For sync_recent, don't throw - just return gracefully
-        if (mode === 'sync_recent') {
+        const errorCode = errorData.error?.code || response.status;
+        const errorMessage = errorData.error?.message || 'Unbekannter API-Fehler';
+        const errorType = errorData.error?.type || 'UnknownError';
+        
+        // For sync_recent and force_resync, return detailed error
+        if (mode === 'sync_recent' || mode === 'force_resync') {
           return new Response(JSON.stringify({ 
             success: false, 
             synced: 0,
-            message: 'API-Fehler beim Sync'
+            error_code: errorCode,
+            error_type: errorType,
+            message: `API-Fehler (${errorCode}): ${errorMessage}`
           }), {
+            status: response.status,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        throw new Error(errorData.error?.message || 'Instagram API Fehler');
+        throw new Error(`${errorCode}: ${errorMessage}`);
       }
 
       const data: PaginatedResponse = await response.json();
@@ -179,8 +188,8 @@ serve(async (req) => {
         console.log(`${logPrefix}: Page ${pageCount}: Got ${data.data.length} posts, total now: ${allMedia.length}`);
       }
 
-      // For sync_recent, only fetch first page (50 posts)
-      if (mode === 'sync_recent') {
+      // For sync_recent and force_resync, only fetch first page
+      if (mode === 'sync_recent' || mode === 'force_resync') {
         break;
       }
 
@@ -260,25 +269,28 @@ serve(async (req) => {
       .update({ last_sync_at: new Date().toISOString() })
       .eq('user_id', user.id);
 
-    // For sync_recent, return minimal response
-    if (mode === 'sync_recent') {
+    // For sync_recent or force_resync, return minimal response
+    if (mode === 'sync_recent' || mode === 'force_resync') {
       // Log the sync (only if we actually synced something)
       if (upsertedCount > 0) {
         await supabase.from('logs').insert({
           user_id: user.id,
-          event_type: 'instagram_smart_sync',
+          event_type: mode === 'force_resync' ? 'instagram_force_resync' : 'instagram_smart_sync',
           level: 'info',
           details: {
             synced_count: upsertedCount,
-            mode: 'sync_recent',
+            mode: mode,
+            fetched_from_api: allMedia.length,
           },
         });
       }
 
+      const actionLabel = mode === 'force_resync' ? 'repariert & aktualisiert' : 'synchronisiert';
       return new Response(JSON.stringify({ 
         success: true,
         synced: upsertedCount,
-        message: `${upsertedCount} Posts synchronisiert`
+        fetched: allMedia.length,
+        message: `${upsertedCount} Posts ${actionLabel}`
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -338,7 +350,12 @@ serve(async (req) => {
   } catch (error: unknown) {
     console.error('Error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: message }), {
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: message,
+      error_code: 500,
+      message: `Serverfehler: ${message}`
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
