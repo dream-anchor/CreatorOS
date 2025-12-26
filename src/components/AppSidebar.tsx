@@ -12,6 +12,7 @@ import {
   ClipboardCheck,
   FolderOpen,
   ImageIcon,
+  MessageCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -22,6 +23,7 @@ const studioNav = [
   { name: "Magic Create", href: "/generator", icon: Sparkles, highlight: true },
   { name: "Review", href: "/review", icon: ClipboardCheck },
   { name: "Planung", href: "/calendar", icon: CalendarClock },
+  { name: "Community", href: "/community", icon: MessageCircle },
 ];
 
 const brandNav = [
