@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,12 +15,12 @@ import {
   Trash2,
   X,
   Plus,
-  Rocket,
-  Zap
+  Rocket
 } from "lucide-react";
 import { format, formatDistanceToNow, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
-import { CommentCard, CommentWithContext } from "@/components/community/CommentCard";
+import { CommentWithContext } from "@/components/community/CommentCard";
+import { PostCommentGroup } from "@/components/community/PostCommentGroup";
 
 interface BlacklistTopic {
   id: string;
@@ -30,6 +30,14 @@ interface BlacklistTopic {
 interface EmojiNogoTerm {
   id: string;
   term: string;
+}
+
+interface PostGroup {
+  igMediaId: string;
+  postCaption: string | null;
+  postPermalink: string | null;
+  publishedAt: string | null;
+  comments: CommentWithContext[];
 }
 
 type SmartStrategy = 'warmup' | 'afterglow' | 'natural' | null;
@@ -47,6 +55,34 @@ export default function Community() {
   const [newEmojiTerm, setNewEmojiTerm] = useState("");
   const [smartStrategy, setSmartStrategy] = useState<SmartStrategy>(null);
   const [sanitizingComments, setSanitizingComments] = useState<Set<string>>(new Set());
+
+  // Group comments by their parent post
+  const postGroups = useMemo((): PostGroup[] => {
+    const groupMap = new Map<string, PostGroup>();
+
+    comments.forEach(comment => {
+      const key = comment.ig_media_id;
+      
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          igMediaId: key,
+          postCaption: comment.post_caption || null,
+          postPermalink: comment.post_permalink || null,
+          publishedAt: comment.post_published_at || null,
+          comments: [],
+        });
+      }
+      
+      groupMap.get(key)!.comments.push(comment);
+    });
+
+    // Sort groups by most recent comment timestamp
+    return Array.from(groupMap.values()).sort((a, b) => {
+      const aLatest = Math.max(...a.comments.map(c => new Date(c.comment_timestamp).getTime()));
+      const bLatest = Math.max(...b.comments.map(c => new Date(c.comment_timestamp).getTime()));
+      return bLatest - aLatest;
+    });
+  }, [comments]);
 
   useEffect(() => {
     loadData();
@@ -101,7 +137,8 @@ export default function Community() {
           caption,
           original_media_url,
           original_ig_permalink,
-          ig_media_id
+          ig_media_id,
+          published_at
         )
       `)
       .eq('is_replied', false)
@@ -128,6 +165,7 @@ export default function Community() {
         post_caption: c.posts?.caption || null,
         post_image_url: c.posts?.original_media_url || null,
         post_permalink: c.posts?.original_ig_permalink || null,
+        post_published_at: c.posts?.published_at || null,
         selected: !c.is_critical,
         editedReply: c.ai_reply_suggestion || '',
         approved: false,
@@ -387,6 +425,20 @@ export default function Community() {
     toast.success("✅ Antwort freigegeben");
   };
 
+  const approveAllForPost = (igMediaId: string) => {
+    const affectedCount = comments.filter(c => c.ig_media_id === igMediaId && !c.approved && c.editedReply).length;
+    
+    setComments(prev => prev.map(c => 
+      c.ig_media_id === igMediaId && c.editedReply 
+        ? { ...c, approved: true, selected: true } 
+        : c
+    ));
+    
+    if (affectedCount > 0) {
+      toast.success(`✅ ${affectedCount} Antworten für diesen Post freigegeben`);
+    }
+  };
+
   const smartReply = async () => {
     // Only send approved comments
     const approvedComments = comments.filter(c => c.approved && c.editedReply);
@@ -451,7 +503,6 @@ export default function Community() {
   };
 
   const approvedCount = comments.filter(c => c.approved).length;
-  const selectedCount = comments.filter(c => c.selected).length;
 
   const getStrategyInfo = () => {
     switch (smartStrategy) {
@@ -643,31 +694,31 @@ export default function Community() {
           </Card>
         )}
 
-        {/* Normal Comments - with context cards */}
-        {comments.length > 0 ? (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
+        {/* Post-Grouped Comments */}
+        {postGroups.length > 0 ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium flex items-center gap-2">
                 <MessageCircle className="h-4 w-4" />
-                Antworten vorbereiten ({approvedCount} freigegeben / {comments.length} gesamt)
-              </CardTitle>
-              <CardDescription>
-                Prüfe die KI-Vorschläge und gib sie einzeln frei
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {comments.map(comment => (
-                <CommentCard
-                  key={comment.id}
-                  comment={comment}
-                  onToggleSelect={toggleCommentSelection}
-                  onUpdateReply={updateReplyText}
-                  onApprove={approveComment}
-                  isSanitizing={sanitizingComments.has(comment.id)}
-                />
-              ))}
-            </CardContent>
-          </Card>
+                Antworten nach Post ({approvedCount} freigegeben / {comments.length} gesamt)
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {postGroups.length} Post{postGroups.length !== 1 ? 's' : ''} mit offenen Kommentaren
+              </p>
+            </div>
+
+            {postGroups.map(group => (
+              <PostCommentGroup
+                key={group.igMediaId}
+                group={group}
+                onToggleSelect={toggleCommentSelection}
+                onUpdateReply={updateReplyText}
+                onApprove={approveComment}
+                onApproveAll={approveAllForPost}
+                sanitizingComments={sanitizingComments}
+              />
+            ))}
+          </div>
         ) : (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">

@@ -25,6 +25,7 @@ export interface CommentWithContext {
   post_caption?: string | null;
   post_image_url?: string | null;
   post_permalink?: string | null;
+  post_published_at?: string | null;
   // UI state
   selected?: boolean;
   editedReply?: string;
