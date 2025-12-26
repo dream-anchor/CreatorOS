@@ -805,7 +805,6 @@ export default function Community() {
       <ActionBar
         selectedCount={selectedCount}
         totalCount={comments.length}
-        smartStrategy={smartStrategy}
         sending={sending}
         onSmartReply={smartReply}
       />
