@@ -1823,9 +1823,35 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+    
+    // Check for required secrets
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("[copilot] Missing Supabase configuration");
+      return new Response(JSON.stringify({ 
+        message: "❌ Die Datenbank-Konfiguration fehlt. Bitte prüfe die Supabase-Einstellungen.",
+        error: "missing_supabase_config",
+        tool_results: []
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    if (!lovableApiKey) {
+      console.error("[copilot] Missing LOVABLE_API_KEY");
+      return new Response(JSON.stringify({ 
+        message: "❌ Der AI-Schlüssel (LOVABLE_API_KEY) fehlt. Bitte prüfe die Edge Function Secrets.",
+        error: "missing_api_key",
+        tool_results: []
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Auth
