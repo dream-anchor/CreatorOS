@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { subDays } from "date-fns";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -60,7 +61,7 @@ export default function Community() {
   const [selectedAiModel, setSelectedAiModel] = useState("google/gemini-2.5-flash");
   
   // Pagination state
-  const POSTS_PER_PAGE = 50;
+  const POSTS_PER_PAGE = 10;
   const [visiblePostCount, setVisiblePostCount] = useState(POSTS_PER_PAGE);
 
   // Group comments by their parent post
@@ -150,12 +151,15 @@ export default function Community() {
     // Get blacklist for filtering
     const blacklistLower = (topics || []).map((t) => t.topic.toLowerCase());
 
-    // Load comments
+    // Load comments from last 90 days only
+    const ninetyDaysAgo = subDays(new Date(), 90).toISOString();
+    
     const { data: allComments } = await supabase
       .from("instagram_comments")
       .select("*")
       .eq("is_replied", false)
       .eq("is_hidden", false)
+      .gte("comment_timestamp", ninetyDaysAgo)
       .order("comment_timestamp", { ascending: false });
 
     // Load all posts to join by ig_media_id
