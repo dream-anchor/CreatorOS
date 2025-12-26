@@ -34,6 +34,7 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingHint, setLoadingHint] = useState<string>("Denke nach...");
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -82,6 +83,22 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
     if (isLoading) return;
 
     setIsLoading(true);
+    
+    // Set contextual loading hint based on user input
+    const inputLower = inputValue.toLowerCase();
+    if (inputLower.includes("foto") || inputLower.includes("bild") || inputLower.includes("suche")) {
+      setLoadingHint("🔍 Suche passende Bilder...");
+    } else if (inputLower.includes("generier") || inputLower.includes("erstell") || inputLower.includes("mach")) {
+      setLoadingHint("🎨 Erstelle Entwurf...");
+    } else if (inputLower.includes("kommentar") || inputLower.includes("antwort")) {
+      setLoadingHint("💬 Analysiere Kommentare...");
+    } else if (inputLower.includes("statistik") || inputLower.includes("zahlen") || inputLower.includes("performance")) {
+      setLoadingHint("📊 Lade Statistiken...");
+    } else if (inputLower.includes("post") || inputLower.includes("content")) {
+      setLoadingHint("📝 Bereite Content vor...");
+    } else {
+      setLoadingHint("Denke nach...");
+    }
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -475,10 +492,13 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
             {isLoading && (
               <div className="flex gap-2 justify-start">
                 <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-primary/60 flex-shrink-0 flex items-center justify-center">
-                  <Sparkles className="h-4 w-4 text-primary-foreground" />
+                  <Sparkles className="h-4 w-4 text-primary-foreground animate-pulse" />
                 </div>
                 <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="animate-pulse">{loadingHint}</span>
+                  </div>
                 </div>
               </div>
             )}
