@@ -68,14 +68,14 @@ serve(async (req) => {
     const accessToken = connection.token_encrypted;
     const igUserId = connection.ig_user_id;
 
-    // Calculate 30 days ago
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // Calculate 90 days ago (extended from 30 days)
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-    // Fetch recent media (last 30 days)
-    const mediaUrl = `https://graph.facebook.com/v17.0/${igUserId}/media?fields=id,timestamp&limit=50&access_token=${accessToken}`;
+    // Fetch recent media (last 90 days)
+    const mediaUrl = `https://graph.facebook.com/v17.0/${igUserId}/media?fields=id,timestamp&limit=100&access_token=${accessToken}`;
     
-    console.log(`[fetch-comments] Fetching media from last 30 days`);
+    console.log(`[fetch-comments] Fetching media from last 90 days`);
     
     const mediaResponse = await fetch(mediaUrl);
     if (!mediaResponse.ok) {
@@ -86,10 +86,10 @@ serve(async (req) => {
 
     const mediaData = await mediaResponse.json();
     const recentMedia = mediaData.data?.filter((m: any) => 
-      new Date(m.timestamp) >= thirtyDaysAgo
+      new Date(m.timestamp) >= ninetyDaysAgo
     ) || [];
 
-    console.log(`[fetch-comments] Found ${recentMedia.length} posts from last 30 days`);
+    console.log(`[fetch-comments] Found ${recentMedia.length} posts from last 90 days`);
 
     // Fetch comments for each media
     let allComments: any[] = [];
