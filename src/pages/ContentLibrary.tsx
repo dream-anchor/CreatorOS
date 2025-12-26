@@ -126,12 +126,20 @@ export default function ContentLibraryPage() {
             <h2 className="text-xl font-semibold text-foreground mb-2">
               Noch keine Historie importiert
             </h2>
-            <p className="text-muted-foreground text-center max-w-md mb-6">
+            <p className="text-muted-foreground text-center max-w-md mb-4">
               Importiere deine Instagram-Posts in den Einstellungen unter "Meta-Verbindung", 
               um hier deine Erfolgsstatistiken zu sehen.
             </p>
+            <Button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="gap-2 mb-4"
+            >
+              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+              {refreshing ? "Lädt..." : "Posts laden"}
+            </Button>
             {debugInfo && (
-              <p className="text-xs text-muted-foreground/60 font-mono mt-4 p-2 bg-muted/50 rounded">
+              <p className="text-xs text-muted-foreground/60 font-mono mt-4 p-2 bg-muted/50 rounded max-w-lg text-center">
                 Debug: {debugInfo}
               </p>
             )}

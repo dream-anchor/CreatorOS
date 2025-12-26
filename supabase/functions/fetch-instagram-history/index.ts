@@ -237,11 +237,11 @@ serve(async (req) => {
     for (let i = 0; i < postsToUpsert.length; i += UPSERT_BATCH_SIZE) {
       const batch = postsToUpsert.slice(i, i + UPSERT_BATCH_SIZE);
       
+      // Use user_id + ig_media_id as conflict target for proper upsert
       const { data: upsertedData, error: upsertError } = await supabase
         .from('posts')
         .upsert(batch, { 
-          onConflict: 'ig_media_id',
-          ignoreDuplicates: false 
+          onConflict: 'ig_media_id'
         })
         .select();
 
