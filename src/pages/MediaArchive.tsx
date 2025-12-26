@@ -208,7 +208,7 @@ export default function MediaArchivePage() {
 
   if (loading) {
     return (
-      <AppLayout title="Media-Archiv">
+      <AppLayout title="📸 Meine Bilder">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -218,7 +218,7 @@ export default function MediaArchivePage() {
 
   return (
     <AppLayout
-      title="Media-Archiv"
+      title="📸 Meine Bilder"
       description="Deine Bilder für intelligente Post-Generierung"
       actions={
         <Button

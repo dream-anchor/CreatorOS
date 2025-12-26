@@ -27,8 +27,8 @@ const studioNav = [
 const brandNav = [
   { name: "Meine DNA", href: "/brand", icon: Fingerprint },
   { name: "Themen", href: "/topics", icon: Hash },
-  { name: "Media-Archiv", href: "/media", icon: ImageIcon },
-  { name: "Content-Pool", href: "/library", icon: FolderOpen },
+  { name: "📸 Meine Bilder", href: "/media", icon: ImageIcon },
+  { name: "📊 Post-Historie", href: "/library", icon: FolderOpen },
 ];
 
 export function AppSidebar() {
