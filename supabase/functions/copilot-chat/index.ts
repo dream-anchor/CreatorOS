@@ -186,6 +186,54 @@ const TOOLS = [
         properties: {}
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_content_categories",
+      description: "Analysiert Posts nach Kategorien, Stimmung und Themen-Tags. NUTZE DIES bei Fragen wie 'Welche Kategorie performt am besten?', 'Was bringt am meisten Reichweite?', 'Welche Themen laufen gut?', 'Wie unterscheiden sich meine Humor-Posts von Promo?'",
+      parameters: {
+        type: "object",
+        properties: {
+          group_by: {
+            type: "string",
+            description: "Gruppieren nach: 'category' (Humor, Promo etc.), 'mood' (Stimmung), 'topic_tags' (Themen)",
+            enum: ["category", "mood", "topic_tags"]
+          },
+          metric: {
+            type: "string",
+            description: "Metrik zum Vergleichen: 'engagement' (Likes+Comments+Saves), 'reach' (Reichweite), 'engagement_rate' (Engagement pro Reichweite)",
+            enum: ["engagement", "reach", "engagement_rate"]
+          },
+          time_period: {
+            type: "string",
+            description: "Zeitraum: 'all_time', 'last_month', 'last_3_months'",
+            enum: ["all_time", "last_month", "last_3_months"]
+          },
+          include_recommendations: {
+            type: "boolean",
+            description: "Strategische Empfehlungen basierend auf den Daten generieren"
+          }
+        },
+        required: ["group_by", "metric"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "classify_posts_batch",
+      description: "Klassifiziert unklassifizierte Posts mit AI. NUTZE DIES wenn der User 'Analysiere meine Posts', 'Tagge meine Inhalte' oder 'Klassifiziere' sagt.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: {
+            type: "number",
+            description: "Anzahl zu klassifizierender Posts (Standard: 10, Max: 20)"
+          }
+        }
+      }
+    }
   }
 ];
 
@@ -1103,6 +1151,203 @@ async function executeTriggerInsightsTracking(supabase: any, userId: string, aut
   }
 }
 
+// Tool: Analyze Content Categories - Uses AI classification data
+async function executeAnalyzeContentCategories(supabase: any, userId: string, params: any) {
+  const { group_by, metric, time_period = 'all_time', include_recommendations = true } = params;
+
+  console.log(`[copilot] Analyzing content categories by ${group_by}, metric: ${metric}`);
+
+  // Build date filter
+  let dateFilter = '';
+  const now = new Date();
+  if (time_period === 'last_month') {
+    const monthAgo = new Date(now);
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    dateFilter = monthAgo.toISOString();
+  } else if (time_period === 'last_3_months') {
+    const threeMonthsAgo = new Date(now);
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    dateFilter = threeMonthsAgo.toISOString();
+  }
+
+  // Get all classified posts
+  let query = supabase
+    .from('posts')
+    .select('id, category, mood, topic_tags, likes_count, comments_count, saved_count, reach_count, engagement_rate, published_at')
+    .eq('user_id', userId)
+    .eq('status', 'PUBLISHED')
+    .eq('is_imported', true);
+
+  if (dateFilter) {
+    query = query.gte('published_at', dateFilter);
+  }
+
+  const { data: posts, error } = await query;
+
+  if (error) {
+    console.error('[copilot] Category analysis error:', error);
+    return { error: 'Fehler beim Laden der Posts' };
+  }
+
+  if (!posts || posts.length === 0) {
+    return { 
+      error: 'Keine Posts gefunden',
+      suggestion: 'Importiere zuerst Posts von Instagram'
+    };
+  }
+
+  // Check how many are classified
+  const classifiedPosts = posts.filter((p: any) => p.category);
+  const unclassifiedCount = posts.length - classifiedPosts.length;
+
+  if (classifiedPosts.length === 0) {
+    return {
+      error: 'Keine klassifizierten Posts gefunden',
+      total_posts: posts.length,
+      unclassified_count: unclassifiedCount,
+      suggestion: 'Sage "Klassifiziere meine Posts" um die AI-Analyse zu starten'
+    };
+  }
+
+  // Calculate metrics by group
+  const groups: Record<string, any[]> = {};
+
+  if (group_by === 'topic_tags') {
+    // Flatten topic tags
+    for (const post of classifiedPosts) {
+      const tags = post.topic_tags || [];
+      for (const tag of tags) {
+        if (!groups[tag]) groups[tag] = [];
+        groups[tag].push(post);
+      }
+    }
+  } else {
+    // Group by category or mood
+    for (const post of classifiedPosts) {
+      const key = post[group_by] || 'Unbekannt';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(post);
+    }
+  }
+
+  // Calculate stats for each group
+  const groupStats = Object.entries(groups).map(([name, groupPosts]) => {
+    const totalLikes = groupPosts.reduce((sum, p) => sum + (p.likes_count || 0), 0);
+    const totalComments = groupPosts.reduce((sum, p) => sum + (p.comments_count || 0), 0);
+    const totalSaves = groupPosts.reduce((sum, p) => sum + (p.saved_count || 0), 0);
+    const totalReach = groupPosts.reduce((sum, p) => sum + (p.reach_count || 0), 0);
+    const avgEngagement = groupPosts.reduce((sum, p) => sum + (p.engagement_rate || 0), 0) / groupPosts.length;
+
+    let metricValue = 0;
+    let metricLabel = '';
+    
+    switch (metric) {
+      case 'engagement':
+        metricValue = totalLikes + totalComments + totalSaves;
+        metricLabel = 'Total Engagement';
+        break;
+      case 'reach':
+        metricValue = totalReach;
+        metricLabel = 'Total Reach';
+        break;
+      case 'engagement_rate':
+        metricValue = avgEngagement;
+        metricLabel = 'Avg Engagement Rate';
+        break;
+    }
+
+    return {
+      name,
+      post_count: groupPosts.length,
+      total_likes: totalLikes,
+      total_comments: totalComments,
+      total_saves: totalSaves,
+      total_reach: totalReach,
+      avg_engagement_rate: Math.round(avgEngagement * 100) / 100,
+      metric_value: Math.round(metricValue * 100) / 100,
+      metric_label: metricLabel,
+      avg_per_post: groupPosts.length > 0 ? Math.round(metricValue / groupPosts.length) : 0
+    };
+  });
+
+  // Sort by metric value descending
+  groupStats.sort((a, b) => b.metric_value - a.metric_value);
+
+  // Generate recommendations
+  let recommendations: string[] = [];
+  if (include_recommendations && groupStats.length >= 2) {
+    const best = groupStats[0];
+    const worst = groupStats[groupStats.length - 1];
+
+    recommendations = [
+      `🏆 "${best.name}" performt am besten mit ${best.metric_value.toLocaleString()} ${best.metric_label} (${best.post_count} Posts)`,
+      `📉 "${worst.name}" hat den niedrigsten Wert: ${worst.metric_value.toLocaleString()} ${worst.metric_label}`,
+    ];
+
+    if (metric === 'engagement_rate' && best.avg_engagement_rate > 3) {
+      recommendations.push(`💡 "${best.name}"-Posts haben exzellente Engagement-Rates (${best.avg_engagement_rate}%). Mehr davon!`);
+    }
+
+    if (best.total_saves > best.total_likes * 0.1) {
+      recommendations.push(`📌 "${best.name}"-Posts werden oft gespeichert - das zeigt hohen Mehrwert!`);
+    }
+  }
+
+  return {
+    analysis_type: group_by,
+    metric_used: metric,
+    time_period,
+    total_posts_analyzed: classifiedPosts.length,
+    unclassified_posts: unclassifiedCount,
+    groups: groupStats.slice(0, 10), // Top 10
+    recommendations,
+    best_performer: groupStats[0],
+    worst_performer: groupStats[groupStats.length - 1]
+  };
+}
+
+// Tool: Trigger batch classification
+async function executeClassifyPostsBatch(supabase: any, userId: string, authToken: string, params: any) {
+  const { limit = 10 } = params;
+  const actualLimit = Math.min(limit, 20);
+
+  console.log(`[copilot] Triggering batch classification for ${actualLimit} posts`);
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/classify-post-content`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ batch_mode: true, limit: actualLimit })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      return { 
+        error: `Klassifizierung fehlgeschlagen: ${errorData.error || 'Unbekannter Fehler'}`
+      };
+    }
+
+    const result = await response.json();
+    return {
+      success: true,
+      message: `${result.classified}/${result.total} Posts erfolgreich klassifiziert!`,
+      classified: result.classified,
+      total_processed: result.total,
+      errors: result.errors || 0
+    };
+  } catch (err) {
+    console.error('[copilot] Batch classification error:', err);
+    return { 
+      error: `Fehler: ${err instanceof Error ? err.message : 'Unbekannt'}` 
+    };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -1155,11 +1400,16 @@ serve(async (req) => {
 DU HAST VOLLSTÄNDIGEN ZUGRIFF AUF DIE DATENBANK:
 
 📊 TABELLEN-SCHEMA:
-1. posts: id, caption, published_at, likes_count, comments_count, saved_count, impressions_count, status, format
+1. posts: id, caption, published_at, likes_count, comments_count, saved_count, reach_count, impressions_count, engagement_rate, category, mood, topic_tags, status, format
 2. instagram_comments: id, comment_text, commenter_username, sentiment_score, is_critical, is_replied
 3. topics: id, title, description, priority, evergreen
 4. brand_rules: tone_style, writing_style, formality_mode
 5. daily_account_stats: date, follower_count, impressions_day, reach_day, profile_views, website_clicks (HISTORISCHE DATEN!)
+
+🏷️ CONTENT CLASSIFICATION (AI-generiert):
+- category: Humor, Behind the Scenes, Promo, Inspiration, Privates, News, Tutorial, Entertainment
+- mood: Fröhlich, Sarkastisch, Ernst, Nachdenklich, Aufgeregt, Entspannt, Provokant, Nostalgisch
+- topic_tags: Array mit 3-5 Themen-Tags pro Post
 
 DEINE TOOLS:
 - search_posts: Suche nach Posts/Stichworten
@@ -1170,35 +1420,39 @@ DEINE TOOLS:
 - get_account_summary: Gesamtübersicht
 - analyze_growth: 📈 WACHSTUMS-ANALYSE mit historischen Follower/Reach-Daten!
 - trigger_insights_tracking: Manuell Insights tracken
+- analyze_content_categories: 🏷️ KATEGORIE-ANALYSE! Welche Kategorie/Stimmung/Thema performt am besten?
+- classify_posts_batch: 🤖 AI-Klassifizierung für unklassifizierte Posts starten
 
 ⚠️ KRITISCHE REGELN:
 1. Bei "Warum stagniert...", "Wachstum", "Reichweite sinkt" → NUTZE analyze_growth!
-2. analyze_growth hat ECHTE historische Daten aus daily_account_stats
-3. Sage NIEMALS "Ich habe keinen Zugriff" - du HAST Zugriff!
-4. Wenn keine historischen Daten: Schlage vor "Tracke meine Insights"
-5. Bei Strategie-Fragen: Analysiere Best-Performer und gib konkrete Empfehlungen
+2. Bei "Welche Kategorie...", "Was bringt Reichweite", "Welche Themen" → NUTZE analyze_content_categories!
+3. Bei "Klassifiziere", "Tagge Posts", "Analysiere Inhalte" → NUTZE classify_posts_batch!
+4. analyze_growth hat ECHTE historische Daten aus daily_account_stats
+5. Sage NIEMALS "Ich habe keinen Zugriff" - du HAST Zugriff!
+6. Wenn keine klassifizierten Posts: Schlage "Klassifiziere meine Posts" vor
 
 STRATEGIE-MODUS:
-Wenn Wachstum sinkt oder stagniert:
-1. Analysiere die Reichweiten-Trends
-2. Finde Best-Performer Posts (nach Likes/Comments)
-3. Erkenne Muster (Wochentag, Format, Thema)
-4. Gib KONKRETE Empfehlungen: "Poste mehr Carousels am Dienstag"
+Bei Content-Strategie-Fragen:
+1. Nutze analyze_content_categories mit dem richtigen group_by (category/mood/topic_tags)
+2. Vergleiche Performance nach engagement, reach oder engagement_rate
+3. Identifiziere Best-Performer und gib konkrete Empfehlungen
+4. Beispiel: "Deine Humor-Posts haben 3x mehr Reach als Promo-Posts!"
 
 KONTEXT:
 - Sprache: ${brandRules?.language_primary || 'Deutsch'}
 - Tonalität: ${brandRules?.tone_style || 'locker und authentisch'}
 
 BEISPIELE:
-User: "Warum stagniert mein Wachstum?"
-→ analyze_growth(start_date="7 Tage zurück", include_strategy=true)
-→ "Deine Reichweite ist um 15% gesunken. Aber: Carousels am Dienstag liefen 40% besser. Empfehlung: Mehr Carousel-Content!"
+User: "Welche Kategorie bringt am meisten Reichweite?"
+→ analyze_content_categories(group_by="category", metric="reach")
+→ "Deine Humor-Posts haben durchschnittlich 45.000 Reach, während Promo-Posts nur 12.000 erreichen!"
 
-User: "Tracke meine Insights"
-→ trigger_insights_tracking()
+User: "Klassifiziere meine Posts"
+→ classify_posts_batch(limit=10)
+→ "10 Posts wurden mit AI analysiert und klassifiziert!"
 
-User: "Wie entwickeln sich meine Follower?"
-→ analyze_growth(start_date="30 Tage zurück")`;
+User: "Welche Themen laufen gut?"
+→ analyze_content_categories(group_by="topic_tags", metric="engagement")`;
 
     // First call: Let the AI decide if it needs tools
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -1268,6 +1522,12 @@ User: "Wie entwickeln sich meine Follower?"
             break;
           case 'trigger_insights_tracking':
             result = await executeTriggerInsightsTracking(supabase, user.id, authHeader.replace("Bearer ", ""));
+            break;
+          case 'analyze_content_categories':
+            result = await executeAnalyzeContentCategories(supabase, user.id, params);
+            break;
+          case 'classify_posts_batch':
+            result = await executeClassifyPostsBatch(supabase, user.id, authHeader.replace("Bearer ", ""), params);
             break;
           default:
             result = { error: `Unknown tool: ${funcName}` };

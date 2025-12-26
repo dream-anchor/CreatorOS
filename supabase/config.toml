@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.fetch-daily-insights]
 verify_jwt = false
+
+[functions.classify-post-content]
+verify_jwt = false

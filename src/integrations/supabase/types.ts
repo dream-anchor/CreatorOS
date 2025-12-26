@@ -481,6 +481,7 @@ export type Database = {
           caption: string | null
           caption_alt: string | null
           caption_short: string | null
+          category: string | null
           comments_count: number | null
           created_at: string
           engagement_rate: number | null
@@ -492,6 +493,7 @@ export type Database = {
           impressions_count: number | null
           is_imported: boolean | null
           likes_count: number | null
+          mood: string | null
           original_ig_permalink: string | null
           original_media_url: string | null
           published_at: string | null
@@ -503,6 +505,7 @@ export type Database = {
           slides: Json | null
           status: Database["public"]["Enums"]["post_status"]
           topic_id: string | null
+          topic_tags: string[] | null
           updated_at: string
           user_id: string
         }
@@ -513,6 +516,7 @@ export type Database = {
           caption?: string | null
           caption_alt?: string | null
           caption_short?: string | null
+          category?: string | null
           comments_count?: number | null
           created_at?: string
           engagement_rate?: number | null
@@ -524,6 +528,7 @@ export type Database = {
           impressions_count?: number | null
           is_imported?: boolean | null
           likes_count?: number | null
+          mood?: string | null
           original_ig_permalink?: string | null
           original_media_url?: string | null
           published_at?: string | null
@@ -535,6 +540,7 @@ export type Database = {
           slides?: Json | null
           status?: Database["public"]["Enums"]["post_status"]
           topic_id?: string | null
+          topic_tags?: string[] | null
           updated_at?: string
           user_id: string
         }
@@ -545,6 +551,7 @@ export type Database = {
           caption?: string | null
           caption_alt?: string | null
           caption_short?: string | null
+          category?: string | null
           comments_count?: number | null
           created_at?: string
           engagement_rate?: number | null
@@ -556,6 +563,7 @@ export type Database = {
           impressions_count?: number | null
           is_imported?: boolean | null
           likes_count?: number | null
+          mood?: string | null
           original_ig_permalink?: string | null
           original_media_url?: string | null
           published_at?: string | null
@@ -567,6 +575,7 @@ export type Database = {
           slides?: Json | null
           status?: Database["public"]["Enums"]["post_status"]
           topic_id?: string | null
+          topic_tags?: string[] | null
           updated_at?: string
           user_id?: string
         }

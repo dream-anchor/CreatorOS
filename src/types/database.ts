@@ -79,6 +79,10 @@ export interface Post {
   reach_count?: number;
   impressions_count?: number;
   engagement_rate?: number;
+  // AI classification
+  category?: string;
+  mood?: string;
+  topic_tags?: string[];
   is_imported?: boolean;
   original_ig_permalink?: string | null;
   original_media_url?: string | null;
