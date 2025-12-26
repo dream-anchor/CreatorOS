@@ -280,25 +280,22 @@ export function ModelComparisonModal() {
             {/* Results Matrix */}
             {!isLoading && !error && results.length > 0 && (
               <div className="space-y-6">
-                {/* Model Headers */}
-                <div className="grid grid-cols-5 gap-3">
-                  <div className="font-medium text-sm text-muted-foreground">
+                {/* Model Headers - Fixed sticky header */}
+                <div className="grid grid-cols-5 gap-3 pb-4 border-b border-border mb-4 sticky top-0 bg-background z-10">
+                  <div className="font-semibold text-sm text-foreground">
                     Fan-Kommentar
                   </div>
                   {MODELS.map((model) => (
                     <div key={model.id} className="text-center">
-                      <Badge
-                        variant="secondary"
-                        className={`
-                          ${model.color === "emerald" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" : ""}
-                          ${model.color === "blue" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" : ""}
-                          ${model.color === "orange" ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20" : ""}
-                          ${model.color === "purple" ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20" : ""}
-                          border
-                        `}
-                      >
+                      <div className={`
+                        inline-block px-3 py-1.5 rounded-lg font-semibold text-sm
+                        ${model.color === "emerald" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400" : ""}
+                        ${model.color === "blue" ? "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400" : ""}
+                        ${model.color === "orange" ? "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400" : ""}
+                        ${model.color === "purple" ? "bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400" : ""}
+                      `}>
                         {model.name}
-                      </Badge>
+                      </div>
                     </div>
                   ))}
                 </div>

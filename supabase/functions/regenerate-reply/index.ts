@@ -42,10 +42,10 @@ serve(async (req) => {
 
     console.log(`[regenerate-reply] Regenerating reply for comment ${comment_id} using model ${aiModel}`);
 
-    // Get the comment
+    // Get the comment WITH post context
     const { data: comment, error: commentError } = await supabase
       .from('instagram_comments')
-      .select('*')
+      .select('*, ig_media_id')
       .eq('id', comment_id)
       .eq('user_id', user.id)
       .single();
@@ -53,6 +53,29 @@ serve(async (req) => {
     if (commentError || !comment) {
       throw new Error('Comment not found');
     }
+
+    // Get the post caption for context
+    let postCaption = '';
+    if (comment.ig_media_id) {
+      const { data: post } = await supabase
+        .from('posts')
+        .select('caption')
+        .eq('ig_media_id', comment.ig_media_id)
+        .maybeSingle();
+      
+      postCaption = post?.caption || '';
+    }
+
+    // Get brand rules for tone
+    const { data: brandRules } = await supabase
+      .from('brand_rules')
+      .select('tone_style, writing_style, language_primary, do_list, dont_list')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const toneStyle = brandRules?.tone_style || 'locker und authentisch';
+    const writingStyle = brandRules?.writing_style || '';
+    const language = brandRules?.language_primary || 'DE';
 
     // Get emoji no-go terms
     const { data: emojiNogoTerms } = await supabase
@@ -66,32 +89,46 @@ serve(async (req) => {
     let emojiConstraint = '';
     if (emojiNogoList.length > 0) {
       emojiConstraint = `
-WICHTIGE EMOJI-EINSCHRÄNKUNG - STRIKT BEFOLGEN:
-Du darfst unter KEINEN Umständen Emojis verwenden, die mit folgenden Begriffen assoziiert sind: ${emojiNogoList.join(', ')}.
-
-Emoji-Zuordnungen die du vermeiden MUSST:
-- "Liebe" / "Herzen" → KEINE: ❤️ 💕 💖 💗 💝 😍 🥰 😘 💋 😻 💘 💓 💞 💟 ♥️
-- "Trauer" / "Weinen" → KEINE: 😢 😭 😿 💔 🥺 😥 😪
-- "Kitsch" / "Süß" → KEINE: 🥹 🤗 😊 🥰 💖 ✨ 🌸 🦋 🌈
-- "Wut" / "Aggression" → KEINE: 😡 🤬 💢 👊 🔥 (als Wut)
-
-Nutze stattdessen NEUTRALE Alternativen: 🙌 👍 😎 🔥 ✨ 💪 🎯 👏 ⚡ 🚀 💯 🙏`;
+EMOJI-EINSCHRÄNKUNG:
+Vermeide Emojis zu diesen Themen: ${emojiNogoList.join(', ')}.
+Nutze stattdessen neutrale: 🙌 👍 😎 🔥 ✨ 💪 🎯 👏 ⚡ 🚀 💯`;
     }
 
-    const replyPrompt = `Du bist ein Instagram-Creator der schnell und authentisch antwortet.
+    // Build context section
+    const contextSection = postCaption 
+      ? `
+---
+KONTEXT - MEIN ORIGINAL-POST:
+"${postCaption.substring(0, 500)}${postCaption.length > 500 ? '...' : ''}"
+---`
+      : '';
 
-WICHTIGE EINSCHRÄNKUNG - ABSOLUTES HASHTAG-VERBOT:
-Du darfst unter KEINEN Umständen Hashtags (#) verwenden. Keine #hashtags, niemals. Schreibe wie ein Mensch in einem Chat, nicht wie ein Marketer.
+    const replyPrompt = `Du bist Antoine, ein Instagram-Creator. Du antwortest persönlich auf Fan-Kommentare.
 
-Generiere eine kurze, freundliche Antwort (maximal 2-3 Sätze) auf diesen Kommentar:
+SPRACHE: ${language === 'DE' ? 'Deutsch' : language}
+TONALITÄT: ${toneStyle}
+${writingStyle ? `STIL: ${writingStyle}` : ''}
 
-Kommentar von @${comment.commenter_username || 'Fan'}:
-"${comment.comment_text}"
+===== ABSOLUTE VERBOTE (NIEMALS BRECHEN!) =====
+❌ KEINE Hashtags (#) - Niemals, unter keinen Umständen
+❌ KEINE Signaturen ("Dein Team", "@support", "Liebe Grüße, das Team")
+❌ KEINE CTAs ("Link in Bio", "Schau mal hier", "Mehr Infos")
+❌ KEINE Marketing-Sprache ("Wir freuen uns", "Vielen Dank für Ihr Feedback")
+❌ KEINE Support-Ticket-Floskeln ("Gerne geschehen", "Bei Fragen stehen wir zur Verfügung")
+===================================================
+
+DU BIST EIN MENSCH, KEINE MARKE.
+Schreibe wie jemand, der kurz vom Handy antwortet - direkt, knackig, authentisch.
 ${emojiConstraint}
+${contextSection}
 
-Sei direkt, reaktiv und locker wie ein Creator der mal eben vom Set schreibt. Maximal 2-3 Sätze.
+KOMMENTAR VON @${comment.commenter_username || 'Fan'}:
+"${comment.comment_text}"
 
-Antworte NUR mit dem Antwort-Text, keine Erklärungen.`;
+Antworte KURZ (1-2 Sätze max), DIREKT auf den Kommentar, im Kontext meines Posts.
+Verstehe Witze und Anspielungen und reagiere darauf.
+
+NUR die Antwort, nichts anderes:`;
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',

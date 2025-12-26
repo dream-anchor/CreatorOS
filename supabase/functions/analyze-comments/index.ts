@@ -75,48 +75,81 @@ serve(async (req) => {
       });
     }
 
-    // Batch analyze comments with AI
-    const commentsToAnalyze = comments.map(c => ({
-      id: c.id,
-      text: c.comment_text,
-      username: c.commenter_username
-    }));
+    // Get all unique ig_media_ids to fetch post captions
+    const mediaIds = [...new Set(comments.map(c => c.ig_media_id).filter(Boolean))];
+    
+    // Fetch all related posts
+    const { data: posts } = await supabase
+      .from('posts')
+      .select('ig_media_id, caption')
+      .in('ig_media_id', mediaIds);
+
+    const postCaptionMap = new Map<string, string>();
+    posts?.forEach(p => {
+      if (p.ig_media_id && p.caption) {
+        postCaptionMap.set(p.ig_media_id, p.caption);
+      }
+    });
+
+    // Get brand rules for tone
+    const { data: brandRules } = await supabase
+      .from('brand_rules')
+      .select('tone_style, writing_style, language_primary')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const toneStyle = brandRules?.tone_style || 'locker und authentisch';
+    const language = brandRules?.language_primary || 'DE';
+
+    // Batch analyze comments with AI - include post context
+    const commentsToAnalyze = comments.map(c => {
+      const postCaption = postCaptionMap.get(c.ig_media_id) || '';
+      return {
+        id: c.id,
+        text: c.comment_text,
+        username: c.commenter_username,
+        post_context: postCaption.substring(0, 300) // Truncate for token efficiency
+      };
+    });
 
     // Build emoji constraint section for prompt
     let emojiConstraint = '';
     if (emojiNogoList.length > 0) {
       emojiConstraint = `
-
-WICHTIGE EMOJI-EINSCHRÄNKUNG:
-Du darfst unter KEINEN Umständen Emojis verwenden, die mit folgenden Begriffen assoziiert sind: ${emojiNogoList.join(', ')}.
-Beispiel: Wenn "Liebe" in der Liste steht, nutze KEINE Herz-Emojis (❤️, 😍, 😘, 💕, 💖, 💗, 💝, 🥰, 😻) oder andere romantische/liebevolle Emojis.
-Nutze stattdessen neutrale, coole Gesten wie 🙌, 👍, 😎, 🔥, ✨, 💪, 🎯, 👏 oder ⚡.
-Halte dich STRIKT an diese Vorgabe!`;
+EMOJI-EINSCHRÄNKUNG:
+Vermeide Emojis zu diesen Themen: ${emojiNogoList.join(', ')}.
+Nutze stattdessen neutrale: 🙌 👍 😎 🔥 ✨ 💪 🎯 👏 ⚡ 🚀 💯`;
     }
 
-    const analysisPrompt = `Du bist ein Sentiment-Analysator für Instagram-Kommentare.
+    const analysisPrompt = `Du bist Antoine, ein Instagram-Creator. Du analysierst Kommentare und schreibst persönliche Antworten.
 
-Analysiere jeden Kommentar und gib für jeden zurück:
-1. sentiment_score: Eine Zahl von -1.0 (sehr negativ/Hass) bis 1.0 (sehr positiv)
-2. is_critical: true wenn der Kommentar Hass, Beleidigung, Spam oder heftige Kritik enthält
-3. reply_suggestion: Ein freundlicher, kurzer Antwort-Vorschlag (maximal 2-3 Sätze, darf Emojis nutzen, sei direkt und reaktiv wie ein Creator der mal eben vom Set schreibt)
+SPRACHE: ${language === 'DE' ? 'Deutsch' : language}
+TONALITÄT: ${toneStyle}
 
-WICHTIGE EINSCHRÄNKUNG - ABSOLUTES HASHTAG-VERBOT:
-Du darfst unter KEINEN Umständen Hashtags (#) verwenden. Keine #hashtags, niemals. Schreibe wie ein Mensch in einem Chat, nicht wie ein Marketer.
+===== ABSOLUTE VERBOTE FÜR ANTWORTEN (NIEMALS BRECHEN!) =====
+❌ KEINE Hashtags (#) - Niemals, unter keinen Umständen
+❌ KEINE Signaturen ("Dein Team", "@support", "Liebe Grüße")
+❌ KEINE CTAs ("Link in Bio", "Schau mal hier")
+❌ KEINE Marketing-Sprache ("Wir freuen uns", "Vielen Dank für Ihr Feedback")
+❌ KEINE Support-Ticket-Floskeln ("Bei Fragen stehen wir zur Verfügung")
+==============================================================
+
+DU BIST EIN MENSCH, KEINE MARKE. Kurze, direkte, authentische Antworten.
 ${emojiConstraint}
 
-Hier sind die Kommentare als JSON:
-\${JSON.stringify(commentsToAnalyze)}
+Analysiere jeden Kommentar:
+1. sentiment_score: -1.0 (Hass) bis 1.0 (sehr positiv)
+2. is_critical: true bei Hass, Beleidigung, Spam, heftiger Kritik
+3. reply_suggestion: Kurze Antwort (1-2 Sätze), die auf den KONTEXT DES POSTS eingeht
 
-Antworte NUR mit einem JSON-Array in diesem Format:
-[
-  {
-    "id": "uuid",
-    "sentiment_score": 0.8,
-    "is_critical": false,
-    "reply_suggestion": "Danke dir! 🙏 Freut mich mega!"
-  }
-]`;
+WICHTIG: Jeder Kommentar hat ein "post_context" Feld mit der Caption meines Posts.
+Beziehe dich in der Antwort auf den Kontext - verstehe Witze und Anspielungen!
+
+Kommentare als JSON:
+${JSON.stringify(commentsToAnalyze)}
+
+Antworte NUR mit JSON-Array:
+[{"id": "uuid", "sentiment_score": 0.8, "is_critical": false, "reply_suggestion": "Haha ja genau! 😎"}]`;
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
