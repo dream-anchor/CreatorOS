@@ -42,23 +42,25 @@ export function AppSidebar() {
   };
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-64 sidebar-gradient border-r border-sidebar-border">
+    <aside className="fixed left-0 top-0 z-40 h-screen w-72 bg-sidebar/80 backdrop-blur-2xl border-r border-white/5">
       <div className="flex h-full flex-col">
         {/* Logo */}
-        <div className="flex h-16 items-center gap-3 px-6 border-b border-sidebar-border">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 glow-effect">
+        <div className="flex h-20 items-center gap-4 px-6 border-b border-white/5">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 backdrop-blur-sm border border-white/10 shadow-glow-sm">
             <Instagram className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="font-semibold text-foreground">IG Autopublisher</h1>
-            <p className="text-xs text-muted-foreground">v1.0</p>
+            <h1 className="font-display font-semibold text-lg text-foreground tracking-tight">
+              IG Autopublisher
+            </h1>
+            <p className="text-xs text-muted-foreground">AI Content Studio</p>
           </div>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
-          <div className="mb-4">
-            <p className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+        <nav className="flex-1 space-y-2 px-4 py-6 overflow-y-auto scrollbar-thin">
+          <div className="mb-6">
+            <p className="px-4 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70 mb-3">
               Haupt
             </p>
             {navigation.map((item) => {
@@ -68,13 +70,16 @@ export function AppSidebar() {
                   key={item.name}
                   to={item.href}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                    "flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
                     isActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                      ? "bg-white/10 text-foreground shadow-glow-sm border border-white/10"
+                      : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                   )}
                 >
-                  <item.icon className={cn("h-4 w-4", isActive && "text-primary")} />
+                  <item.icon className={cn(
+                    "h-4.5 w-4.5 transition-colors", 
+                    isActive ? "text-primary" : "text-muted-foreground"
+                  )} />
                   {item.name}
                 </Link>
               );
@@ -82,7 +87,7 @@ export function AppSidebar() {
           </div>
 
           <div>
-            <p className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+            <p className="px-4 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70 mb-3">
               Einstellungen
             </p>
             {settingsNav.map((item) => {
@@ -92,13 +97,16 @@ export function AppSidebar() {
                   key={item.name}
                   to={item.href}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                    "flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
                     isActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                      ? "bg-white/10 text-foreground shadow-glow-sm border border-white/10"
+                      : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                   )}
                 >
-                  <item.icon className={cn("h-4 w-4", isActive && "text-primary")} />
+                  <item.icon className={cn(
+                    "h-4.5 w-4.5 transition-colors", 
+                    isActive ? "text-primary" : "text-muted-foreground"
+                  )} />
                   {item.name}
                 </Link>
               );
@@ -107,12 +115,12 @@ export function AppSidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-sidebar-border p-3">
+        <div className="border-t border-white/5 p-4">
           <button
             onClick={handleSignOut}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-all duration-200"
+            className="flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground transition-all duration-200"
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="h-4.5 w-4.5" />
             Abmelden
           </button>
         </div>
