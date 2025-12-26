@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -31,16 +31,44 @@ export function ModelComparisonModal() {
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<ModelResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const loadingRef = useRef(false);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const loadComparison = async () => {
+    // Prevent duplicate requests
+    if (loadingRef.current) {
+      console.log("Already loading, skipping...");
+      return;
+    }
+
+    // Abort any existing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    abortControllerRef.current = new AbortController();
+    loadingRef.current = true;
     setIsLoading(true);
     setError(null);
     setResults([]);
 
     try {
+      console.log("Starting simulate-model-responses call...");
+      
       const { data, error: fnError } = await supabase.functions.invoke(
         "simulate-model-responses"
       );
+
+      console.log("Response received:", { data, error: fnError });
 
       if (fnError) {
         console.error("Function error:", fnError);
@@ -59,19 +87,32 @@ export function ModelComparisonModal() {
 
       if (data?.results) {
         setResults(data.results);
+      } else {
+        setError("Keine Ergebnisse erhalten");
       }
     } catch (err) {
+      if ((err as Error).name === "AbortError") {
+        console.log("Request aborted");
+        return;
+      }
       console.error("Error loading comparison:", err);
       setError("Unerwarteter Fehler beim Laden");
     } finally {
+      loadingRef.current = false;
       setIsLoading(false);
     }
   };
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (open) {
+    if (open && results.length === 0 && !isLoading) {
       loadComparison();
+    } else if (!open) {
+      // Abort on close
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      loadingRef.current = false;
     }
   };
 
