@@ -581,21 +581,72 @@ export default function Community() {
     setSending(false);
   };
 
-  const testRun = () => {
-    const selectedComments = comments.filter((c) => c.selected && c.editedReply);
-    toast.info(
-      `🧪 Test-Lauf: ${selectedComments.length} Antworten würden gesendet werden`,
-      {
-        description: `Strategie: ${
-          smartStrategy === "warmup"
-            ? "Warm-Up (älteste zuerst)"
-            : smartStrategy === "afterglow"
-            ? "After-Glow (neueste zuerst)"
-            : "Natürlich (zufällig verteilt)"
-        }`,
-        duration: 5000,
+  // State for global regeneration
+  const [isGlobalRegenerating, setIsGlobalRegenerating] = useState(false);
+
+  // Handle model change with global regeneration
+  const handleModelChange = async (newModelId: string) => {
+    const oldModel = selectedAiModel;
+    setSelectedAiModel(newModelId);
+    
+    // Find model name for toast
+    const modelName = newModelId.includes("gemini") 
+      ? newModelId.includes("pro") ? "Gemini Pro" : "Gemini Flash"
+      : newModelId.includes("gpt-5-mini") ? "GPT-5 Mini" : "GPT-5";
+
+    // Get all comments with existing replies
+    const commentsToRegenerate = comments.filter((c) => c.editedReply);
+    
+    if (commentsToRegenerate.length === 0) {
+      toast.success(`🧠 KI gewechselt auf ${modelName}`);
+      return;
+    }
+
+    toast.info(`🔄 Schreibe alle ${commentsToRegenerate.length} Antworten um auf ${modelName}...`, {
+      duration: 10000,
+    });
+
+    setIsGlobalRegenerating(true);
+    
+    // Mark all comments as sanitizing for visual feedback
+    setSanitizingComments(new Set(commentsToRegenerate.map((c) => c.id)));
+
+    // Regenerate all in parallel
+    const regeneratePromises = commentsToRegenerate.map(async (comment) => {
+      try {
+        const { data, error } = await supabase.functions.invoke("regenerate-reply", {
+          body: { comment_id: comment.id, model: newModelId },
+        });
+
+        if (!error && data?.new_reply) {
+          setComments((prev) =>
+            prev.map((c) =>
+              c.id === comment.id
+                ? { ...c, editedReply: data.new_reply, approved: false }
+                : c
+            )
+          );
+          setSanitizingComments((prev) => {
+            const next = new Set(prev);
+            next.delete(comment.id);
+            return next;
+          });
+          return { success: true, id: comment.id };
+        }
+        return { success: false, id: comment.id };
+      } catch (err) {
+        console.error("Regenerate error:", err);
+        return { success: false, id: comment.id };
       }
-    );
+    });
+
+    const results = await Promise.all(regeneratePromises);
+    const successCount = results.filter((r) => r.success).length;
+
+    setSanitizingComments(new Set());
+    setIsGlobalRegenerating(false);
+
+    toast.success(`✨ ${successCount} Antworten mit ${modelName} neu geschrieben!`);
   };
 
   const selectedCount = comments.filter((c) => c.selected && c.editedReply).length;
@@ -620,7 +671,8 @@ export default function Community() {
           </div>
           <AiModelSelector
             selectedModel={selectedAiModel}
-            onModelChange={setSelectedAiModel}
+            onModelChange={handleModelChange}
+            isRegenerating={isGlobalRegenerating}
           />
         </div>
 
@@ -756,7 +808,6 @@ export default function Community() {
         smartStrategy={smartStrategy}
         sending={sending}
         onSmartReply={smartReply}
-        onTestRun={testRun}
       />
     </AppLayout>
   );
