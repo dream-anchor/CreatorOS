@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { AppSidebar } from "./AppSidebar";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -10,9 +11,9 @@ interface AppLayoutProps {
 
 export function AppLayout({ children, title, description, actions }: AppLayoutProps) {
   return (
-    <div className="min-h-screen relative">
-      {/* Aurora Background Effects */}
-      <div className="aurora-container">
+    <div className="min-h-screen relative bg-background">
+      {/* Aurora Background Effects - only in dark mode */}
+      <div className="aurora-container dark:block hidden">
         <div className="aurora-blob aurora-blob-1 animate-aurora" />
         <div className="aurora-blob aurora-blob-2 animate-aurora" />
         <div className="aurora-blob aurora-blob-3 animate-aurora" />
@@ -34,9 +35,10 @@ export function AppLayout({ children, title, description, actions }: AppLayoutPr
                 </p>
               )}
             </div>
-            {actions && (
-              <div className="flex items-center gap-4">{actions}</div>
-            )}
+            <div className="flex items-center gap-4">
+              {actions}
+              <ThemeToggle />
+            </div>
           </div>
           
           {/* Content */}
