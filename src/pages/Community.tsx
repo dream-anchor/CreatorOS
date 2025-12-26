@@ -59,6 +59,10 @@ export default function Community() {
   const [smartStrategy, setSmartStrategy] = useState<SmartStrategy>(null);
   const [sanitizingComments, setSanitizingComments] = useState<Set<string>>(new Set());
   const [selectedAiModel, setSelectedAiModel] = useState("google/gemini-2.5-flash");
+  
+  // Pagination state
+  const POSTS_PER_PAGE = 50;
+  const [visiblePostCount, setVisiblePostCount] = useState(POSTS_PER_PAGE);
 
   // Group comments by their parent post
   const postGroups = useMemo((): PostGroup[] => {
@@ -80,7 +84,7 @@ export default function Community() {
       groupMap.get(key)!.comments.push(comment);
     });
 
-    // Sort groups by most recent comment timestamp
+    // Sort groups by most recent comment timestamp (newest first)
     return Array.from(groupMap.values()).sort((a, b) => {
       const aLatest = Math.max(
         ...a.comments.map((c) => new Date(c.comment_timestamp).getTime())
@@ -91,6 +95,17 @@ export default function Community() {
       return bLatest - aLatest;
     });
   }, [comments]);
+
+  // Paginated post groups - only show first N posts
+  const visiblePostGroups = useMemo(() => {
+    return postGroups.slice(0, visiblePostCount);
+  }, [postGroups, visiblePostCount]);
+
+  const hasMorePosts = postGroups.length > visiblePostCount;
+
+  const loadMorePosts = () => {
+    setVisiblePostCount((prev) => prev + POSTS_PER_PAGE);
+  };
 
   useEffect(() => {
     loadData();
@@ -252,7 +267,7 @@ export default function Community() {
 
   const fetchComments = async () => {
     setLoading(true);
-    toast.info("🔄 Lade Kommentare der letzten 30 Tage...");
+    toast.info("🔄 Lade Kommentare der letzten 90 Tage...");
 
     try {
       const { error } = await supabase.functions.invoke("fetch-comments");
@@ -906,9 +921,9 @@ export default function Community() {
         )}
 
         {/* Post-Grouped Comments */}
-        {postGroups.length > 0 ? (
+        {visiblePostGroups.length > 0 ? (
           <div className="space-y-5">
-            {postGroups.map((group) => (
+            {visiblePostGroups.map((group) => (
               <PostCard
                 key={group.igMediaId}
                 group={group}
@@ -918,6 +933,21 @@ export default function Community() {
                 sanitizingComments={sanitizingComments}
               />
             ))}
+            
+            {/* Load More Button */}
+            {hasMorePosts && (
+              <Button
+                variant="outline"
+                size="lg"
+                className="w-full gap-2 h-14 text-base"
+                onClick={loadMorePosts}
+              >
+                ⬇️ Ältere Beiträge laden
+                <span className="text-muted-foreground text-sm">
+                  ({visiblePostCount} von {postGroups.length} Posts)
+                </span>
+              </Button>
+            )}
           </div>
         ) : (
           <Card>
