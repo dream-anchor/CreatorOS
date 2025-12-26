@@ -234,6 +234,31 @@ const TOOLS = [
         }
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_personalized_image",
+      description: "Erstellt ein personalisiertes, urheberrechtsfreies Bild im Stil eines Themas (z.B. 'Matrix', 'Sci-Fi', 'Western') mit dem Gesicht des Users. NUTZE DIES wenn der User 'Erstelle ein Bild von mir als...', 'Mach ein Foto im Matrix-Stil', 'Generiere ein Bild zu diesem Zitat' sagt.",
+      parameters: {
+        type: "object",
+        properties: {
+          theme: {
+            type: "string",
+            description: "Das Thema/der Stil für das Bild (z.B. 'Matrix', 'Sci-Fi Neon', '80er Jahre', 'Western', 'Noir', 'Space')"
+          },
+          user_pose_description: {
+            type: "string",
+            description: "Beschreibung der Pose/Aktion (z.B. 'schaue skeptisch auf einen leuchtenden Würfel', 'stehe cool mit Sonnenbrille', 'zeige dramatisch auf etwas')"
+          },
+          reference_image_id: {
+            type: "string",
+            description: "Die ID eines Fotos aus der media_assets Bibliothek (optional - wird automatisch das beste Selfie gewählt wenn leer)"
+          }
+        },
+        required: ["theme", "user_pose_description"]
+      }
+    }
   }
 ];
 
@@ -1348,6 +1373,90 @@ async function executeClassifyPostsBatch(supabase: any, userId: string, authToke
   }
 }
 
+// Tool: Generate personalized image
+async function executeGeneratePersonalizedImage(supabase: any, userId: string, params: any) {
+  const { theme, user_pose_description, reference_image_id } = params;
+
+  console.log(`[copilot] Generating personalized image: theme="${theme}", pose="${user_pose_description}"`);
+
+  try {
+    // Get reference image - either specified or find best selfie
+    let referenceImageUrl: string | null = null;
+
+    if (reference_image_id) {
+      const { data: asset } = await supabase
+        .from('media_assets')
+        .select('public_url')
+        .eq('id', reference_image_id)
+        .eq('user_id', userId)
+        .single();
+      
+      referenceImageUrl = asset?.public_url;
+    } else {
+      // Find best selfie from user's media library
+      const { data: selfies } = await supabase
+        .from('media_assets')
+        .select('public_url')
+        .eq('user_id', userId)
+        .eq('is_selfie', true)
+        .eq('ai_usable', true)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      referenceImageUrl = selfies?.[0]?.public_url;
+    }
+
+    if (!referenceImageUrl) {
+      return {
+        error: 'Kein Referenzbild gefunden',
+        suggestion: 'Bitte lade zuerst ein Foto von dir unter "Meine Fotos" hoch und markiere es als "Ich bin auf dem Bild".'
+      };
+    }
+
+    // Call the image generation function
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/generate-personalized-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`
+      },
+      body: JSON.stringify({
+        theme,
+        user_pose_description,
+        reference_image_url: referenceImageUrl,
+        user_id: userId
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('[copilot] Image generation error:', errorData);
+      return {
+        error: `Bildgenerierung fehlgeschlagen: ${errorData.error || 'Unbekannter Fehler'}`
+      };
+    }
+
+    const result = await response.json();
+    
+    return {
+      success: true,
+      image_url: result.image_url,
+      prompt_used: result.prompt_used,
+      theme: result.theme,
+      safety_note: result.safety_note,
+      message: `🎬 Bild erfolgreich generiert! Thema: "${theme}", Pose: "${user_pose_description}"`
+    };
+  } catch (err) {
+    console.error('[copilot] Personalized image error:', err);
+    return { 
+      error: `Fehler: ${err instanceof Error ? err.message : 'Unbekannt'}` 
+    };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -1422,21 +1531,24 @@ DEINE TOOLS:
 - trigger_insights_tracking: Manuell Insights tracken
 - analyze_content_categories: 🏷️ KATEGORIE-ANALYSE! Welche Kategorie/Stimmung/Thema performt am besten?
 - classify_posts_batch: 🤖 AI-Klassifizierung für unklassifizierte Posts starten
+- generate_personalized_image: 🎬 CREATIVE IMAGE ENGINE! Erstellt personalisierte Bilder im Stil von Filmen/Themen mit dem User-Gesicht
 
 ⚠️ KRITISCHE REGELN:
 1. Bei "Warum stagniert...", "Wachstum", "Reichweite sinkt" → NUTZE analyze_growth!
 2. Bei "Welche Kategorie...", "Was bringt Reichweite", "Welche Themen" → NUTZE analyze_content_categories!
 3. Bei "Klassifiziere", "Tagge Posts", "Analysiere Inhalte" → NUTZE classify_posts_batch!
-4. analyze_growth hat ECHTE historische Daten aus daily_account_stats
-5. Sage NIEMALS "Ich habe keinen Zugriff" - du HAST Zugriff!
-6. Wenn keine klassifizierten Posts: Schlage "Klassifiziere meine Posts" vor
+4. Bei "Erstelle ein Bild", "Mach ein Foto im Stil von", "Matrix-Bild von mir" → NUTZE generate_personalized_image!
+5. analyze_growth hat ECHTE historische Daten aus daily_account_stats
+6. Sage NIEMALS "Ich habe keinen Zugriff" - du HAST Zugriff!
+7. Wenn keine klassifizierten Posts: Schlage "Klassifiziere meine Posts" vor
+8. Bei generate_personalized_image: Wähle automatisch das beste Selfie wenn nicht angegeben
 
-STRATEGIE-MODUS:
-Bei Content-Strategie-Fragen:
-1. Nutze analyze_content_categories mit dem richtigen group_by (category/mood/topic_tags)
-2. Vergleiche Performance nach engagement, reach oder engagement_rate
-3. Identifiziere Best-Performer und gib konkrete Empfehlungen
-4. Beispiel: "Deine Humor-Posts haben 3x mehr Reach als Promo-Posts!"
+CREATIVE IMAGE ENGINE BEISPIELE:
+User: "Erstelle ein Bild von mir im Matrix-Stil"
+→ generate_personalized_image(theme="Matrix", user_pose_description="stehe cool mit schwarzer Sonnenbrille vor grünem Code-Regen")
+
+User: "Mach ein Sci-Fi Foto zu meinem Zitat über die Zukunft"
+→ generate_personalized_image(theme="Sci-Fi Neon", user_pose_description="schaue nachdenklich auf holografische Displays")
 
 KONTEXT:
 - Sprache: ${brandRules?.language_primary || 'Deutsch'}
@@ -1528,6 +1640,9 @@ User: "Welche Themen laufen gut?"
             break;
           case 'classify_posts_batch':
             result = await executeClassifyPostsBatch(supabase, user.id, authHeader.replace("Bearer ", ""), params);
+            break;
+          case 'generate_personalized_image':
+            result = await executeGeneratePersonalizedImage(supabase, user.id, params);
             break;
           default:
             result = { error: `Unknown tool: ${funcName}` };

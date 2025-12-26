@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.classify-post-content]
 verify_jwt = false
+
+[functions.generate-personalized-image]
+verify_jwt = false
