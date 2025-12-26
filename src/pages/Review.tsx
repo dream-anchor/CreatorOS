@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Post, Asset } from "@/types/database";
@@ -20,23 +20,37 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  Layers,
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 
+interface Slide {
+  slide_number: number;
+  type: string;
+  headline: string;
+  body: string;
+}
+
+interface ExtendedPost extends Post {
+  assets?: Asset[];
+  slides?: Slide[] | null;
+}
+
 export default function ReviewPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [posts, setPosts] = useState<(Post & { assets?: Asset[] })[]>([]);
+  const [posts, setPosts] = useState<ExtendedPost[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editedCaption, setEditedCaption] = useState("");
   const [editedHashtags, setEditedHashtags] = useState("");
-  const [rejectReason, setRejectReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [swipeDirection, setSwipeDirection] = useState<"left" | "right" | null>(null);
@@ -54,8 +68,16 @@ export default function ReviewPage() {
         .order("scheduled_at", { ascending: true });
 
       if (error) throw error;
-      setPosts((data as (Post & { assets?: Asset[] })[]) || []);
+      
+      // Parse slides from JSON
+      const parsedPosts = (data || []).map((post: any) => ({
+        ...post,
+        slides: post.slides ? (typeof post.slides === 'string' ? JSON.parse(post.slides) : post.slides) : null,
+      }));
+      
+      setPosts(parsedPosts as ExtendedPost[]);
       setCurrentIndex(0);
+      setCurrentSlideIndex(0);
     } catch (error: any) {
       toast.error("Fehler: " + error.message);
     } finally {
@@ -64,6 +86,9 @@ export default function ReviewPage() {
   };
 
   const currentPost = posts[currentIndex];
+  const isCarousel = (currentPost?.format as string) === 'carousel' && currentPost?.slides && currentPost.slides.length > 0;
+  const slides = currentPost?.slides || [];
+  const currentSlide = slides[currentSlideIndex];
 
   const handleApprove = async () => {
     if (!currentPost) return;
@@ -97,6 +122,7 @@ export default function ReviewPage() {
         const newPosts = posts.filter((_, i) => i !== currentIndex);
         setPosts(newPosts);
         setCurrentIndex(Math.min(currentIndex, newPosts.length - 1));
+        setCurrentSlideIndex(0);
         setSwipeDirection(null);
         setDialogOpen(false);
       }, 300);
@@ -138,6 +164,7 @@ export default function ReviewPage() {
         const newPosts = posts.filter((_, i) => i !== currentIndex);
         setPosts(newPosts);
         setCurrentIndex(Math.min(currentIndex, newPosts.length - 1));
+        setCurrentSlideIndex(0);
         setSwipeDirection(null);
         setShowRejectInput(false);
         setRejectReason("");
@@ -218,6 +245,18 @@ export default function ReviewPage() {
     }
   };
 
+  const nextSlide = () => {
+    if (currentSlideIndex < slides.length - 1) {
+      setCurrentSlideIndex(currentSlideIndex + 1);
+    }
+  };
+
+  const prevSlide = () => {
+    if (currentSlideIndex > 0) {
+      setCurrentSlideIndex(currentSlideIndex - 1);
+    }
+  };
+
   if (loading) {
     return (
       <AppLayout title="Review">
@@ -258,6 +297,12 @@ export default function ReviewPage() {
                 />
               ))}
             </div>
+            {isCarousel && (
+              <Badge variant="secondary" className="ml-2 gap-1">
+                <Layers className="h-3 w-3" />
+                Carousel
+              </Badge>
+            )}
           </div>
 
           {/* Card Stack */}
@@ -283,9 +328,73 @@ export default function ReviewPage() {
                 >
                   <Card className="glass-card h-full overflow-hidden border-2 border-white/10 hover:border-primary/30 transition-colors">
                     <CardContent className="p-0 h-full flex flex-col">
-                      {/* Image */}
-                      <div className="relative aspect-square bg-gradient-to-br from-muted to-background">
-                        {currentPost.assets && currentPost.assets.length > 0 ? (
+                      {/* Image or Carousel Slide */}
+                      <div className="relative aspect-square bg-gradient-to-br from-muted to-background overflow-hidden">
+                        {isCarousel && currentSlide ? (
+                          // Carousel Slide View
+                          <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-gradient-to-br from-primary/10 via-cyan-500/5 to-violet-500/10">
+                            <div className="text-center space-y-4">
+                              <Badge 
+                                variant="outline" 
+                                className={cn(
+                                  "mb-2",
+                                  currentSlide.type === 'hook' && "border-primary text-primary",
+                                  currentSlide.type === 'content' && "border-cyan-500 text-cyan-500",
+                                  currentSlide.type === 'cta' && "border-success text-success",
+                                )}
+                              >
+                                Slide {currentSlide.slide_number}
+                                {currentSlide.type === 'hook' && " • Hook"}
+                                {currentSlide.type === 'content' && " • Content"}
+                                {currentSlide.type === 'cta' && " • CTA"}
+                              </Badge>
+                              <h3 className="text-2xl font-bold text-foreground leading-tight">
+                                {currentSlide.headline}
+                              </h3>
+                              <p className="text-lg text-muted-foreground leading-relaxed">
+                                {currentSlide.body}
+                              </p>
+                            </div>
+                            
+                            {/* Slide navigation */}
+                            <div className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-4">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={prevSlide}
+                                disabled={currentSlideIndex === 0}
+                                className="h-10 w-10 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50"
+                              >
+                                <ChevronLeft className="h-5 w-5 text-white" />
+                              </Button>
+                              
+                              <div className="flex gap-1.5">
+                                {slides.map((_, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() => setCurrentSlideIndex(i)}
+                                    className={cn(
+                                      "w-2.5 h-2.5 rounded-full transition-all",
+                                      i === currentSlideIndex 
+                                        ? "bg-white w-6" 
+                                        : "bg-white/40 hover:bg-white/60"
+                                    )}
+                                  />
+                                ))}
+                              </div>
+                              
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={nextSlide}
+                                disabled={currentSlideIndex >= slides.length - 1}
+                                className="h-10 w-10 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50"
+                              >
+                                <ChevronRight className="h-5 w-5 text-white" />
+                              </Button>
+                            </div>
+                          </div>
+                        ) : currentPost.assets && currentPost.assets.length > 0 ? (
                           <img
                             src={currentPost.assets[0].public_url || ""}
                             alt="Post preview"
@@ -324,10 +433,18 @@ export default function ReviewPage() {
                             {format(new Date(currentPost.scheduled_at), "EEE, dd. MMM", { locale: de })}
                           </div>
                         )}
+
+                        {/* Format badge */}
+                        {isCarousel && (
+                          <div className="absolute top-4 left-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/80 backdrop-blur-sm text-white text-sm">
+                            <Layers className="h-4 w-4" />
+                            {slides.length} Slides
+                          </div>
+                        )}
                       </div>
 
                       {/* Content */}
-                      <div className="flex-1 p-6 flex flex-col">
+                      <div className="flex-1 p-6 flex flex-col overflow-auto">
                         <p className="text-foreground leading-relaxed line-clamp-6 flex-1">
                           {currentPost.caption}
                         </p>
@@ -395,7 +512,10 @@ export default function ReviewPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+              onClick={() => {
+                setCurrentIndex(Math.max(0, currentIndex - 1));
+                setCurrentSlideIndex(0);
+              }}
               disabled={currentIndex === 0}
             >
               <ChevronLeft className="h-4 w-4 mr-1" />
@@ -404,7 +524,10 @@ export default function ReviewPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCurrentIndex(Math.min(posts.length - 1, currentIndex + 1))}
+              onClick={() => {
+                setCurrentIndex(Math.min(posts.length - 1, currentIndex + 1));
+                setCurrentSlideIndex(0);
+              }}
               disabled={currentIndex >= posts.length - 1}
             >
               Weiter
@@ -416,13 +539,42 @@ export default function ReviewPage() {
 
       {/* Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>Post bearbeiten</DialogTitle>
           </DialogHeader>
 
           {currentPost && (
             <div className="space-y-4">
+              {/* Carousel Slides Preview */}
+              {isCarousel && slides.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Carousel Slides ({slides.length})</Label>
+                  <div className="grid gap-2">
+                    {slides.map((slide, i) => (
+                      <div 
+                        key={i}
+                        className={cn(
+                          "p-3 rounded-lg border",
+                          slide.type === 'hook' && "border-primary/30 bg-primary/5",
+                          slide.type === 'content' && "border-cyan-500/30 bg-cyan-500/5",
+                          slide.type === 'cta' && "border-success/30 bg-success/5",
+                        )}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="text-xs">
+                            Slide {slide.slide_number}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground capitalize">{slide.type}</span>
+                        </div>
+                        <p className="font-medium text-sm">{slide.headline}</p>
+                        <p className="text-xs text-muted-foreground">{slide.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="caption">Caption</Label>
                 <Textarea

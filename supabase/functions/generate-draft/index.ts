@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 // Post type structures for the wizard
-const POST_TYPE_PROMPTS: Record<string, { name: string; instruction: string }> = {
+const POST_TYPE_PROMPTS: Record<string, { name: string; instruction: string; isCarousel?: boolean }> = {
   behind_scenes: {
     name: "Set-Leben / Behind the Scenes",
     instruction: `Erstelle einen authentischen Behind-the-Scenes Post.
@@ -38,10 +38,25 @@ HOOK: Kraftvolles Statement das Hoffnung gibt.`
   },
   tips: {
     name: "Tipps & Tricks",
-    instruction: `Erstelle einen informativen, hilfreichen Post.
-STRUKTUR: Problem benennen → Lösung/Tipp → Warum es funktioniert → Speichern-CTA
-STIL: Klar, strukturiert, actionable. Listenformat wenn sinnvoll.
-HOOK: "So mache ich..." oder "Der Trick ist..."`
+    instruction: `Erstelle einen informativen Carousel-Post mit 5 Slides.
+STRUKTUR:
+- Slide 1: Titel/Hook (aufmerksamkeitsstark, neugierig machend)
+- Slide 2-4: Haupttipps (je 1 konkreter, actionabler Tipp)
+- Slide 5: Call to Action (Speichern, Folgen, Teilen)
+STIL: Klar, strukturiert, visuell scanbar. Kurze Bullet Points.`,
+    isCarousel: true
+  },
+  storytelling: {
+    name: "Storytelling / Carousel",
+    instruction: `Erstelle einen fesselnden Storytelling-Carousel mit 5 Slides.
+STRUKTUR:
+- Slide 1: Hook/Teaser der Geschichte
+- Slide 2: Setup - Kontext & Situation
+- Slide 3: Konflikt/Wendepunkt
+- Slide 4: Auflösung/Lesson
+- Slide 5: Call to Action
+STIL: Emotional, spannend, persönlich. Cliffhanger zwischen Slides.`,
+    isCarousel: true
   },
   announcement: {
     name: "Ankündigung / News",
@@ -51,6 +66,150 @@ STIL: Enthusiastisch aber nicht übertrieben, Spannung aufbauen.
 HOOK: Etwas Großes steht bevor - Neugier wecken.`
   }
 };
+
+// Helper to find matching media from archive
+async function findMatchingMedia(supabase: any, userId: string, tags: string[], mood: string | null) {
+  console.log(`Looking for media with tags: ${tags.join(', ')}, mood: ${mood}`);
+  
+  // First try to find unused images with matching tags
+  let query = supabase
+    .from('media_assets')
+    .select('*')
+    .eq('user_id', userId)
+    .order('used_count', { ascending: true })
+    .order('created_at', { ascending: false });
+
+  const { data: allMedia } = await query;
+  
+  if (!allMedia || allMedia.length === 0) {
+    console.log('No media found in archive');
+    return null;
+  }
+
+  // Score each image
+  const scored = allMedia.map((media: any) => {
+    let score = 0;
+    const mediaTags = media.tags || [];
+    
+    // Tag matching
+    for (const tag of tags) {
+      if (mediaTags.some((t: string) => t.toLowerCase().includes(tag.toLowerCase()))) {
+        score += 10;
+      }
+    }
+    
+    // Mood matching
+    if (mood && media.mood && media.mood.toLowerCase() === mood.toLowerCase()) {
+      score += 15;
+    }
+    
+    // Prefer unused
+    if (media.used_count === 0) score += 20;
+    else if (media.used_count < 3) score += 5;
+    
+    return { ...media, score };
+  });
+
+  // Sort by score and pick best match (with some randomness for variety)
+  scored.sort((a: any, b: any) => b.score - a.score);
+  
+  // Get top candidates
+  const topCandidates = scored.filter((m: any) => m.score > 0).slice(0, 3);
+  
+  if (topCandidates.length > 0) {
+    // Random pick from top 3 for variety
+    const selected = topCandidates[Math.floor(Math.random() * topCandidates.length)];
+    console.log(`Selected media: ${selected.id} with score ${selected.score}`);
+    return selected;
+  }
+  
+  // Fallback: random unused image
+  const unused = scored.filter((m: any) => m.used_count === 0);
+  if (unused.length > 0) {
+    const selected = unused[Math.floor(Math.random() * unused.length)];
+    console.log(`Fallback to unused media: ${selected.id}`);
+    return selected;
+  }
+  
+  // Last resort: least used
+  console.log(`Using least used media: ${scored[0].id}`);
+  return scored[0];
+}
+
+// Generate AI image
+async function generateAIImage(lovableApiKey: string, prompt: string): Promise<string | null> {
+  console.log(`Generating AI image with prompt: ${prompt.substring(0, 100)}...`);
+  
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-image-preview',
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        modalities: ['image', 'text']
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Image generation failed:', await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    
+    if (imageUrl) {
+      console.log('AI image generated successfully');
+      return imageUrl;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error generating AI image:', error);
+    return null;
+  }
+}
+
+// Upload base64 image to storage
+async function uploadBase64Image(supabase: any, userId: string, base64Data: string, postId: string): Promise<string | null> {
+  try {
+    // Extract base64 content
+    const base64Content = base64Data.replace(/^data:image\/\w+;base64,/, '');
+    const imageBuffer = Uint8Array.from(atob(base64Content), c => c.charCodeAt(0));
+    
+    const fileName = `${userId}/generated/${postId}-${Date.now()}.png`;
+    
+    const { error: uploadError } = await supabase.storage
+      .from('media-archive')
+      .upload(fileName, imageBuffer, {
+        contentType: 'image/png',
+        upsert: true
+      });
+
+    if (uploadError) {
+      console.error('Upload error:', uploadError);
+      return null;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('media-archive')
+      .getPublicUrl(fileName);
+
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    return null;
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -69,10 +228,13 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) throw new Error('Unauthorized');
 
-    const { topic_id, post_type, post_structure, additional_context } = await req.json();
+    const { topic_id, post_type, additional_context, force_carousel } = await req.json();
     if (!topic_id) throw new Error('topic_id required');
 
-    console.log(`Generating draft for topic ${topic_id}, type: ${post_type || 'default'}`);
+    const postTypeInfo = post_type && POST_TYPE_PROMPTS[post_type] ? POST_TYPE_PROMPTS[post_type] : null;
+    const isCarousel = force_carousel || postTypeInfo?.isCarousel || false;
+    
+    console.log(`Generating ${isCarousel ? 'carousel' : 'single'} draft for topic ${topic_id}, type: ${post_type || 'default'}`);
 
     // Load topic
     const { data: topic, error: topicError } = await supabase
@@ -90,58 +252,43 @@ serve(async (req) => {
       .eq('user_id', user.id)
       .single();
 
-    // Build taboo words section
+    // Build prompt components
     const tabooWords = brand?.taboo_words?.length > 0 
       ? `- Tabu-Wörter (NIEMALS verwenden): ${brand.taboo_words.join(', ')}` 
       : '';
+    const writingStyle = brand?.writing_style ? `- Schreibstil: ${brand.writing_style}` : '';
+    const examplePosts = brand?.example_posts ? `\n\nBEISPIEL-POSTS:\n${brand.example_posts}` : '';
+    const postTypeInstructions = postTypeInfo ? `\n\nPOST-TYP: ${postTypeInfo.name}\n${postTypeInfo.instruction}` : '';
+    const contextSection = additional_context ? `\n\nZUSÄTZLICHER KONTEXT:\n${additional_context}` : '';
+    const styleSystemPrompt = brand?.style_system_prompt ? `\n\nSTIL-INSTRUKTION:\n${brand.style_system_prompt}` : '';
 
-    // Build writing style section
-    const writingStyle = brand?.writing_style 
-      ? `- Schreibstil: ${brand.writing_style}` 
-      : '';
-
-    // Build example posts section for few-shot prompting
-    const examplePosts = brand?.example_posts 
-      ? `
-
-BEISPIEL-POSTS (imitiere diesen Stil):
-${brand.example_posts}
-` 
-      : '';
-
-    // Get post type specific instructions
-    const postTypeInfo = post_type && POST_TYPE_PROMPTS[post_type] 
-      ? POST_TYPE_PROMPTS[post_type] 
-      : null;
-
-    const postTypeInstructions = postTypeInfo 
-      ? `
-
-POST-TYP: ${postTypeInfo.name}
-${postTypeInfo.instruction}
-` 
-      : '';
-
-    // Additional context from wizard
-    const contextSection = additional_context 
-      ? `
-
-ZUSÄTZLICHER KONTEXT VOM USER:
-${additional_context}
-` 
-      : '';
-
-    // Use custom system prompt from style analysis if available
-    const styleSystemPrompt = brand?.style_system_prompt 
-      ? `
-
-STIL-INSTRUKTION (aus Analyse):
-${brand.style_system_prompt}
-` 
-      : '';
+    // Different output format for carousel vs single
+    const outputFormat = isCarousel ? `{
+  "slides": [
+    { "slide_number": 1, "type": "hook", "headline": "Titel", "body": "Kurzer Hook-Text" },
+    { "slide_number": 2, "type": "content", "headline": "Punkt 1", "body": "Erklärung" },
+    { "slide_number": 3, "type": "content", "headline": "Punkt 2", "body": "Erklärung" },
+    { "slide_number": 4, "type": "content", "headline": "Punkt 3", "body": "Erklärung" },
+    { "slide_number": 5, "type": "cta", "headline": "Call to Action", "body": "Speichern & Folgen!" }
+  ],
+  "caption": "Caption für den Post",
+  "hashtags": "#hashtag1 #hashtag2",
+  "alt_text": "Bildbeschreibung",
+  "suggested_tags": ["tag1", "tag2"],
+  "mood": "Energetisch|Nachdenklich|Fröhlich"
+}` : `{
+  "caption": "Vollständige Caption mit Hook, Haupttext und Call-to-Action",
+  "caption_alt": "Alternative kürzere Version",
+  "caption_short": "Sehr kurze Story-Version",
+  "hashtags": "#hashtag1 #hashtag2",
+  "alt_text": "Bildbeschreibung für Barrierefreiheit",
+  "asset_prompt": "English prompt for cinematic mood image WITHOUT people, film noir style, dramatic lighting",
+  "suggested_tags": ["Portrait", "Set", "Lifestyle"],
+  "mood": "Energetisch|Nachdenklich|Fröhlich"
+}`;
 
     const systemPrompt = `Du bist ein professioneller Instagram Content Creator für den deutschen Markt.
-Erstelle einen Instagram-Post basierend auf dem gegebenen Thema.
+Erstelle ${isCarousel ? 'einen Carousel-Post mit 5 Slides' : 'einen Instagram-Post'} basierend auf dem Thema.
 ${styleSystemPrompt}
 ${postTypeInstructions}
 
@@ -149,37 +296,26 @@ Brand Guidelines:
 - Tonalität: ${brand?.tone_style || 'Professionell und nahbar'}
 ${writingStyle}
 - Sprache: ${brand?.language_primary || 'DE'}
-- Emoji-Level: ${brand?.emoji_level || 1} (0=keine, 3=viele)
+- Emoji-Level: ${brand?.emoji_level || 1}
 - Hashtags: ${brand?.hashtag_min || 8}-${brand?.hashtag_max || 20}
-- Do's: ${brand?.do_list?.join(', ') || 'Keine spezifischen'}
-- Don'ts: ${brand?.dont_list?.join(', ') || 'Keine spezifischen'}
 ${tabooWords}
-${brand?.disclaimers ? `- Disclaimer: ${brand.disclaimers}` : ''}
 ${examplePosts}
 
-Antworte AUSSCHLIESSLICH mit validem JSON im folgenden Format:
-{
-  "hook_options": ["Hook 1", "Hook 2", "Hook 3"],
-  "caption": "Vollständige Caption mit Hook, Haupttext und Call-to-Action",
-  "caption_alt": "Alternative kürzere Version",
-  "caption_short": "Sehr kurze Story-Version",
-  "hashtags": "#hashtag1 #hashtag2 ...",
-  "alt_text": "Bildbeschreibung für Barrierefreiheit",
-  "asset_prompt": "Englischer Prompt für Bildgenerierung",
-  "format": "single"
-}`;
+WICHTIG für Bildauswahl:
+- Wähle passende Tags aus: Portrait, Set, Behind the Scenes, Lifestyle, Outdoor, Studio, Mood, Urlaub, Event, Produkt
+- Bestimme die Stimmung: Energetisch, Nachdenklich, Fröhlich, Mysteriös, Professionell, Entspannt, Dramatisch
+
+Antworte AUSSCHLIESSLICH mit validem JSON:
+${outputFormat}`;
 
     const userPrompt = `Thema: ${topic.title}
 Beschreibung: ${topic.description || 'Keine'}
-Keywords: ${topic.keywords?.join(', ') || 'Keine'}
-Priorität: ${topic.priority}/5
-Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}${contextSection}`;
+Keywords: ${topic.keywords?.join(', ') || 'Keine'}${contextSection}`;
 
-    // Use selected AI model or default
     const selectedModel = brand?.ai_model || 'google/gemini-2.5-flash';
     console.log(`Using AI model: ${selectedModel}`);
 
-    // Call Lovable AI
+    // Generate text content
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -198,35 +334,19 @@ Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}${contextSection}`;
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error('AI API error:', errorText);
-      
-      if (aiResponse.status === 429) {
-        throw new Error('Rate limit erreicht. Bitte warte einen Moment.');
-      }
-      if (aiResponse.status === 402) {
-        throw new Error('Credits aufgebraucht. Bitte lade Credits nach.');
-      }
+      if (aiResponse.status === 429) throw new Error('Rate limit erreicht. Bitte warte einen Moment.');
+      if (aiResponse.status === 402) throw new Error('Credits aufgebraucht.');
       throw new Error('AI generation failed');
     }
 
     const aiData = await aiResponse.json();
     const content = aiData.choices?.[0]?.message?.content;
-    
-    // Parse JSON from response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Invalid AI response format');
     
     const draft = JSON.parse(jsonMatch[0]);
 
-    // Validate hashtag count
-    const hashtagCount = (draft.hashtags?.match(/#/g) || []).length;
-    const minTags = brand?.hashtag_min || 8;
-    const maxTags = brand?.hashtag_max || 20;
-    
-    if (hashtagCount < minTags || hashtagCount > maxTags) {
-      console.warn(`Hashtag count ${hashtagCount} outside range ${minTags}-${maxTags}`);
-    }
-
-    // Create post
+    // Create the post first
     const { data: post, error: postError } = await supabase
       .from('posts')
       .insert({
@@ -234,16 +354,81 @@ Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}${contextSection}`;
         topic_id: topic.id,
         status: 'READY_FOR_REVIEW',
         caption: draft.caption,
-        caption_alt: draft.caption_alt,
-        caption_short: draft.caption_short,
+        caption_alt: draft.caption_alt || null,
+        caption_short: draft.caption_short || null,
         hashtags: draft.hashtags,
         alt_text: draft.alt_text,
-        format: 'single',
+        format: isCarousel ? 'carousel' : 'single',
+        slides: isCarousel ? draft.slides : null,
       })
       .select()
       .single();
 
     if (postError) throw postError;
+
+    // Handle image selection/generation
+    let assetUrl: string | null = null;
+    let assetSource: 'archive' | 'generated' = 'archive';
+
+    // Try to find matching media from archive
+    const suggestedTags = draft.suggested_tags || ['Lifestyle'];
+    const suggestedMood = draft.mood || null;
+    
+    const matchingMedia = await findMatchingMedia(supabase, user.id, suggestedTags, suggestedMood);
+
+    if (matchingMedia && matchingMedia.public_url) {
+      console.log('Using media from archive');
+      assetUrl = matchingMedia.public_url;
+      assetSource = 'archive';
+      
+      // Update usage count
+      await supabase
+        .from('media_assets')
+        .update({ 
+          used_count: (matchingMedia.used_count || 0) + 1,
+          last_used_at: new Date().toISOString()
+        })
+        .eq('id', matchingMedia.id);
+    } else if (draft.asset_prompt) {
+      // Generate AI image
+      console.log('Generating AI image...');
+      const imagePrompt = `Create a photorealistic, cinematic image for Instagram: ${draft.asset_prompt}. 
+Style: Film noir lighting, atmospheric, moody. 
+IMPORTANT: NO people, NO faces, NO human figures. 
+Focus on environment, objects, atmosphere, textures. 
+16:9 aspect ratio, high quality, Instagram-ready.`;
+
+      const base64Image = await generateAIImage(lovableApiKey, imagePrompt);
+      
+      if (base64Image) {
+        assetUrl = await uploadBase64Image(supabase, user.id, base64Image, post.id);
+        assetSource = 'generated';
+      }
+    }
+
+    // Create asset entry if we have an image
+    if (assetUrl) {
+      await supabase.from('assets').insert({
+        user_id: user.id,
+        post_id: post.id,
+        storage_path: assetUrl,
+        public_url: assetUrl,
+        source: assetSource === 'generated' ? 'generate' : 'upload',
+      });
+    }
+
+    // For carousels, create slide assets
+    if (isCarousel && draft.slides) {
+      for (const slide of draft.slides) {
+        await supabase.from('slide_assets').insert({
+          user_id: user.id,
+          post_id: post.id,
+          slide_index: slide.slide_number,
+          generated_text: JSON.stringify(slide),
+          asset_type: 'text',
+        });
+      }
+    }
 
     // Log
     await supabase.from('logs').insert({
@@ -253,13 +438,21 @@ Evergreen: ${topic.evergreen ? 'Ja' : 'Nein'}${contextSection}`;
       level: 'info',
       details: { 
         topic_id, 
-        hashtag_count: hashtagCount, 
         model: selectedModel,
-        post_type: post_type || 'default'
+        post_type: post_type || 'default',
+        format: isCarousel ? 'carousel' : 'single',
+        slide_count: isCarousel ? draft.slides?.length : 1,
+        asset_source: assetSource,
+        has_image: !!assetUrl
       },
     });
 
-    return new Response(JSON.stringify({ draft, post }), {
+    return new Response(JSON.stringify({ 
+      draft, 
+      post,
+      asset_url: assetUrl,
+      asset_source: assetSource
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error: unknown) {

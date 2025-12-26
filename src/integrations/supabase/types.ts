@@ -231,6 +231,51 @@ export type Database = {
           },
         ]
       }
+      media_assets: {
+        Row: {
+          created_at: string
+          description: string | null
+          filename: string | null
+          id: string
+          last_used_at: string | null
+          mood: string | null
+          public_url: string | null
+          storage_path: string
+          tags: string[] | null
+          updated_at: string
+          used_count: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          filename?: string | null
+          id?: string
+          last_used_at?: string | null
+          mood?: string | null
+          public_url?: string | null
+          storage_path: string
+          tags?: string[] | null
+          updated_at?: string
+          used_count?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          filename?: string | null
+          id?: string
+          last_used_at?: string | null
+          mood?: string | null
+          public_url?: string | null
+          storage_path?: string
+          tags?: string[] | null
+          updated_at?: string
+          used_count?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       meta_connections: {
         Row: {
           connected_at: string | null
@@ -286,6 +331,7 @@ export type Database = {
           ig_media_id: string | null
           published_at: string | null
           scheduled_at: string | null
+          slides: Json | null
           status: Database["public"]["Enums"]["post_status"]
           topic_id: string | null
           updated_at: string
@@ -306,6 +352,7 @@ export type Database = {
           ig_media_id?: string | null
           published_at?: string | null
           scheduled_at?: string | null
+          slides?: Json | null
           status?: Database["public"]["Enums"]["post_status"]
           topic_id?: string | null
           updated_at?: string
@@ -326,6 +373,7 @@ export type Database = {
           ig_media_id?: string | null
           published_at?: string | null
           scheduled_at?: string | null
+          slides?: Json | null
           status?: Database["public"]["Enums"]["post_status"]
           topic_id?: string | null
           updated_at?: string
@@ -391,6 +439,50 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      slide_assets: {
+        Row: {
+          asset_type: string | null
+          created_at: string
+          generated_text: string | null
+          id: string
+          post_id: string
+          public_url: string | null
+          slide_index: number
+          storage_path: string | null
+          user_id: string
+        }
+        Insert: {
+          asset_type?: string | null
+          created_at?: string
+          generated_text?: string | null
+          id?: string
+          post_id: string
+          public_url?: string | null
+          slide_index: number
+          storage_path?: string | null
+          user_id: string
+        }
+        Update: {
+          asset_type?: string | null
+          created_at?: string
+          generated_text?: string | null
+          id?: string
+          post_id?: string
+          public_url?: string | null
+          slide_index?: number
+          storage_path?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slide_assets_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       topics: {
         Row: {
@@ -468,7 +560,7 @@ export type Database = {
     Enums: {
       asset_source: "upload" | "generate"
       log_level: "info" | "warn" | "error"
-      post_format: "single"
+      post_format: "single" | "carousel"
       post_status:
         | "IDEA"
         | "DRAFT"
@@ -608,7 +700,7 @@ export const Constants = {
     Enums: {
       asset_source: ["upload", "generate"],
       log_level: ["info", "warn", "error"],
-      post_format: ["single"],
+      post_format: ["single", "carousel"],
       post_status: [
         "IDEA",
         "DRAFT",
