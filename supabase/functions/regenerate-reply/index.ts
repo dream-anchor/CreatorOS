@@ -31,13 +31,16 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    const { comment_id } = await req.json();
+    const { comment_id, model } = await req.json();
 
     if (!comment_id) {
       throw new Error('comment_id required');
     }
 
-    console.log(`[regenerate-reply] Regenerating reply for comment ${comment_id}`);
+    // Use provided model or default to gemini flash
+    const aiModel = model || 'google/gemini-2.5-flash';
+
+    console.log(`[regenerate-reply] Regenerating reply for comment ${comment_id} using model ${aiModel}`);
 
     // Get the comment
     const { data: comment, error: commentError } = await supabase
@@ -94,7 +97,7 @@ Antworte NUR mit dem Antwort-Text, keine Erklärungen.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: aiModel,
         messages: [
           { role: 'user', content: replyPrompt }
         ],
