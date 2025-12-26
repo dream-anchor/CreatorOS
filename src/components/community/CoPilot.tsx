@@ -358,16 +358,96 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
     );
   };
 
-  const renderMessageContent = (message: Message) => (
-    <div
-      className={cn(
-        "max-w-[85%] rounded-2xl px-4 py-2 relative group",
-        message.role === "user"
-          ? "bg-primary text-primary-foreground rounded-br-md"
-          : "bg-muted rounded-bl-md"
-      )}
-    >
-      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+  // Parse message content for images (markdown format: ![alt](url))
+  const parseMessageContent = (content: string) => {
+    const parts: Array<{ type: 'text' | 'image', content: string, alt?: string }> = [];
+    const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = imageRegex.exec(content)) !== null) {
+      // Add text before the image
+      if (match.index > lastIndex) {
+        const textBefore = content.slice(lastIndex, match.index).trim();
+        if (textBefore) {
+          parts.push({ type: 'text', content: textBefore });
+        }
+      }
+      // Add the image
+      parts.push({ type: 'image', content: match[2], alt: match[1] });
+      lastIndex = match.index + match[0].length;
+    }
+
+    // Add remaining text after last image
+    if (lastIndex < content.length) {
+      const remainingText = content.slice(lastIndex).trim();
+      if (remainingText) {
+        parts.push({ type: 'text', content: remainingText });
+      }
+    }
+
+    // If no images found, return whole content as text
+    if (parts.length === 0) {
+      parts.push({ type: 'text', content });
+    }
+
+    return parts;
+  };
+
+  const handleImageDownload = async (imageUrl: string, filename?: string) => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || `generated-image-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast.success("Bild heruntergeladen!");
+    } catch (error) {
+      console.error("Download failed:", error);
+      toast.error("Download fehlgeschlagen");
+    }
+  };
+
+  const renderMessageContent = (message: Message) => {
+    const contentParts = parseMessageContent(message.content);
+    
+    return (
+      <div
+        className={cn(
+          "max-w-[85%] rounded-2xl px-4 py-2 relative group",
+          message.role === "user"
+            ? "bg-primary text-primary-foreground rounded-br-md"
+            : "bg-muted rounded-bl-md"
+        )}
+      >
+        {contentParts.map((part, index) => (
+          part.type === 'text' ? (
+            <p key={index} className="text-sm whitespace-pre-wrap">{part.content}</p>
+          ) : (
+            <div key={index} className="my-3 space-y-2">
+              <img 
+                src={part.content} 
+                alt={part.alt || "Generiertes Bild"} 
+                className="rounded-lg max-w-full shadow-md border"
+                loading="lazy"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-7 gap-1"
+                onClick={() => handleImageDownload(part.content, part.alt)}
+              >
+                <ExternalLink className="h-3 w-3" />
+                Herunterladen
+              </Button>
+            </div>
+          )
+        ))}
       
       {/* Tool Results */}
       {message.toolResults && message.toolResults.length > 0 && (
@@ -378,27 +458,28 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
         </div>
       )}
       
-      {/* Copy Button for Assistant Messages */}
-      {message.role === "assistant" && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute -right-2 -top-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity bg-background border shadow-sm"
-          onClick={() => copyToClipboard(message.content, message.id)}
-        >
-          {copiedMessageId === message.id ? (
-            <Check className="h-3 w-3 text-green-500" />
-          ) : (
-            <Copy className="h-3 w-3" />
-          )}
-        </Button>
-      )}
-      
-      <p className="text-[10px] opacity-50 mt-1">
-        {message.timestamp.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
-      </p>
-    </div>
-  );
+        {/* Copy Button for Assistant Messages */}
+        {message.role === "assistant" && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute -right-2 -top-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity bg-background border shadow-sm"
+            onClick={() => copyToClipboard(message.content, message.id)}
+          >
+            {copiedMessageId === message.id ? (
+              <Check className="h-3 w-3 text-green-500" />
+            ) : (
+              <Copy className="h-3 w-3" />
+            )}
+          </Button>
+        )}
+        
+        <p className="text-[10px] opacity-50 mt-1">
+          {message.timestamp.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+        </p>
+      </div>
+    );
+  };
 
   const chatContent = (
     <>
