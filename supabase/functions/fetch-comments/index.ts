@@ -119,6 +119,14 @@ serve(async (req) => {
             myRepliedCommentIds.add(comment.id);
           }
 
+          const commentText = typeof (comment as any).text === 'string' ? (comment as any).text.trim() : '';
+          const commentTimestamp = typeof (comment as any).timestamp === 'string' ? (comment as any).timestamp : null;
+
+          // Skip comments without text/timestamp (can happen for deleted/hidden items)
+          if (!commentText || !commentTimestamp) {
+            continue;
+          }
+
           // Don't include my own comments
           if (comment.from?.id !== igUserId && comment.username !== connection.ig_username) {
             allComments.push({
@@ -126,8 +134,8 @@ serve(async (req) => {
               ig_media_id: media.id,
               commenter_username: comment.username || comment.from?.username || 'Unknown',
               commenter_id: comment.from?.id || null,
-              comment_text: comment.text,
-              comment_timestamp: comment.timestamp,
+              comment_text: commentText,
+              comment_timestamp: commentTimestamp,
               is_replied: hasMyReply || false,
             });
           }
@@ -155,6 +163,7 @@ serve(async (req) => {
 
       if (upsertError) {
         console.error('Upsert error:', upsertError);
+        throw new Error('Failed to store comments');
       }
     }
 
