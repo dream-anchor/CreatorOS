@@ -605,6 +605,7 @@ export type Database = {
           id: string
           last_sync_at: string | null
           posts_per_week: number | null
+          preferred_ai_model: string | null
           preferred_days: string[] | null
           preferred_hours: Json | null
           updated_at: string
@@ -616,6 +617,7 @@ export type Database = {
           id?: string
           last_sync_at?: string | null
           posts_per_week?: number | null
+          preferred_ai_model?: string | null
           preferred_days?: string[] | null
           preferred_hours?: Json | null
           updated_at?: string
@@ -627,6 +629,7 @@ export type Database = {
           id?: string
           last_sync_at?: string | null
           posts_per_week?: number | null
+          preferred_ai_model?: string | null
           preferred_days?: string[] | null
           preferred_hours?: Json | null
           updated_at?: string

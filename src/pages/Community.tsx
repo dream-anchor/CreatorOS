@@ -59,6 +59,7 @@ export default function Community() {
   const [smartStrategy, setSmartStrategy] = useState<SmartStrategy>(null);
   const [sanitizingComments, setSanitizingComments] = useState<Set<string>>(new Set());
   const [selectedAiModel, setSelectedAiModel] = useState("google/gemini-2.5-flash");
+  const [modelLoaded, setModelLoaded] = useState(false);
   
   // Pagination state
   const POSTS_PER_PAGE = 10;
@@ -109,7 +110,34 @@ export default function Community() {
 
   useEffect(() => {
     loadData();
+    loadPreferredModel();
   }, []);
+
+  const loadPreferredModel = async () => {
+    const { data: settings } = await supabase
+      .from("settings")
+      .select("preferred_ai_model")
+      .maybeSingle();
+    
+    if (settings?.preferred_ai_model) {
+      setSelectedAiModel(settings.preferred_ai_model);
+    }
+    setModelLoaded(true);
+  };
+
+  const saveModelPreference = async (modelId: string) => {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) return;
+    
+    const { error } = await supabase
+      .from("settings")
+      .update({ preferred_ai_model: modelId })
+      .eq("user_id", userData.user.id);
+    
+    if (error) {
+      console.error("Error saving model preference:", error);
+    }
+  };
 
   const loadData = async () => {
     // Load blacklist topics
@@ -674,6 +702,9 @@ export default function Community() {
     const oldModel = selectedAiModel;
     setSelectedAiModel(newModelId);
     
+    // Save preference to database
+    await saveModelPreference(newModelId);
+    
     // Find model name for toast
     const modelName = newModelId.includes("gemini") 
       ? newModelId.includes("pro") ? "Gemini Pro" : "Gemini Flash"
@@ -683,7 +714,7 @@ export default function Community() {
     const commentsToRegenerate = comments.filter((c) => c.editedReply);
     
     if (commentsToRegenerate.length === 0) {
-      toast.success(`🧠 KI gewechselt auf ${modelName}`);
+      toast.success(`🧠 Standard-Modell auf ${modelName} aktualisiert`);
       return;
     }
 
