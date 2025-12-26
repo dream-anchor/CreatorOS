@@ -208,9 +208,12 @@ export default function MediaArchivePage() {
       loadAssets();
 
       // Auto-analyze each uploaded asset
+      let successCount = 0;
+      let failCount = 0;
+      
       for (const asset of uploadedAssets) {
         try {
-          await supabase.functions.invoke("analyze-media-vision", {
+          const { data, error } = await supabase.functions.invoke("analyze-media-vision", {
             body: { 
               mode: "auto", 
               asset_id: asset.id,
@@ -218,12 +221,26 @@ export default function MediaArchivePage() {
             }
           });
 
+          if (error) {
+            console.error(`Analysis error for ${asset.id}:`, error);
+            toast.error(`Analyse-Fehler: ${error.message || "Unbekannt"}`);
+            failCount++;
+          } else if (data && !data.success) {
+            console.error(`Analysis failed for ${asset.id}:`, data.error);
+            toast.error(`Analyse fehlgeschlagen: ${data.error || "Unbekannter Fehler"}`);
+            failCount++;
+          } else {
+            successCount++;
+          }
+
           // Mark as done
           setUploadingAssets(prev => 
             prev.map(a => a.id === asset.id ? { ...a, analyzing: false } : a)
           );
-        } catch (error) {
-          console.error(`Auto-analysis failed for ${asset.id}:`, error);
+        } catch (error: any) {
+          console.error(`Auto-analysis exception for ${asset.id}:`, error);
+          toast.error(`Analyse-Exception: ${error.message || "Netzwerkfehler"}`);
+          failCount++;
         }
       }
 
@@ -231,7 +248,12 @@ export default function MediaArchivePage() {
       setTimeout(() => {
         setUploadingAssets([]);
         loadAssets();
-        toast.success("✨ Alle Bilder analysiert!");
+        if (successCount > 0) {
+          toast.success(`✨ ${successCount} Bild(er) analysiert!`);
+        }
+        if (failCount > 0) {
+          toast.warning(`⚠️ ${failCount} Analyse(n) fehlgeschlagen`);
+        }
       }, 500);
 
     } catch (error: any) {
@@ -293,16 +315,27 @@ export default function MediaArchivePage() {
         body: { mode: "batch" }
       });
 
-      if (error) throw error;
+      if (error) {
+        toast.error(`Analyse fehlgeschlagen: ${error.message}`);
+        return;
+      }
+
+      if (!data?.success && data?.error) {
+        toast.error(`Backend-Fehler: ${data.error}`);
+        return;
+      }
 
       if (data?.analyzed > 0) {
         toast.success(`✨ ${data.analyzed} Bilder analysiert!`);
+        if (data?.errors > 0 && data?.errorDetails) {
+          toast.error(`${data.errors} Fehler: ${data.errorDetails.slice(0, 2).join(", ")}`);
+        }
         loadAssets();
       } else {
         toast.info(data?.message || "Alle Bilder sind bereits analysiert");
       }
     } catch (error: any) {
-      toast.error("Analyse fehlgeschlagen: " + error.message);
+      toast.error(`Analyse-Exception: ${error.message || "Netzwerkfehler"}`);
     } finally {
       setAnalyzing(false);
     }
