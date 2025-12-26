@@ -40,22 +40,8 @@ interface PostGroup {
   comments: CommentWithContext[];
 }
 
-// Helper to extract a valid Instagram URL
-function getInstagramUrl(permalink: string | null, shortcode?: string | null): string | null {
-  // Priority 1: Use permalink if it's a valid Instagram URL
-  if (permalink && /^https?:\/\/(www\.)?instagram\.com\/(p|reel|tv)\/[A-Za-z0-9_-]+/.test(permalink)) {
-    return permalink;
-  }
-  
-  // Priority 2: Build URL from shortcode if available
-  if (shortcode && /^[A-Za-z0-9_-]+$/.test(shortcode)) {
-    return `https://www.instagram.com/p/${shortcode}/`;
-  }
-  
-  // FORBIDDEN: Never use internal IDs, media_id, or numeric values
-  // Return null to disable the button
-  return null;
-}
+// Import centralized Instagram URL utilities
+import { getInstagramUrl, extractShortcode } from "@/lib/instagram-utils";
 
 interface PostCardProps {
   group: PostGroup;

@@ -25,6 +25,7 @@ import { RulesConfigPanel } from "@/components/community/RulesConfigPanel";
 import { PostCard } from "@/components/community/PostCard";
 import { ActionBar } from "@/components/community/ActionBar";
 import { AiModelSelector } from "@/components/community/AiModelSelector";
+import { getInstagramUrl } from "@/lib/instagram-utils";
 
 // Check icon alias for consistency
 
@@ -922,18 +923,23 @@ export default function Community() {
                         </p>
                       </div>
 
-                      {/* Original post link - only show if valid Instagram permalink with shortcode exists */}
-                      {comment.post_permalink && /instagram\.com\/(p|reel|tv)\/[A-Za-z0-9_-]+/.test(comment.post_permalink) && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground flex-shrink-0"
-                          onClick={() => window.open(comment.post_permalink!, "_blank", "noopener,noreferrer")}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                          Original
-                        </Button>
-                      )}
+                      {/* Original post link - always use /p/ format */}
+                      {(() => {
+                        const safeUrl = getInstagramUrl(comment.post_permalink);
+                        if (!safeUrl) return null;
+                        return (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground flex-shrink-0"
+                            onClick={() => window.open(safeUrl, "_blank", "noopener,noreferrer")}
+                            title={`Öffnen: ${safeUrl}`}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Original
+                          </Button>
+                        );
+                      })()}
                     </div>
 
                     {/* Critical Comment Content */}
