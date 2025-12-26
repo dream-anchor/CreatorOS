@@ -13,6 +13,7 @@ import {
   FolderOpen,
   ImageIcon,
   MessageCircle,
+  Camera,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -30,6 +31,7 @@ const studioNav = [
 const brandNav = [
   { name: "Meine DNA", href: "/brand", icon: Fingerprint },
   { name: "Themen", href: "/topics", icon: Hash },
+  { name: "Meine Fotos", href: "/my-photos", icon: Camera },
   { name: "Meine Bilder", href: "/media", icon: ImageIcon },
   { name: "Post-Historie", href: "/library", icon: FolderOpen },
 ];
