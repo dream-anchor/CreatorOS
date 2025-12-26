@@ -12,6 +12,7 @@ import {
   EyeOff,
   Ban,
   Trash2,
+  Check,
 } from "lucide-react";
 import { format, formatDistanceToNow, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
@@ -493,6 +494,67 @@ export default function Community() {
     setComments((prev) => prev.filter((c) => c.id !== commentId));
   };
 
+  // Rehabilitate a critical comment - move it back to normal workflow
+  const rehabilitateComment = async (comment: CommentWithContext) => {
+    toast.info("🔄 Kommentar wird freigegeben...");
+
+    // Update database: remove critical flag
+    const { error: updateError } = await supabase
+      .from("instagram_comments")
+      .update({ is_critical: false })
+      .eq("id", comment.id);
+
+    if (updateError) {
+      toast.error("Fehler beim Freigeben");
+      return;
+    }
+
+    // Remove from critical list
+    setCriticalComments((prev) => prev.filter((c) => c.id !== comment.id));
+
+    // Add to normal comments with loading state
+    const rehabilitatedComment: CommentWithContext = {
+      ...comment,
+      is_critical: false,
+      selected: false,
+      editedReply: "",
+      approved: false,
+    };
+    setComments((prev) => [rehabilitatedComment, ...prev]);
+
+    // Mark as generating
+    setSanitizingComments((prev) => new Set(prev).add(comment.id));
+
+    // Generate AI reply
+    try {
+      const { data, error } = await supabase.functions.invoke("regenerate-reply", {
+        body: { comment_id: comment.id, model: selectedAiModel },
+      });
+
+      if (!error && data?.new_reply) {
+        setComments((prev) =>
+          prev.map((c) =>
+            c.id === comment.id
+              ? { ...c, editedReply: data.new_reply, selected: true }
+              : c
+          )
+        );
+        toast.success("✅ Kommentar freigegeben & Antwort generiert!");
+      } else {
+        toast.warning("Freigegeben, aber Antwort konnte nicht generiert werden");
+      }
+    } catch (err) {
+      console.error("Regenerate error:", err);
+      toast.warning("Freigegeben, aber Antwort-Generierung fehlgeschlagen");
+    } finally {
+      setSanitizingComments((prev) => {
+        const next = new Set(prev);
+        next.delete(comment.id);
+        return next;
+      });
+    }
+  };
+
   const toggleCommentSelection = (id: string) => {
     setComments((prev) =>
       prev.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c))
@@ -742,11 +804,22 @@ export default function Community() {
                       </p>
                     </div>
                     <div className="flex gap-1 flex-shrink-0">
+                      {/* Rehabilitate - move to normal workflow */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-2 gap-1 text-xs border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600"
+                        onClick={() => rehabilitateComment(comment)}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Ist okay</span>
+                      </Button>
                       <Button
                         size="icon"
                         variant="ghost"
                         className="h-8 w-8"
                         onClick={() => moderateComment(comment.id, "hide")}
+                        title="Verbergen"
                       >
                         <EyeOff className="h-4 w-4" />
                       </Button>
@@ -755,6 +828,7 @@ export default function Community() {
                         variant="ghost"
                         className="h-8 w-8"
                         onClick={() => moderateComment(comment.id, "block")}
+                        title="Blockieren"
                       >
                         <Ban className="h-4 w-4" />
                       </Button>
@@ -763,6 +837,7 @@ export default function Community() {
                         variant="ghost"
                         className="h-8 w-8 text-destructive hover:text-destructive"
                         onClick={() => moderateComment(comment.id, "delete")}
+                        title="Löschen"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
