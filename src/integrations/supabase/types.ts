@@ -92,6 +92,7 @@ export type Database = {
           dont_list: string[] | null
           emoji_level: number | null
           example_posts: string | null
+          formality_mode: string | null
           hashtag_max: number | null
           hashtag_min: number | null
           id: string
@@ -113,6 +114,7 @@ export type Database = {
           dont_list?: string[] | null
           emoji_level?: number | null
           example_posts?: string | null
+          formality_mode?: string | null
           hashtag_max?: number | null
           hashtag_min?: number | null
           id?: string
@@ -134,6 +136,7 @@ export type Database = {
           dont_list?: string[] | null
           emoji_level?: number | null
           example_posts?: string | null
+          formality_mode?: string | null
           hashtag_max?: number | null
           hashtag_min?: number | null
           id?: string

@@ -6,6 +6,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper to detect if fan uses formal "Sie" language
+function detectFormalLanguage(text: string): boolean {
+  const formalPatterns = [
+    /\bSie\b/,           // "Sie" as pronoun
+    /\bIhnen\b/,         // "Ihnen"
+    /\bIhr\b/,           // "Ihr" (formal)
+    /\bIhre\b/,          // "Ihre"
+    /\bHerr\s+\w+/i,     // "Herr [Name]"
+    /\bFrau\s+\w+/i,     // "Frau [Name]"
+    /\bkönnten Sie\b/i,  // "könnten Sie"
+    /\bwürden Sie\b/i,   // "würden Sie"
+  ];
+  return formalPatterns.some(pattern => pattern.test(text));
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -66,16 +81,62 @@ serve(async (req) => {
       postCaption = post?.caption || '';
     }
 
-    // Get brand rules for tone
+    // Get brand rules for tone AND formality mode
     const { data: brandRules } = await supabase
       .from('brand_rules')
-      .select('tone_style, writing_style, language_primary, do_list, dont_list')
+      .select('tone_style, writing_style, language_primary, do_list, dont_list, formality_mode')
       .eq('user_id', user.id)
       .maybeSingle();
 
     const toneStyle = brandRules?.tone_style || 'locker und authentisch';
     const writingStyle = brandRules?.writing_style || '';
     const language = brandRules?.language_primary || 'DE';
+    const formalityMode = brandRules?.formality_mode || 'smart';
+
+    // ========== DYNAMIC STYLE LEARNING ==========
+    // Query last 15-20 approved/sent replies as few-shot examples
+    const { data: pastReplies } = await supabase
+      .from('reply_queue')
+      .select('reply_text')
+      .eq('user_id', user.id)
+      .eq('status', 'sent')
+      .order('sent_at', { ascending: false })
+      .limit(20);
+
+    // Filter out emoji-only replies and build examples
+    const validExamples = (pastReplies || [])
+      .map(r => r.reply_text)
+      .filter(text => {
+        // Filter out emoji-only (less than 3 actual characters)
+        const withoutEmojis = text.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').trim();
+        return withoutEmojis.length >= 3;
+      })
+      .slice(0, 15);
+
+    const fewShotSection = validExamples.length > 0
+      ? `
+========== LERNE VON MEINEN ECHTEN ANTWORTEN ==========
+Diese Beispiele zeigen meinen echten Schreibstil. Kopiere den Vibe, die Satzlänge und Formatierung:
+
+${validExamples.map((ex, i) => `${i + 1}. "${ex}"`).join('\n')}
+======================================================`
+      : '';
+
+    // ========== ADAPTIVE FORMALITY ==========
+    let formalityInstruction = '';
+    const fanUsesFormal = detectFormalLanguage(comment.comment_text);
+
+    if (formalityMode === 'smart') {
+      if (fanUsesFormal) {
+        formalityInstruction = 'Der Fan siezt dich → Antworte mit "Sie" und formeller Sprache.';
+      } else {
+        formalityInstruction = 'Der Fan duzt dich → Antworte mit "Du" und lockerer Sprache.';
+      }
+    } else if (formalityMode === 'sie') {
+      formalityInstruction = 'Antworte IMMER mit "Sie" (formell), egal wie der Fan schreibt.';
+    } else {
+      formalityInstruction = 'Antworte IMMER mit "Du" (informell), egal wie der Fan schreibt.';
+    }
 
     // Get emoji no-go terms
     const { data: emojiNogoTerms } = await supabase
@@ -85,7 +146,6 @@ serve(async (req) => {
 
     const emojiNogoList = emojiNogoTerms?.map(t => t.term) || [];
 
-    // Build emoji constraint
     let emojiConstraint = '';
     if (emojiNogoList.length > 0) {
       emojiConstraint = `
@@ -103,22 +163,24 @@ KONTEXT - MEIN ORIGINAL-POST:
 ---`
       : '';
 
-    const replyPrompt = `Du bist Antoine, ein Instagram-Creator. Du antwortest persönlich auf Fan-Kommentare.
+    const replyPrompt = `ROLLE: Du BIST der User (Antoine). Du bist KEIN Assistent. Du antwortest persönlich auf Fan-Kommentare.
 
 SPRACHE: ${language === 'DE' ? 'Deutsch' : language}
 TONALITÄT: ${toneStyle}
 ${writingStyle ? `STIL: ${writingStyle}` : ''}
+${fewShotSection}
 
-===== ABSOLUTE VERBOTE (NIEMALS BRECHEN!) =====
-❌ KEINE Hashtags (#) - Niemals, unter keinen Umständen
-❌ KEINE Signaturen ("Dein Team", "@support", "Liebe Grüße, das Team")
-❌ KEINE CTAs ("Link in Bio", "Schau mal hier", "Mehr Infos")
-❌ KEINE Marketing-Sprache ("Wir freuen uns", "Vielen Dank für Ihr Feedback")
-❌ KEINE Support-Ticket-Floskeln ("Gerne geschehen", "Bei Fragen stehen wir zur Verfügung")
-===================================================
+===== PERSONA-REGELN (NIEMALS BRECHEN!) =====
+✅ IMMER in der 1. Person Singular ("Ich")
+❌ NIEMALS "Wir", "Uns", "Das Team", "Unser"
+❌ KEINE Signaturen ("Dein Antoine", "LG", "Grüße")
+❌ KEINE Hashtags (#)
+❌ KEINE CTAs ("Link in Bio", "Schau mal hier")
+❌ KEINE Marketing-Sprache ("Wir freuen uns")
+❌ KEINE Support-Floskeln ("Bei Fragen stehen wir zur Verfügung")
+==============================================
 
-DU BIST EIN MENSCH, KEINE MARKE.
-Schreibe wie jemand, der kurz vom Handy antwortet - direkt, knackig, authentisch.
+ANSPRACHE: ${formalityInstruction}
 ${emojiConstraint}
 ${contextSection}
 

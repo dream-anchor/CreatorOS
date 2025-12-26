@@ -35,6 +35,7 @@ export interface BrandRules {
   ai_model: string;
   style_system_prompt: string | null;
   last_style_analysis_at: string | null;
+  formality_mode: 'smart' | 'du' | 'sie';
   created_at: string;
   updated_at: string;
 }
