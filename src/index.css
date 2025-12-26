@@ -4,12 +4,12 @@
 
 @layer base {
   :root {
-    /* Modern Light Background */
-    --background: 220 30% 97%;
-    --background-secondary: 220 25% 94%;
+    /* Professional Light Background - #F9FAFB */
+    --background: 210 20% 98%;
+    --background-secondary: 210 15% 96%;
     --foreground: 220 25% 12%;
 
-    /* Card */
+    /* Card - Pure White */
     --card: 0 0% 100%;
     --card-foreground: 220 25% 12%;
 
@@ -150,14 +150,8 @@
   body {
     @apply text-foreground font-sans antialiased;
     font-family: 'Inter', 'Space Grotesk', system-ui, sans-serif;
-    background: linear-gradient(
-      145deg,
-      hsl(220 30% 98%) 0%,
-      hsl(220 25% 96%) 30%,
-      hsl(230 25% 95%) 60%,
-      hsl(220 28% 97%) 100%
-    );
-    background-attachment: fixed;
+    /* Professional SaaS Light Background - #F9FAFB */
+    background: hsl(210 20% 98%);
     min-height: 100vh;
   }
 

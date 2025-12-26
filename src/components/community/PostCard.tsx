@@ -67,9 +67,9 @@ export function PostCard({
   const postImage = group.postImageUrl || group.comments[0]?.post_image_url;
 
   return (
-    <div className="rounded-xl bg-card border border-border mb-10 overflow-hidden shadow-lg">
-      {/* ===== POST HEADER (Dark Container Top) ===== */}
-      <div className="p-5 bg-muted/50 dark:bg-secondary/60 border-b border-border">
+    <div className="rounded-2xl bg-white dark:bg-card border border-gray-200 dark:border-border overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+      {/* ===== POST HEADER ===== */}
+      <div className="p-5 bg-gray-50/80 dark:bg-secondary/60 border-b border-gray-100 dark:border-border">
         <div className="flex items-start gap-4">
           {/* Left: Thumbnail */}
           <div className="w-16 h-16 rounded-lg bg-muted flex-shrink-0 overflow-hidden border border-border/50">
@@ -179,7 +179,7 @@ export function PostCard({
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <div className="p-4 space-y-3 bg-background/50">
+          <div className="p-5 space-y-4 bg-white dark:bg-card">
             {group.comments.map((comment) => {
               const isSanitizing = sanitizingComments.has(comment.id);
 

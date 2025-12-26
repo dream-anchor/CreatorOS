@@ -12,7 +12,7 @@ import {
   EyeOff,
   Ban,
   Trash2,
-  Check as CheckIcon,
+  Check,
   ExternalLink,
   User,
 } from "lucide-react";
@@ -24,8 +24,7 @@ import { PostCard } from "@/components/community/PostCard";
 import { ActionBar } from "@/components/community/ActionBar";
 import { AiModelSelector } from "@/components/community/AiModelSelector";
 
-// Defensive alias: avoids runtime crashes if a stale bundle still references `Check`
-const Check = CheckIcon;
+// Check icon alias for consistency
 
 interface BlacklistTopic {
   id: string;
@@ -738,7 +737,7 @@ export default function Community() {
       title="Community"
       description="Engagement-Zentrale für deine Instagram-Fans"
     >
-      <div className="space-y-6 pb-28">
+      <div className="space-y-8 pb-28">
         {/* Header Controls */}
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex-1">
@@ -759,7 +758,7 @@ export default function Community() {
         </div>
 
         {/* Fetch Button & Stats */}
-        <div className="flex items-center justify-between p-4 rounded-xl bg-card border">
+        <div className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-card border border-gray-200 dark:border-border shadow-sm">
           <div>
             <h3 className="font-medium text-sm">Kommentare synchronisieren</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -787,7 +786,7 @@ export default function Community() {
 
         {/* Critical Comments Section */}
         {criticalComments.length > 0 && (
-          <Card className="border-destructive/50 bg-destructive/5">
+          <div className="rounded-2xl bg-white dark:bg-card border border-red-200 dark:border-destructive/50 shadow-sm overflow-hidden">
             <div className="p-5">
               <div className="flex items-center gap-2 mb-4">
                 <AlertTriangle className="h-4 w-4 text-destructive" />
@@ -880,7 +879,7 @@ export default function Community() {
                             className="h-8 px-3 gap-1.5 text-xs border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/60"
                             onClick={() => rehabilitateComment(comment)}
                           >
-                            <CheckIcon className="h-3.5 w-3.5" />
+                            <Check className="h-3.5 w-3.5" />
                             Zulassen & Antworten
                           </Button>
                           <Button
@@ -917,12 +916,12 @@ export default function Community() {
                 ))}
               </div>
             </div>
-          </Card>
+          </div>
         )}
 
         {/* Post-Grouped Comments */}
         {visiblePostGroups.length > 0 ? (
-          <div className="space-y-5">
+          <div className="space-y-8">
             {visiblePostGroups.map((group) => (
               <PostCard
                 key={group.igMediaId}
@@ -939,7 +938,7 @@ export default function Community() {
               <Button
                 variant="outline"
                 size="lg"
-                className="w-full gap-2 h-14 text-base"
+                className="w-full gap-2 h-14 text-base bg-white dark:bg-card border-gray-200 dark:border-border hover:bg-gray-50 dark:hover:bg-muted"
                 onClick={loadMorePosts}
               >
                 ⬇️ Ältere Beiträge laden
@@ -950,15 +949,30 @@ export default function Community() {
             )}
           </div>
         ) : (
-          <Card>
-            <CardContent className="py-16 text-center text-muted-foreground">
-              <MessageCircle className="h-12 w-12 mx-auto mb-4 opacity-20" />
-              <p className="font-medium">Keine offenen Kommentare</p>
-              <p className="text-sm mt-1">
-                Synchronisiere Kommentare um zu starten
+          <div className="rounded-2xl bg-white dark:bg-card border border-gray-200 dark:border-border shadow-sm">
+            <div className="py-20 px-8 text-center">
+              <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-500/10 mx-auto mb-6 flex items-center justify-center">
+                <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                Alles erledigt!
+              </h3>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Du bist auf dem Laufenden – keine offenen Kommentare in diesem Zeitraum. 
+                Synchronisiere neue Kommentare oder erweitere den Zeitraum.
               </p>
-            </CardContent>
-          </Card>
+              <Button
+                variant="outline"
+                size="lg"
+                className="mt-6 gap-2"
+                onClick={fetchComments}
+                disabled={loading || analyzing}
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                Kommentare synchronisieren
+              </Button>
+            </div>
+          </div>
         )}
       </div>
 
