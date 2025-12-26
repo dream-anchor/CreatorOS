@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { MetaConnection } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Instagram, CheckCircle2, AlertCircle, ExternalLink, RefreshCw, Bug, User } from "lucide-react";
+import { 
+  Loader2, Instagram, CheckCircle2, AlertCircle, ExternalLink, 
+  RefreshCw, User, Download, Sparkles, TrendingUp, Heart, MessageSquare 
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 
 interface InstagramAccount {
   ig_user_id: string;
@@ -22,6 +27,22 @@ interface AuthCallbackState {
   token_expires_at: string;
 }
 
+interface ImportResult {
+  success: boolean;
+  imported: number;
+  pages_fetched: number;
+  unicorn_count: number;
+  top_score_threshold: number;
+  best_performer?: {
+    caption_preview: string;
+    likes: number;
+    comments: number;
+    score: number;
+    image_url?: string;
+  };
+  message: string;
+}
+
 export default function MetaConnectionTab() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -34,6 +55,11 @@ export default function MetaConnectionTab() {
   const [availableAccounts, setAvailableAccounts] = useState<InstagramAccount[]>([]);
   const [tokenExpiresAt, setTokenExpiresAt] = useState<string>("");
   const [selectingAccount, setSelectingAccount] = useState<string | null>(null);
+
+  // Import state
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importProgress, setImportProgress] = useState(0);
 
   useEffect(() => {
     if (user) loadConnection();
@@ -158,6 +184,45 @@ export default function MetaConnectionTab() {
     setAvailableAccounts([]);
   };
 
+  const startDeepImport = async () => {
+    if (!connection) {
+      toast.error("Bitte zuerst Instagram verbinden");
+      return;
+    }
+
+    setImporting(true);
+    setImportResult(null);
+    setImportProgress(10);
+
+    // Simulate progress while waiting
+    const progressInterval = setInterval(() => {
+      setImportProgress(prev => Math.min(prev + 5, 90));
+    }, 2000);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-instagram-history', {});
+
+      clearInterval(progressInterval);
+      setImportProgress(100);
+
+      if (error) throw error;
+      
+      const result = data as ImportResult;
+      setImportResult(result);
+      
+      if (result.success) {
+        toast.success(`${result.imported} Posts importiert! ${result.unicorn_count} Top-Performer gefunden.`);
+      }
+    } catch (err) {
+      clearInterval(progressInterval);
+      const message = err instanceof Error ? err.message : 'Import fehlgeschlagen';
+      toast.error(message);
+    } finally {
+      setImporting(false);
+      setTimeout(() => setImportProgress(0), 2000);
+    }
+  };
+
   const isConnected = connection?.ig_user_id;
   const isExpired = connection?.token_expires_at && new Date(connection.token_expires_at) < new Date();
 
@@ -229,10 +294,10 @@ export default function MetaConnectionTab() {
         <CardContent className="space-y-4">
           {isConnected && !isExpired ? (
             <div className="space-y-4">
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-success/10 border border-success/30">
-                <CheckCircle2 className="h-5 w-5 text-success" />
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30">
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
                 <div className="flex-1">
-                  <p className="font-medium text-success">Verbunden</p>
+                  <p className="font-medium text-green-500">Verbunden</p>
                   <p className="text-sm text-muted-foreground">
                     @{connection?.ig_username || connection?.ig_user_id} • {connection?.page_name}
                   </p>
@@ -256,10 +321,10 @@ export default function MetaConnectionTab() {
             </div>
           ) : isExpired ? (
             <div className="space-y-4">
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-warning/10 border border-warning/30">
-                <AlertCircle className="h-5 w-5 text-warning" />
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30">
+                <AlertCircle className="h-5 w-5 text-yellow-500" />
                 <div>
-                  <p className="font-medium text-warning">Token abgelaufen</p>
+                  <p className="font-medium text-yellow-500">Token abgelaufen</p>
                   <p className="text-sm text-muted-foreground">Bitte erneut verbinden</p>
                 </div>
               </div>
@@ -312,6 +377,106 @@ export default function MetaConnectionTab() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Deep Import Card */}
+      {isConnected && !isExpired && (
+        <Card className="glass-card border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="h-5 w-5 text-primary" />
+              Archiv-Import
+            </CardTitle>
+            <CardDescription>
+              Importiere deine komplette Instagram-Historie für die Remix-Funktion
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {importing && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  <span className="text-sm">Analysiere Historie... (kann bis zu 1 Min dauern)</span>
+                </div>
+                <Progress value={importProgress} className="h-2" />
+              </div>
+            )}
+
+            {importResult && importResult.success && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30">
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  <div className="flex-1">
+                    <p className="font-medium text-green-500">Import erfolgreich!</p>
+                    <p className="text-sm text-muted-foreground">{importResult.message}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl bg-muted/50 border border-border text-center">
+                    <p className="text-2xl font-bold text-primary">{importResult.imported}</p>
+                    <p className="text-xs text-muted-foreground">Posts importiert</p>
+                  </div>
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-orange-500/10 to-pink-500/10 border border-orange-500/20 text-center">
+                    <p className="text-2xl font-bold text-orange-500">{importResult.unicorn_count}</p>
+                    <p className="text-xs text-muted-foreground">Top 1% Unicorns</p>
+                  </div>
+                </div>
+
+                {importResult.best_performer && (
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">Dein Top-Performer:</span>
+                      <Badge variant="secondary" className="bg-orange-500/10 text-orange-500">
+                        <TrendingUp className="h-3 w-3 mr-1" />
+                        Score: {importResult.best_performer.score}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-4">
+                      {importResult.best_performer.image_url && (
+                        <img 
+                          src={importResult.best_performer.image_url} 
+                          alt="Top Post" 
+                          className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm line-clamp-2 text-muted-foreground">
+                          {importResult.best_performer.caption_preview}
+                        </p>
+                        <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Heart className="h-3 w-3" /> {importResult.best_performer.likes}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <MessageSquare className="h-3 w-3" /> {importResult.best_performer.comments}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Button 
+              onClick={startDeepImport} 
+              disabled={importing}
+              className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
+            >
+              {importing ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Importiere...</>
+              ) : (
+                <><Download className="mr-2 h-4 w-4" />📥 Komplettes Archiv importieren</>
+              )}
+            </Button>
+
+            <p className="text-xs text-muted-foreground text-center">
+              Importiert bis zu 1.000 Posts mit Engagement-Daten für die Remix-Funktion
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

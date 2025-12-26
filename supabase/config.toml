@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.topic-research]
 verify_jwt = false
+
+[functions.fetch-instagram-history]
+verify_jwt = false
