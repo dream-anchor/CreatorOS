@@ -243,33 +243,43 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Autopilot Card */}
-          <Card className="md:col-span-2 lg:col-span-2 glass-card hover:border-primary/30 transition-all duration-300">
-            <CardContent className="p-6 h-full flex items-center gap-6">
-              <div className="flex-1">
-                <h3 className="font-semibold text-foreground mb-1">Autopilot</h3>
-                <p className="text-sm text-muted-foreground">
-                  Lass die KI automatisch Entwürfe basierend auf deinen Themen erstellen.
-                </p>
-              </div>
+          {/* Auto-Fill Button - The Heart */}
+          <Card className="md:col-span-2 lg:col-span-2 relative overflow-hidden group cursor-pointer hover:scale-[1.02] transition-all duration-500"
+            onClick={!runningAutopilot ? runAutopilot : undefined}
+          >
+            {/* Animated background glow */}
+            <div className="absolute inset-0 bg-gradient-to-r from-primary/20 via-cyan-500/20 to-violet-500/20 opacity-50 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 animate-pulse" />
+            
+            {/* Sparkle particles */}
+            <div className="absolute top-4 right-8 w-2 h-2 rounded-full bg-primary animate-ping" style={{ animationDuration: '2s' }} />
+            <div className="absolute top-8 right-16 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" style={{ animationDuration: '2.5s', animationDelay: '0.5s' }} />
+            <div className="absolute bottom-6 right-12 w-1 h-1 rounded-full bg-violet-400 animate-ping" style={{ animationDuration: '3s', animationDelay: '1s' }} />
+            
+            <CardContent className="relative z-10 p-8 h-full flex items-center justify-center">
               <Button 
-                onClick={runAutopilot} 
                 disabled={runningAutopilot}
                 className={cn(
-                  "shrink-0 h-12 px-6 rounded-2xl",
-                  "bg-gradient-to-r from-primary/80 to-cyan-500/80",
-                  "hover:from-primary hover:to-cyan-500",
-                  "border border-primary/50 hover:border-primary",
-                  "shadow-lg hover:shadow-primary/25",
-                  "transition-all duration-300"
+                  "h-16 px-10 text-lg font-semibold rounded-2xl",
+                  "bg-gradient-to-r from-primary via-cyan-500 to-violet-500",
+                  "hover:from-primary/90 hover:via-cyan-500/90 hover:to-violet-500/90",
+                  "border-2 border-white/20 hover:border-white/40",
+                  "shadow-[0_0_40px_rgba(168,85,247,0.4)] hover:shadow-[0_0_60px_rgba(168,85,247,0.6)]",
+                  "transition-all duration-500",
+                  "group-hover:scale-105"
                 )}
               >
                 {runningAutopilot ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <>
+                    <Loader2 className="mr-3 h-6 w-6 animate-spin" />
+                    Generiere Entwürfe...
+                  </>
                 ) : (
-                  <Wand2 className="mr-2 h-4 w-4" />
+                  <>
+                    <Wand2 className="mr-3 h-6 w-6" />
+                    ✨ Woche automatisch füllen
+                  </>
                 )}
-                Autopilot starten
               </Button>
             </CardContent>
           </Card>
