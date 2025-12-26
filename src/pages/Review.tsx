@@ -268,7 +268,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <AppLayout title="Tinder Review" description="Swipe durch deine Entwürfe">
+    <AppLayout title="Review" description="Prüfe deine Entwürfe">
       {posts.length === 0 ? (
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary/20 to-cyan-500/20 flex items-center justify-center mb-6">
