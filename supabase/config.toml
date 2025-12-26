@@ -62,3 +62,6 @@ verify_jwt = false
 
 [functions.regenerate-reply]
 verify_jwt = false
+
+[functions.simulate-model-responses]
+verify_jwt = false
