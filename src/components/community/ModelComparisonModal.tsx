@@ -26,6 +26,43 @@ const MODELS = [
   { id: "openai/gpt-5", name: "GPT-5", color: "purple" },
 ];
 
+const CACHE_KEY = "ai_model_simulation_cache";
+
+interface CachedData {
+  results: ModelResponse[];
+  timestamp: number;
+}
+
+function loadFromCache(): ModelResponse[] | null {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const data: CachedData = JSON.parse(cached);
+      return data.results;
+    }
+  } catch (e) {
+    console.error("Error loading cache:", e);
+  }
+  return null;
+}
+
+function saveToCache(results: ModelResponse[]) {
+  try {
+    const data: CachedData = { results, timestamp: Date.now() };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error("Error saving cache:", e);
+  }
+}
+
+function clearCache() {
+  try {
+    localStorage.removeItem(CACHE_KEY);
+  } catch (e) {
+    console.error("Error clearing cache:", e);
+  }
+}
+
 export function ModelComparisonModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,6 +70,7 @@ export function ModelComparisonModal() {
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const loadingRef = useRef(false);
+  const initializedRef = useRef(false);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -43,11 +81,27 @@ export function ModelComparisonModal() {
     };
   }, []);
 
-  const loadComparison = async () => {
+  const loadComparison = async (forceRefresh = false) => {
     // Prevent duplicate requests
     if (loadingRef.current) {
       console.log("Already loading, skipping...");
       return;
+    }
+
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = loadFromCache();
+      if (cached && cached.length > 0) {
+        console.log("Loading from cache:", cached.length, "results");
+        setResults(cached);
+        setError(null);
+        return;
+      }
+    }
+
+    // Clear cache on force refresh
+    if (forceRefresh) {
+      clearCache();
     }
 
     // Abort any existing request
@@ -87,6 +141,7 @@ export function ModelComparisonModal() {
 
       if (data?.results) {
         setResults(data.results);
+        saveToCache(data.results);
       } else {
         setError("Keine Ergebnisse erhalten");
       }
@@ -105,8 +160,9 @@ export function ModelComparisonModal() {
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (open && results.length === 0 && !isLoading) {
-      loadComparison();
+    if (open && !initializedRef.current) {
+      initializedRef.current = true;
+      loadComparison(false); // Try cache first
     } else if (!open) {
       // Abort on close
       if (abortControllerRef.current) {
@@ -114,6 +170,10 @@ export function ModelComparisonModal() {
       }
       loadingRef.current = false;
     }
+  };
+
+  const handleRefresh = () => {
+    loadComparison(true); // Force refresh, ignore cache
   };
 
   const getModelColor = (modelId: string) => {
@@ -148,7 +208,7 @@ export function ModelComparisonModal() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={loadComparison}
+                onClick={handleRefresh}
                 className="gap-2"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
@@ -187,7 +247,7 @@ export function ModelComparisonModal() {
                 <div className="text-center">
                   <p className="font-medium text-foreground">{error}</p>
                 </div>
-                <Button variant="outline" onClick={loadComparison} className="gap-2">
+                <Button variant="outline" onClick={handleRefresh} className="gap-2">
                   <RefreshCw className="h-4 w-4" />
                   Erneut versuchen
                 </Button>
