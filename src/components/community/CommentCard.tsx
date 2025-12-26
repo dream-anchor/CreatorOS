@@ -1,0 +1,147 @@
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { ImageWithFallback } from "./ImageWithFallback";
+import { Sparkles, ExternalLink, CheckCircle2, User } from "lucide-react";
+import { format } from "date-fns";
+import { de } from "date-fns/locale";
+
+export interface CommentWithContext {
+  id: string;
+  ig_comment_id: string;
+  ig_media_id: string;
+  commenter_username: string | null;
+  comment_text: string;
+  comment_timestamp: string;
+  is_replied: boolean;
+  is_hidden: boolean;
+  is_critical: boolean;
+  sentiment_score: number | null;
+  ai_reply_suggestion: string | null;
+  post_id: string | null;
+  // Joined post data
+  post_caption?: string | null;
+  post_image_url?: string | null;
+  post_permalink?: string | null;
+  // UI state
+  selected?: boolean;
+  editedReply?: string;
+  approved?: boolean;
+}
+
+interface CommentCardProps {
+  comment: CommentWithContext;
+  onToggleSelect: (id: string) => void;
+  onUpdateReply: (id: string, text: string) => void;
+  onApprove: (id: string) => void;
+}
+
+export function CommentCard({
+  comment,
+  onToggleSelect,
+  onUpdateReply,
+  onApprove,
+}: CommentCardProps) {
+  const truncatedCaption = comment.post_caption
+    ? comment.post_caption.slice(0, 50) + (comment.post_caption.length > 50 ? '...' : '')
+    : 'Kein Caption';
+
+  return (
+    <div className="p-4 bg-muted/30 rounded-lg border">
+      <div className="flex gap-4">
+        {/* Left: Checkbox + Comment */}
+        <div className="flex items-start gap-3 flex-1">
+          <Checkbox
+            checked={comment.selected}
+            onCheckedChange={() => onToggleSelect(comment.id)}
+            className="mt-1"
+          />
+          <div className="flex-1 space-y-2">
+            {/* Commenter info */}
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                <User className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div>
+                <span className="font-medium text-sm">@{comment.commenter_username || 'Unbekannt'}</span>
+                <span className="text-xs text-muted-foreground ml-2">
+                  {format(new Date(comment.comment_timestamp), 'dd.MM.yyyy HH:mm', { locale: de })}
+                </span>
+              </div>
+              {comment.sentiment_score !== null && comment.sentiment_score > 0.5 && (
+                <Badge variant="secondary" className="text-xs bg-green-500/10 text-green-600">
+                  Positiv
+                </Badge>
+              )}
+              {comment.approved && (
+                <Badge className="text-xs bg-primary/10 text-primary">
+                  ✅ Freigegeben
+                </Badge>
+              )}
+            </div>
+            
+            {/* Comment text */}
+            <p className="text-sm">{comment.comment_text}</p>
+            
+            <Separator className="my-2" />
+            
+            {/* Reply suggestion */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <Sparkles className="h-3 w-3" />
+                Antwort-Vorschlag
+              </label>
+              <Textarea
+                value={comment.editedReply || ''}
+                onChange={(e) => onUpdateReply(comment.id, e.target.value)}
+                placeholder="Antwort eingeben..."
+                rows={2}
+                className="text-sm"
+              />
+              
+              {/* Approve button */}
+              {!comment.approved && comment.editedReply && (
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => onApprove(comment.id)}
+                  className="gap-1"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  ✅ Freigeben
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Post context */}
+        <div className="w-32 flex-shrink-0 space-y-2">
+          <ImageWithFallback
+            src={comment.post_image_url}
+            alt="Original Post"
+            postId={comment.post_id || undefined}
+            igMediaId={comment.ig_media_id}
+            className="w-full h-24 rounded-md object-cover"
+          />
+          <p className="text-xs text-muted-foreground line-clamp-2">
+            {truncatedCaption}
+          </p>
+          {comment.post_permalink && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="w-full text-xs h-7 gap-1"
+              onClick={() => window.open(comment.post_permalink!, '_blank')}
+            >
+              <ExternalLink className="h-3 w-3" />
+              🔗 Original
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
