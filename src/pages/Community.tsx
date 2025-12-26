@@ -41,6 +41,7 @@ interface PostGroup {
   igMediaId: string;
   postCaption: string | null;
   postPermalink: string | null;
+  postId: string | null;
   publishedAt: string | null;
   comments: CommentWithContext[];
 }
@@ -77,6 +78,7 @@ export default function Community() {
           igMediaId: key,
           postCaption: comment.post_caption || null,
           postPermalink: comment.post_permalink || null,
+          postId: comment.post_id || null,
           publishedAt: comment.post_published_at || null,
           comments: [],
         });
@@ -965,6 +967,7 @@ export default function Community() {
                 onUpdateReply={updateReplyText}
                 onApproveAll={approveAllForPost}
                 sanitizingComments={sanitizingComments}
+                onMetadataRepaired={loadData}
               />
             ))}
             
