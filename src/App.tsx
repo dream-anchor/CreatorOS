@@ -18,6 +18,7 @@ import ContentLibrary from "./pages/ContentLibrary";
 import MediaArchive from "./pages/MediaArchive";
 import Community from "./pages/Community";
 import MyPhotos from "./pages/MyPhotos";
+import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/media" element={<ProtectedRoute><MediaArchive /></ProtectedRoute>} />
             <Route path="/my-photos" element={<ProtectedRoute><MyPhotos /></ProtectedRoute>} />
             <Route path="/community" element={<ProtectedRoute><Community /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/settings/*" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />

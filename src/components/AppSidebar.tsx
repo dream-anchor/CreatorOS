@@ -4,41 +4,94 @@ import {
   LayoutDashboard,
   Sparkles,
   CalendarClock,
-  Fingerprint,
-  Hash,
   Settings,
   LogOut,
   Zap,
-  ClipboardCheck,
   FolderOpen,
   ImageIcon,
   MessageCircle,
   Camera,
+  BarChart3,
+  FileText,
+  ChevronDown,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ThemeToggle } from "./ThemeToggle";
+import { useState } from "react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
-const studioNav = [
-  { name: "Cockpit", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Magic Create", href: "/generator", icon: Sparkles, highlight: true },
-  { name: "Review", href: "/review", icon: ClipboardCheck },
-  { name: "Planung", href: "/calendar", icon: CalendarClock },
-  { name: "Community", href: "/community", icon: MessageCircle },
-];
+interface NavItem {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  highlight?: boolean;
+}
 
-const brandNav = [
-  { name: "Meine DNA", href: "/brand", icon: Fingerprint },
-  { name: "Themen", href: "/topics", icon: Hash },
-  { name: "Meine Fotos", href: "/my-photos", icon: Camera },
-  { name: "Meine Bilder", href: "/media", icon: ImageIcon },
-  { name: "Post-Historie", href: "/library", icon: FolderOpen },
+interface NavSection {
+  name: string;
+  icon: React.ComponentType<{ className?: string }>;
+  items?: NavItem[];
+  href?: string;
+  defaultOpen?: boolean;
+}
+
+const navigation: NavSection[] = [
+  {
+    name: "Dashboard",
+    icon: LayoutDashboard,
+    href: "/dashboard",
+  },
+  {
+    name: "Content Studio",
+    icon: Sparkles,
+    defaultOpen: true,
+    items: [
+      { name: "Magic Create", href: "/generator", icon: Sparkles, highlight: true },
+      { name: "Planung", href: "/calendar", icon: CalendarClock },
+      { name: "Review", href: "/review", icon: FileText },
+      { name: "Meine Fotos", href: "/my-photos", icon: Camera },
+      { name: "Meine Bilder", href: "/media", icon: ImageIcon },
+    ],
+  },
+  {
+    name: "Community",
+    icon: MessageCircle,
+    defaultOpen: true,
+    items: [
+      { name: "Kommentare", href: "/community", icon: MessageCircle },
+      { name: "Post-Historie", href: "/library", icon: FolderOpen },
+    ],
+  },
+  {
+    name: "Analytics",
+    icon: BarChart3,
+    href: "/analytics",
+  },
+  {
+    name: "Einstellungen",
+    icon: Settings,
+    href: "/settings",
+  },
 ];
 
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    navigation.forEach(section => {
+      if (section.items && section.defaultOpen) {
+        initial[section.name] = true;
+      }
+    });
+    return initial;
+  });
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -46,15 +99,31 @@ export function AppSidebar() {
     navigate("/login");
   };
 
-  const NavItem = ({ item }: { item: typeof studioNav[0] }) => {
-    const isActive = location.pathname === item.href;
-    const isHighlight = 'highlight' in item && item.highlight;
+  const isActiveSection = (section: NavSection) => {
+    if (section.href) {
+      return location.pathname === section.href || location.pathname.startsWith(section.href + "/");
+    }
+    return section.items?.some(item => location.pathname === item.href) ?? false;
+  };
+
+  const isActiveItem = (href: string) => {
+    return location.pathname === href;
+  };
+
+  const toggleSection = (name: string) => {
+    setOpenSections(prev => ({ ...prev, [name]: !prev[name] }));
+  };
+
+  const NavItemComponent = ({ item, nested = false }: { item: NavItem; nested?: boolean }) => {
+    const isActive = isActiveItem(item.href);
+    const isHighlight = item.highlight;
 
     return (
       <Link
         to={item.href}
         className={cn(
-          "flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 group",
+          "flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 group",
+          nested && "ml-3",
           isActive
             ? "bg-primary/10 text-foreground shadow-sm border border-primary/20"
             : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -63,11 +132,11 @@ export function AppSidebar() {
       >
         <item.icon
           className={cn(
-            "h-4.5 w-4.5 transition-colors",
+            "h-4 w-4 transition-colors shrink-0",
             isActive ? "text-primary" : isHighlight ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
           )}
         />
-        <span className="flex-1">{item.name}</span>
+        <span className="flex-1 truncate">{item.name}</span>
         {isHighlight && (
           <span className="flex items-center justify-center h-5 px-1.5 rounded-md bg-primary/20 border border-primary/30">
             <Zap className="h-3 w-3 text-primary" />
@@ -98,53 +167,83 @@ export function AppSidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-6 overflow-y-auto scrollbar-thin">
-          {/* STUDIO Section */}
-          <div className="mb-6">
-            <p className="px-4 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/50 mb-3">
-              Studio
-            </p>
-            <div className="space-y-1">
-              {studioNav.map((item) => (
-                <NavItem key={item.name} item={item} />
-              ))}
-            </div>
-          </div>
+          <div className="space-y-1">
+            {navigation.map((section) => {
+              // Simple link (no children)
+              if (!section.items) {
+                const isActive = isActiveSection(section);
+                return (
+                  <Link
+                    key={section.name}
+                    to={section.href!}
+                    className={cn(
+                      "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 group",
+                      isActive
+                        ? "bg-primary/10 text-foreground shadow-sm border border-primary/20"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <section.icon
+                      className={cn(
+                        "h-4 w-4 transition-colors shrink-0",
+                        isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                      )}
+                    />
+                    <span className="flex-1">{section.name}</span>
+                  </Link>
+                );
+              }
 
-          {/* BRAND BRAIN Section */}
-          <div className="mb-6">
-            <p className="px-4 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/50 mb-3">
-              Brand Brain
-            </p>
-            <div className="space-y-1">
-              {brandNav.map((item) => (
-                <NavItem key={item.name} item={item} />
-              ))}
-            </div>
+              // Collapsible section
+              const isOpen = openSections[section.name] ?? false;
+              const hasActiveChild = section.items.some(item => isActiveItem(item.href));
+
+              return (
+                <Collapsible
+                  key={section.name}
+                  open={isOpen || hasActiveChild}
+                  onOpenChange={() => toggleSection(section.name)}
+                >
+                  <CollapsibleTrigger
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 group",
+                      hasActiveChild
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <section.icon
+                      className={cn(
+                        "h-4 w-4 transition-colors shrink-0",
+                        hasActiveChild ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                      )}
+                    />
+                    <span className="flex-1 text-left">{section.name}</span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 transition-transform duration-200",
+                        (isOpen || hasActiveChild) && "rotate-180"
+                      )}
+                    />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 pt-1">
+                    {section.items.map((item) => (
+                      <NavItemComponent key={item.name} item={item} nested />
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            })}
           </div>
         </nav>
 
-        {/* Footer - System */}
-        <div className="border-t border-border p-4 space-y-1">
-          <Link
-            to="/settings"
-            className={cn(
-              "flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
-              location.pathname === "/settings" || location.pathname.startsWith("/settings/")
-                ? "bg-primary/10 text-foreground shadow-sm border border-primary/20"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            <Settings className={cn(
-              "h-4.5 w-4.5 transition-colors",
-              location.pathname === "/settings" || location.pathname.startsWith("/settings/") ? "text-primary" : "text-muted-foreground"
-            )} />
-            Settings
-          </Link>
+        {/* Footer - User Actions */}
+        <div className="border-t border-border p-4">
           <button
             onClick={handleSignOut}
             className="flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-200"
           >
-            <LogOut className="h-4.5 w-4.5" />
+            <LogOut className="h-4 w-4" />
             Abmelden
           </button>
         </div>
