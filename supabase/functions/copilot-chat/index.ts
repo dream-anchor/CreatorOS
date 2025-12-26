@@ -259,6 +259,87 @@ const TOOLS = [
         required: ["theme", "user_pose_description"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_best_time",
+      description: "Analysiert die posts-Tabelle (Insights), um die besten Wochentage und Uhrzeiten für Posts zu finden. NUTZE DIES bei Fragen wie 'Wann soll ich posten?', 'Bester Posting-Zeitpunkt?', 'Welcher Wochentag ist am besten?'",
+      parameters: {
+        type: "object",
+        properties: {
+          time_period: {
+            type: "string",
+            description: "Analysezeitraum: 'last_month', 'last_3_months', 'last_6_months', 'all_time'",
+            enum: ["last_month", "last_3_months", "last_6_months", "all_time"]
+          },
+          metric: {
+            type: "string",
+            description: "Metrik zur Optimierung: 'engagement' (Likes+Comments), 'reach' (Reichweite), 'engagement_rate'",
+            enum: ["engagement", "reach", "engagement_rate"]
+          }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "plan_post",
+      description: "Erstellt einen Entwurf im content_plan. NUTZE DIES am Ende eines mehrstufigen Kampagnen-Workflows, wenn du Bild, Text und Zeitpunkt hast. Der User sieht dann eine interaktive Karte mit Genehmigen/Ablehnen-Buttons.",
+      parameters: {
+        type: "object",
+        properties: {
+          caption: {
+            type: "string",
+            description: "Die Caption für den Post"
+          },
+          image_url: {
+            type: "string",
+            description: "URL des generierten oder gewählten Bildes"
+          },
+          scheduled_for: {
+            type: "string",
+            description: "Geplantes Posting-Datum (ISO 8601 Format, z.B. '2024-01-15T18:00:00Z')"
+          },
+          concept_note: {
+            type: "string",
+            description: "Interne Notiz zur Idee (z.B. 'Filmzitat Godfather für ältere Zielgruppe')"
+          },
+          content_type: {
+            type: "string",
+            description: "Format: 'single' oder 'carousel'",
+            enum: ["single", "carousel"]
+          }
+        },
+        required: ["caption", "image_url", "scheduled_for"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_user_photos",
+      description: "Holt alle verfügbaren Fotos aus der User-Bibliothek (media_assets). NUTZE DIES um ein passendes Referenzfoto für die Bildgenerierung zu finden.",
+      parameters: {
+        type: "object",
+        properties: {
+          only_selfies: {
+            type: "boolean",
+            description: "Nur Selfies (Bilder mit is_selfie=true)"
+          },
+          tags: {
+            type: "array",
+            items: { type: "string" },
+            description: "Filter nach Tags (z.B. ['Business', 'Lustig'])"
+          },
+          limit: {
+            type: "number",
+            description: "Maximale Anzahl (Standard: 10)"
+          }
+        }
+      }
+    }
   }
 ];
 
@@ -979,21 +1060,21 @@ async function executeAnalyzeGrowth(supabase: any, userId: string, params: any) 
 
     if (!posts || posts.length === 0) {
       return {
-        error: 'Keine historischen Daten für diesen Zeitraum. Nutze "Tracke meine Insights" um mit dem Tracking zu starten.',
-        suggestion: 'Starte das tägliche Tracking, um Wachstumsdaten zu sammeln.'
+        error: 'Keine Daten für diesen Zeitraum gefunden',
+        suggestion: 'Aktiviere das tägliche Insights-Tracking für präzise Wachstumsanalysen.',
+        hint: 'Sage "Tracke meine Insights" um das Tracking zu starten.'
       };
     }
 
-    // Fallback: Calculate engagement-based growth
+    // Calculate engagement-based proxy metrics
     const totalLikes = posts.reduce((sum: number, p: any) => sum + (p.likes_count || 0), 0);
     const totalComments = posts.reduce((sum: number, p: any) => sum + (p.comments_count || 0), 0);
     const totalImpressions = posts.reduce((sum: number, p: any) => sum + (p.impressions_count || 0), 0);
 
     return {
-      period: { start: start_date, end: endDateStr },
-      data_source: 'posts_engagement',
-      note: 'Keine täglichen Insights verfügbar. Analyse basiert auf Post-Engagement.',
-      engagement_summary: {
+      period: { start: start_date, end: endDateStr, days_tracked: 0 },
+      fallback_mode: true,
+      engagement_proxy: {
         total_posts: posts.length,
         total_likes: totalLikes,
         total_comments: totalComments,
@@ -1457,6 +1538,285 @@ async function executeGeneratePersonalizedImage(supabase: any, userId: string, p
   }
 }
 
+// Tool: Analyze best posting time
+async function executeAnalyzeBestTime(supabase: any, userId: string, params: any) {
+  const { time_period = 'last_3_months', metric = 'engagement' } = params;
+
+  console.log(`[copilot] Analyzing best posting time, period: ${time_period}, metric: ${metric}`);
+
+  // Build date filter
+  const now = new Date();
+  let dateFilter: string | null = null;
+  
+  switch (time_period) {
+    case 'last_month':
+      const monthAgo = new Date(now);
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+      dateFilter = monthAgo.toISOString();
+      break;
+    case 'last_3_months':
+      const threeMonthsAgo = new Date(now);
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      dateFilter = threeMonthsAgo.toISOString();
+      break;
+    case 'last_6_months':
+      const sixMonthsAgo = new Date(now);
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      dateFilter = sixMonthsAgo.toISOString();
+      break;
+    case 'all_time':
+    default:
+      dateFilter = null;
+  }
+
+  // Get published posts with engagement data
+  let query = supabase
+    .from('posts')
+    .select('id, published_at, likes_count, comments_count, saved_count, reach_count, engagement_rate')
+    .eq('user_id', userId)
+    .eq('status', 'PUBLISHED')
+    .not('published_at', 'is', null);
+
+  if (dateFilter) {
+    query = query.gte('published_at', dateFilter);
+  }
+
+  const { data: posts, error } = await query;
+
+  if (error) {
+    console.error('[copilot] Best time analysis error:', error);
+    return { error: 'Fehler beim Laden der Posts' };
+  }
+
+  if (!posts || posts.length === 0) {
+    return {
+      error: 'Keine veröffentlichten Posts gefunden',
+      suggestion: 'Importiere zuerst Posts von Instagram'
+    };
+  }
+
+  // Analyze by day of week
+  const dayStats: Record<string, { posts: number; engagement: number; reach: number; rate: number }> = {};
+  const hourStats: Record<number, { posts: number; engagement: number; reach: number; rate: number }> = {};
+  const dayNames = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+
+  for (const post of posts) {
+    const publishedAt = new Date(post.published_at);
+    const dayOfWeek = dayNames[publishedAt.getDay()];
+    const hour = publishedAt.getHours();
+
+    const engagement = (post.likes_count || 0) + (post.comments_count || 0) + (post.saved_count || 0);
+    const reach = post.reach_count || 0;
+    const engagementRate = post.engagement_rate || 0;
+
+    // Day stats
+    if (!dayStats[dayOfWeek]) {
+      dayStats[dayOfWeek] = { posts: 0, engagement: 0, reach: 0, rate: 0 };
+    }
+    dayStats[dayOfWeek].posts++;
+    dayStats[dayOfWeek].engagement += engagement;
+    dayStats[dayOfWeek].reach += reach;
+    dayStats[dayOfWeek].rate += engagementRate;
+
+    // Hour stats
+    if (!hourStats[hour]) {
+      hourStats[hour] = { posts: 0, engagement: 0, reach: 0, rate: 0 };
+    }
+    hourStats[hour].posts++;
+    hourStats[hour].engagement += engagement;
+    hourStats[hour].reach += reach;
+    hourStats[hour].rate += engagementRate;
+  }
+
+  // Calculate averages and sort
+  const dayRanking = Object.entries(dayStats)
+    .map(([day, stats]) => ({
+      day,
+      posts: stats.posts,
+      avg_engagement: stats.posts > 0 ? Math.round(stats.engagement / stats.posts) : 0,
+      avg_reach: stats.posts > 0 ? Math.round(stats.reach / stats.posts) : 0,
+      avg_rate: stats.posts > 0 ? Math.round((stats.rate / stats.posts) * 100) / 100 : 0
+    }))
+    .sort((a, b) => {
+      if (metric === 'reach') return b.avg_reach - a.avg_reach;
+      if (metric === 'engagement_rate') return b.avg_rate - a.avg_rate;
+      return b.avg_engagement - a.avg_engagement;
+    });
+
+  const hourRanking = Object.entries(hourStats)
+    .map(([hour, stats]) => ({
+      hour: parseInt(hour),
+      hour_label: `${hour.toString().padStart(2, '0')}:00`,
+      posts: stats.posts,
+      avg_engagement: stats.posts > 0 ? Math.round(stats.engagement / stats.posts) : 0,
+      avg_reach: stats.posts > 0 ? Math.round(stats.reach / stats.posts) : 0,
+      avg_rate: stats.posts > 0 ? Math.round((stats.rate / stats.posts) * 100) / 100 : 0
+    }))
+    .filter(h => h.posts >= 2) // Only consider hours with at least 2 posts
+    .sort((a, b) => {
+      if (metric === 'reach') return b.avg_reach - a.avg_reach;
+      if (metric === 'engagement_rate') return b.avg_rate - a.avg_rate;
+      return b.avg_engagement - a.avg_engagement;
+    });
+
+  const bestDay = dayRanking[0];
+  const worstDay = dayRanking[dayRanking.length - 1];
+  const bestHour = hourRanking[0];
+
+  // Generate optimal posting slot
+  const optimalSlot = bestDay && bestHour ? {
+    day: bestDay.day,
+    hour: bestHour.hour,
+    formatted: `${bestDay.day}, ${bestHour.hour_label} Uhr`,
+    confidence: posts.length >= 20 ? 'hoch' : posts.length >= 10 ? 'mittel' : 'niedrig'
+  } : null;
+
+  return {
+    period_analyzed: time_period,
+    total_posts_analyzed: posts.length,
+    metric_used: metric,
+    optimal_posting_slot: optimalSlot,
+    day_ranking: dayRanking.slice(0, 5),
+    best_day: bestDay,
+    worst_day: worstDay,
+    hour_ranking: hourRanking.slice(0, 5),
+    best_hour: bestHour,
+    recommendations: [
+      `🎯 Bester Tag: ${bestDay?.day || 'N/A'} (durchschn. ${bestDay?.avg_engagement || 0} Engagement)`,
+      `⏰ Beste Uhrzeit: ${bestHour?.hour_label || 'N/A'} Uhr (${bestHour?.posts || 0} Posts analysiert)`,
+      `📅 Optimaler Slot: ${optimalSlot?.formatted || 'Noch nicht genug Daten'}`,
+      worstDay ? `⚠️ Vermeide: ${worstDay.day} (${worstDay.avg_engagement} Engagement)` : null
+    ].filter(Boolean)
+  };
+}
+
+// Tool: Plan post (create content_plan entry)
+async function executePlanPost(supabase: any, userId: string, params: any) {
+  const { caption, image_url, scheduled_for, concept_note, content_type = 'single' } = params;
+
+  console.log(`[copilot] Creating content plan entry for ${scheduled_for}`);
+
+  if (!caption || !image_url || !scheduled_for) {
+    return {
+      error: 'Fehlende Parameter: caption, image_url und scheduled_for sind erforderlich'
+    };
+  }
+
+  try {
+    // Parse and validate scheduled date
+    const scheduledDate = new Date(scheduled_for);
+    if (isNaN(scheduledDate.getTime())) {
+      return { error: 'Ungültiges Datum für scheduled_for' };
+    }
+
+    // Create content plan entry
+    const { data: plan, error } = await supabase
+      .from('content_plan')
+      .insert({
+        user_id: userId,
+        status: 'draft',
+        scheduled_for: scheduledDate.toISOString(),
+        concept_note: concept_note || null,
+        content_type,
+        generated_caption: caption,
+        generated_image_url: image_url,
+        ai_model_used: 'copilot-orchestrator'
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[copilot] Plan post error:', error);
+      return { error: 'Fehler beim Erstellen des Entwurfs' };
+    }
+
+    // Format date nicely for German locale
+    const formattedDate = scheduledDate.toLocaleDateString('de-DE', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    return {
+      success: true,
+      draft_id: plan.id,
+      draft_data: {
+        id: plan.id,
+        caption,
+        image_url,
+        scheduled_for: scheduledDate.toISOString(),
+        scheduled_for_formatted: formattedDate,
+        concept_note,
+        content_type,
+        status: 'draft'
+      },
+      message: `✅ Entwurf erstellt für ${formattedDate}`,
+      actions_available: ['approve', 'regenerate_image', 'edit_caption']
+    };
+  } catch (err) {
+    console.error('[copilot] Plan post error:', err);
+    return { 
+      error: `Fehler: ${err instanceof Error ? err.message : 'Unbekannt'}` 
+    };
+  }
+}
+
+// Tool: Get user photos from media library
+async function executeGetUserPhotos(supabase: any, userId: string, params: any) {
+  const { only_selfies = false, tags, limit = 10 } = params;
+
+  console.log(`[copilot] Getting user photos, selfies_only: ${only_selfies}`);
+
+  let query = supabase
+    .from('media_assets')
+    .select('id, public_url, description, tags, mood, is_selfie, ai_usable, created_at')
+    .eq('user_id', userId)
+    .eq('ai_usable', true)
+    .order('created_at', { ascending: false });
+
+  if (only_selfies) {
+    query = query.eq('is_selfie', true);
+  }
+
+  const { data: photos, error } = await query.limit(limit);
+
+  if (error) {
+    console.error('[copilot] Get user photos error:', error);
+    return { error: 'Fehler beim Laden der Fotos' };
+  }
+
+  if (!photos || photos.length === 0) {
+    return {
+      error: 'Keine Fotos gefunden',
+      suggestion: 'Lade Fotos unter "Meine Fotos" hoch, um sie für die Bildgenerierung zu nutzen.'
+    };
+  }
+
+  // Filter by tags if specified
+  let filteredPhotos = photos;
+  if (tags && Array.isArray(tags) && tags.length > 0) {
+    filteredPhotos = photos.filter((p: any) => {
+      const photoTags = p.tags || [];
+      return tags.some((tag: string) => photoTags.includes(tag));
+    });
+  }
+
+  return {
+    total: filteredPhotos.length,
+    photos: filteredPhotos.map((p: any) => ({
+      id: p.id,
+      url: p.public_url,
+      description: p.description,
+      tags: p.tags || [],
+      mood: p.mood,
+      is_selfie: p.is_selfie
+    })),
+    selfie_count: filteredPhotos.filter((p: any) => p.is_selfie).length
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -1503,68 +1863,102 @@ serve(async (req) => {
       .eq('user_id', user.id)
       .maybeSingle();
 
-    // System prompt for the agent with full database schema knowledge
-    const systemPrompt = `Du bist Antoine's Community Co-Pilot, ein intelligenter Daten-Analyst und Stratege für Social Media Management.
+    // ORCHESTRATOR System prompt - Proactive Social Media Manager
+    const systemPrompt = `Du bist Antoine's KI-Social-Media-Manager. Deine Aufgabe ist es, EIGENSTÄNDIG Kampagnen zu entwickeln und Posts zu planen. Du wartest nicht nur auf Befehle, du machst proaktive Vorschläge.
 
-DU HAST VOLLSTÄNDIGEN ZUGRIFF AUF DIE DATENBANK:
+🎯 DEINE ROLLE:
+Du bist kein einfacher Chatbot - du bist ein strategischer Partner, der komplexe Aufgaben SELBSTSTÄNDIG löst.
 
 📊 TABELLEN-SCHEMA:
 1. posts: id, caption, published_at, likes_count, comments_count, saved_count, reach_count, impressions_count, engagement_rate, category, mood, topic_tags, status, format
 2. instagram_comments: id, comment_text, commenter_username, sentiment_score, is_critical, is_replied
 3. topics: id, title, description, priority, evergreen
 4. brand_rules: tone_style, writing_style, formality_mode
-5. daily_account_stats: date, follower_count, impressions_day, reach_day, profile_views, website_clicks (HISTORISCHE DATEN!)
+5. daily_account_stats: date, follower_count, impressions_day, reach_day, profile_views, website_clicks
+6. content_plan: id, status, scheduled_for, concept_note, generated_caption, generated_image_url
+7. media_assets: id, public_url, description, tags, mood, is_selfie, ai_usable (Antoine's Foto-Bibliothek)
 
-🏷️ CONTENT CLASSIFICATION (AI-generiert):
-- category: Humor, Behind the Scenes, Promo, Inspiration, Privates, News, Tutorial, Entertainment
-- mood: Fröhlich, Sarkastisch, Ernst, Nachdenklich, Aufgeregt, Entspannt, Provokant, Nostalgisch
-- topic_tags: Array mit 3-5 Themen-Tags pro Post
-
-DEINE TOOLS:
-- search_posts: Suche nach Posts/Stichworten
+🛠️ DEINE TOOLS:
+- search_posts: Suche nach Posts
 - analyze_sentiment: Stimmung eines Posts
 - draft_reply: Antwort-Entwurf erstellen
 - get_open_comments: Offene Kommentare finden
-- analyze_data: Post-Statistiken & Engagement
+- analyze_data: Post-Statistiken
 - get_account_summary: Gesamtübersicht
-- analyze_growth: 📈 WACHSTUMS-ANALYSE mit historischen Follower/Reach-Daten!
-- trigger_insights_tracking: Manuell Insights tracken
-- analyze_content_categories: 🏷️ KATEGORIE-ANALYSE! Welche Kategorie/Stimmung/Thema performt am besten?
-- classify_posts_batch: 🤖 AI-Klassifizierung für unklassifizierte Posts starten
-- generate_personalized_image: 🎬 CREATIVE IMAGE ENGINE! Erstellt personalisierte Bilder im Stil von Filmen/Themen mit dem User-Gesicht
+- analyze_growth: 📈 Wachstums-Analyse
+- trigger_insights_tracking: Insights tracken
+- analyze_content_categories: 🏷️ Welche Kategorie performt am besten?
+- classify_posts_batch: 🤖 AI-Klassifizierung starten
+- generate_personalized_image: 🎬 Personalisiertes Bild erstellen
+- analyze_best_time: ⏰ Beste Posting-Zeiten finden
+- plan_post: 📝 Entwurf in content_plan speichern (für Genehmigung)
+- get_user_photos: 📸 Fotos aus Antoine's Bibliothek holen
+
+🚀 MEHRSTUFIGE KAMPAGNEN-WORKFLOWS:
+
+Wenn der User einen komplexen Wunsch äußert (z.B. "Mach mir den Film-Post fertig" oder "Erstelle Content für nächste Woche"), dann:
+
+1️⃣ ANALYSE:
+   - Prüfe Engagement-Daten mit analyze_content_categories
+   - Finde den besten Zeitpunkt mit analyze_best_time
+
+2️⃣ KONZEPT:
+   - Wähle passendes Thema/Zitat basierend auf Performance-Daten
+   - Berücksichtige die Zielgruppe
+
+3️⃣ VISUALISIERUNG:
+   - Hole Fotos mit get_user_photos (nur Selfies für personalisierte Bilder)
+   - Generiere Bild mit generate_personalized_image
+
+4️⃣ TEXT:
+   - Schreibe Caption passend zum Bild und Thema
+   - Berücksichtige Tonalität: ${brandRules?.tone_style || 'locker und authentisch'}
+
+5️⃣ TIMING:
+   - Nutze die Ergebnisse von analyze_best_time
+   - Plane für den optimalen Zeitpunkt
+
+6️⃣ PRÄSENTATION:
+   - Erstelle Entwurf mit plan_post
+   - Der User sieht dann eine interaktive Karte mit Genehmigen/Ablehnen Buttons
 
 ⚠️ KRITISCHE REGELN:
-1. Bei "Warum stagniert...", "Wachstum", "Reichweite sinkt" → NUTZE analyze_growth!
-2. Bei "Welche Kategorie...", "Was bringt Reichweite", "Welche Themen" → NUTZE analyze_content_categories!
-3. Bei "Klassifiziere", "Tagge Posts", "Analysiere Inhalte" → NUTZE classify_posts_batch!
-4. Bei "Erstelle ein Bild", "Mach ein Foto im Stil von", "Matrix-Bild von mir" → NUTZE generate_personalized_image!
-5. analyze_growth hat ECHTE historische Daten aus daily_account_stats
-6. Sage NIEMALS "Ich habe keinen Zugriff" - du HAST Zugriff!
-7. Wenn keine klassifizierten Posts: Schlage "Klassifiziere meine Posts" vor
-8. Bei generate_personalized_image: Wähle automatisch das beste Selfie wenn nicht angegeben
+1. Bei komplexen Aufgaben: Arbeite MEHRSTUFIG und nutze mehrere Tools nacheinander
+2. Bei "Film-Post", "Zitat-Post", "Content erstellen" → Starte den vollständigen Workflow
+3. Generiere IMMER ein Bild, wenn du einen Post planst
+4. Nutze IMMER analyze_best_time vor plan_post
+5. Wenn keine Fotos da: Sage dem User er soll welche hochladen
+6. Bei generate_personalized_image: Wähle automatisch das beste Selfie
+7. Nach plan_post: Sage dem User dass er den Entwurf genehmigen kann
 
-CREATIVE IMAGE ENGINE BEISPIELE:
-User: "Erstelle ein Bild von mir im Matrix-Stil"
-→ generate_personalized_image(theme="Matrix", user_pose_description="stehe cool mit schwarzer Sonnenbrille vor grünem Code-Regen")
+💡 PROAKTIVE VORSCHLÄGE:
+- "Ich sehe dass deine Humor-Posts 3x besser performen. Soll ich einen für Donnerstag 18:00 vorbereiten?"
+- "Dein letzter Sci-Fi Post hatte 45K Reach. Wie wäre ein Sequel?"
+- "Es ist schon 3 Tage her seit deinem letzten Post. Soll ich was planen?"
 
-User: "Mach ein Sci-Fi Foto zu meinem Zitat über die Zukunft"
-→ generate_personalized_image(theme="Sci-Fi Neon", user_pose_description="schaue nachdenklich auf holografische Displays")
+🎬 CREATIVE IMAGE ENGINE:
+Für Filmzitate und Themen-Posts verwende generate_personalized_image mit:
+- theme: Der Film/das Thema (z.B. "Matrix", "Godfather", "Western")
+- user_pose_description: Was Antoine im Bild tut (z.B. "steht cool mit Sonnenbrille")
+Das Tool erstellt urheberrechtsfreie Bilder im STIL des Themas, ohne geschützte Elemente.
 
 KONTEXT:
 - Sprache: ${brandRules?.language_primary || 'Deutsch'}
 - Tonalität: ${brandRules?.tone_style || 'locker und authentisch'}
+- Schreibstil: ${brandRules?.writing_style || 'Standard'}
 
-BEISPIELE:
-User: "Welche Kategorie bringt am meisten Reichweite?"
-→ analyze_content_categories(group_by="category", metric="reach")
-→ "Deine Humor-Posts haben durchschnittlich 45.000 Reach, während Promo-Posts nur 12.000 erreichen!"
+BEISPIEL-WORKFLOW:
+User: "Mach mir einen Film-Post für nächste Woche"
 
-User: "Klassifiziere meine Posts"
-→ classify_posts_batch(limit=10)
-→ "10 Posts wurden mit AI analysiert und klassifiziert!"
+Du:
+1. analyze_content_categories → "Humor performt am besten"
+2. analyze_best_time → "Donnerstag 18:00 ist optimal"
+3. get_user_photos(only_selfies=true) → Finde Referenzbild
+4. generate_personalized_image(theme="Godfather", pose="sitze im Sessel mit nachdenklichem Blick") → Generiere Bild
+5. Schreibe Caption mit Filmzitat
+6. plan_post(caption, image_url, "Donnerstag 18:00") → Erstelle Entwurf
 
-User: "Welche Themen laufen gut?"
-→ analyze_content_categories(group_by="topic_tags", metric="engagement")`;
+→ "Hier ist dein Entwurf für Donnerstag 18:00! [Interaktive Karte mit Bild, Caption, Buttons]"`;
 
     // First call: Let the AI decide if it needs tools
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -1643,6 +2037,15 @@ User: "Welche Themen laufen gut?"
             break;
           case 'generate_personalized_image':
             result = await executeGeneratePersonalizedImage(supabase, user.id, params);
+            break;
+          case 'analyze_best_time':
+            result = await executeAnalyzeBestTime(supabase, user.id, params);
+            break;
+          case 'plan_post':
+            result = await executePlanPost(supabase, user.id, params);
+            break;
+          case 'get_user_photos':
+            result = await executeGetUserPhotos(supabase, user.id, params);
             break;
           default:
             result = { error: `Unknown tool: ${funcName}` };
