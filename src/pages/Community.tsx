@@ -47,6 +47,11 @@ interface BlacklistTopic {
   topic: string;
 }
 
+interface EmojiNogoTerm {
+  id: string;
+  term: string;
+}
+
 export default function Community() {
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -56,6 +61,8 @@ export default function Community() {
   const [blacklistTopics, setBlacklistTopics] = useState<BlacklistTopic[]>([]);
   const [newTopic, setNewTopic] = useState("");
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
+  const [emojiNogoTerms, setEmojiNogoTerms] = useState<EmojiNogoTerm[]>([]);
+  const [newEmojiTerm, setNewEmojiTerm] = useState("");
 
   useEffect(() => {
     loadData();
@@ -94,6 +101,16 @@ export default function Community() {
       } else {
         setBlacklistTopics([]);
       }
+    }
+
+    // Load emoji nogo terms
+    const { data: emojiTerms } = await supabase
+      .from('emoji_nogo_terms')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (emojiTerms) {
+      setEmojiNogoTerms(emojiTerms);
     }
 
     // Load comments
@@ -174,6 +191,35 @@ export default function Community() {
   const removeBlacklistTopic = async (id: string) => {
     await supabase.from('blacklist_topics').delete().eq('id', id);
     setBlacklistTopics(blacklistTopics.filter(t => t.id !== id));
+  };
+
+  const addEmojiNogoTerm = async () => {
+    if (!newEmojiTerm.trim()) return;
+
+    const { data: user } = await supabase.auth.getUser();
+    if (!user.user) return;
+
+    const { data, error } = await supabase
+      .from('emoji_nogo_terms')
+      .insert({ term: newEmojiTerm.trim(), user_id: user.user.id })
+      .select()
+      .single();
+
+    if (error) {
+      toast.error("Fehler beim Hinzufügen");
+      return;
+    }
+
+    if (data) {
+      setEmojiNogoTerms([data, ...emojiNogoTerms]);
+      setNewEmojiTerm("");
+      toast.success(`"${data.term}" zu Emoji-No-Gos hinzugefügt`);
+    }
+  };
+
+  const removeEmojiNogoTerm = async (id: string) => {
+    await supabase.from('emoji_nogo_terms').delete().eq('id', id);
+    setEmojiNogoTerms(emojiNogoTerms.filter(t => t.id !== id));
   };
 
   const moderateComment = async (commentId: string, action: 'hide' | 'delete' | 'block') => {
@@ -258,6 +304,46 @@ export default function Community() {
       description="Engagement-Zentrale für deine Instagram-Fans"
     >
       <div className="space-y-6">
+        {/* Emoji No-Go Terms */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              ⛔ Emoji-No-Gos (Begriffe)
+            </CardTitle>
+            <CardDescription>
+              Die KI vermeidet Emojis, die mit diesen Begriffen assoziiert sind (z.B. "Liebe" → keine ❤️😍💕)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {emojiNogoTerms.map(term => (
+                <Badge key={term.id} variant="outline" className="gap-1 pr-1 border-destructive/50 text-destructive">
+                  ⛔ {term.term}
+                  <button
+                    onClick={() => removeEmojiNogoTerm(term.id)}
+                    className="ml-1 hover:bg-destructive/20 rounded p-0.5"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="z.B. Liebe, Herzen, Kitsch, Trauer"
+                value={newEmojiTerm}
+                onChange={(e) => setNewEmojiTerm(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addEmojiNogoTerm()}
+                className="max-w-xs"
+              />
+              <Button size="sm" variant="outline" onClick={addEmojiNogoTerm}>
+                <Plus className="h-4 w-4 mr-1" />
+                Hinzufügen
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Blacklist Topics */}
         <Card>
           <CardHeader className="pb-3">
