@@ -137,6 +137,8 @@ export interface Settings {
   posts_per_week: number;
   preferred_days: string[];
   preferred_hours: { start: number; end: number };
+  auto_sync_enabled?: boolean;
+  last_sync_at?: string | null;
   created_at: string;
   updated_at: string;
 }

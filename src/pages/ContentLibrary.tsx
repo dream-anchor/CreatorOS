@@ -20,6 +20,7 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Post } from "@/types/database";
+import { SyncCockpit } from "@/components/content-library/SyncCockpit";
 
 export default function ContentLibraryPage() {
   const { user } = useAuth();
@@ -113,8 +114,11 @@ export default function ContentLibraryPage() {
         </Button>
       }
     >
+      {/* Sync Cockpit */}
+      {user && <SyncCockpit userId={user.id} />}
+
       {posts.length === 0 ? (
-        <Card className="glass-card">
+        <Card className="glass-card mt-6">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 to-cyan-500/20 flex items-center justify-center mb-6">
               <BarChart3 className="h-10 w-10 text-primary" />
@@ -134,7 +138,7 @@ export default function ContentLibraryPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 mt-6">
           {/* Stats Overview */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card className="glass-card">
