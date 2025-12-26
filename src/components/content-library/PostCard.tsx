@@ -20,6 +20,30 @@ import { cn } from "@/lib/utils";
 import { Post } from "@/types/database";
 import { toast } from "sonner";
 
+// Helper to extract a valid Instagram URL - SAME LOGIC as community/PostCard
+function getInstagramUrl(permalink: string | null, shortcode?: string | null): string | null {
+  // Priority 1: Use permalink if it's a valid Instagram URL with proper shortcode pattern
+  if (permalink && /^https?:\/\/(www\.)?instagram\.com\/(p|reel|tv)\/[A-Za-z0-9_-]+/.test(permalink)) {
+    return permalink;
+  }
+  
+  // Priority 2: Build URL from shortcode if available
+  if (shortcode && /^[A-Za-z0-9_-]+$/.test(shortcode)) {
+    return `https://www.instagram.com/p/${shortcode}/`;
+  }
+  
+  // FORBIDDEN: Never use internal IDs, media_id, or numeric values
+  // Return null to disable the link
+  return null;
+}
+
+// Extract shortcode from permalink if possible
+function extractShortcode(permalink: string | null): string | null {
+  if (!permalink) return null;
+  const match = permalink.match(/instagram\.com\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+  return match ? match[2] : null;
+}
+
 interface PostCardProps {
   post: Post;
   viralityScore: number;
@@ -195,17 +219,25 @@ export function PostCard({
             {viralityScore.toLocaleString()}
           </div>
 
-          {/* Link to Original */}
-          {post.original_ig_permalink && (
-            <a
-              href={post.original_ig_permalink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="absolute bottom-3 right-3 p-2 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
-            >
-              <ExternalLink className="h-4 w-4" />
-            </a>
-          )}
+          {/* Link to Original - Safe Link Logic */}
+          {(() => {
+            const shortcode = extractShortcode(post.original_ig_permalink);
+            const safeUrl = getInstagramUrl(post.original_ig_permalink, shortcode);
+            
+            if (!safeUrl) return null;
+            
+            return (
+              <a
+                href={safeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`Öffnen: ${safeUrl}`}
+                className="absolute bottom-3 right-3 p-2 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            );
+          })()}
         </div>
 
         {/* Content */}
