@@ -22,6 +22,9 @@ import { PostCard } from "@/components/community/PostCard";
 import { ActionBar } from "@/components/community/ActionBar";
 import { AiModelSelector } from "@/components/community/AiModelSelector";
 
+// Defensive alias: avoids runtime crashes if a stale bundle still references `Check`
+const Check = CheckIcon;
+
 interface BlacklistTopic {
   id: string;
   topic: string;
