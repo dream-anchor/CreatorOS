@@ -446,8 +446,10 @@ export type Database = {
       }
       settings: {
         Row: {
+          auto_sync_enabled: boolean | null
           created_at: string
           id: string
+          last_sync_at: string | null
           posts_per_week: number | null
           preferred_days: string[] | null
           preferred_hours: Json | null
@@ -455,8 +457,10 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          auto_sync_enabled?: boolean | null
           created_at?: string
           id?: string
+          last_sync_at?: string | null
           posts_per_week?: number | null
           preferred_days?: string[] | null
           preferred_hours?: Json | null
@@ -464,8 +468,10 @@ export type Database = {
           user_id: string
         }
         Update: {
+          auto_sync_enabled?: boolean | null
           created_at?: string
           id?: string
+          last_sync_at?: string | null
           posts_per_week?: number | null
           preferred_days?: string[] | null
           preferred_hours?: Json | null

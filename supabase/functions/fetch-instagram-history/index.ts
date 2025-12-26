@@ -76,6 +76,26 @@ serve(async (req) => {
       // No body or invalid JSON - use default mode
     }
 
+    // For sync_recent mode, check if auto_sync is enabled
+    if (mode === 'sync_recent') {
+      const { data: settings } = await supabase
+        .from('settings')
+        .select('auto_sync_enabled')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (settings?.auto_sync_enabled === false) {
+        console.log('Auto sync disabled by user - skipping');
+        return new Response(JSON.stringify({ 
+          success: true, 
+          synced: 0,
+          message: 'Auto-Sync ist deaktiviert'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Get user's Meta connection
     const { data: connection, error: connError } = await supabase
       .from('meta_connections')
@@ -233,6 +253,12 @@ serve(async (req) => {
 
       console.log(`${logPrefix}: Upserted batch ${i / UPSERT_BATCH_SIZE + 1}: ${batch.length} posts`);
     }
+
+    // Update last_sync_at timestamp
+    await supabase
+      .from('settings')
+      .update({ last_sync_at: new Date().toISOString() })
+      .eq('user_id', user.id);
 
     // For sync_recent, return minimal response
     if (mode === 'sync_recent') {
