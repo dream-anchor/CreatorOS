@@ -184,6 +184,9 @@ export default function MetaConnectionTab() {
     setAvailableAccounts([]);
   };
 
+  // State for style analysis
+  const [analyzingStyle, setAnalyzingStyle] = useState(false);
+
   const startDeepImport = async () => {
     if (!connection) {
       toast.error("Bitte zuerst Instagram verbinden");
@@ -196,22 +199,45 @@ export default function MetaConnectionTab() {
 
     // Simulate progress while waiting
     const progressInterval = setInterval(() => {
-      setImportProgress(prev => Math.min(prev + 5, 90));
+      setImportProgress(prev => Math.min(prev + 5, 85));
     }, 2000);
 
     try {
       const { data, error } = await supabase.functions.invoke('fetch-instagram-history', {});
 
       clearInterval(progressInterval);
-      setImportProgress(100);
+      setImportProgress(90);
 
       if (error) throw error;
       
       const result = data as ImportResult;
       setImportResult(result);
       
-      if (result.success) {
+      if (result.success && result.imported > 0) {
         toast.success(`${result.imported} Posts importiert! ${result.unicorn_count} Top-Performer gefunden.`);
+        
+        // Auto-trigger style analysis after successful import
+        setImportProgress(95);
+        setAnalyzingStyle(true);
+        toast.info("🧠 Schärfe Profil-Stil nach...", { duration: 3000 });
+        
+        try {
+          const { error: analyzeError } = await supabase.functions.invoke('analyze-style', {});
+          
+          if (!analyzeError) {
+            toast.success("✨ Profil-Stil aktualisiert!", { duration: 3000 });
+          }
+        } catch (styleErr) {
+          console.error("Style analysis error:", styleErr);
+          // Don't show error toast - import was still successful
+        } finally {
+          setAnalyzingStyle(false);
+        }
+        
+        setImportProgress(100);
+      } else if (result.success) {
+        toast.info(result.message || "Keine neuen Posts gefunden");
+        setImportProgress(100);
       }
     } catch (err) {
       clearInterval(progressInterval);
@@ -391,11 +417,16 @@ export default function MetaConnectionTab() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {importing && (
+            {(importing || analyzingStyle) && (
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  <span className="text-sm">Analysiere Historie... (kann bis zu 1 Min dauern)</span>
+                  <span className="text-sm">
+                    {analyzingStyle 
+                      ? "Schärfe Profil-Stil nach..." 
+                      : "Analysiere Historie... (kann bis zu 1 Min dauern)"
+                    }
+                  </span>
                 </div>
                 <Progress value={importProgress} className="h-2" />
               </div>

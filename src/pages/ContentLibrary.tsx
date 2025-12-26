@@ -1,26 +1,36 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
   Loader2,
-  TrendingUp,
   Heart,
   MessageCircle,
-  Bookmark,
   BarChart3,
-  ExternalLink,
   RefreshCw,
+  ArrowUpDown,
+  Flame,
+  Calendar,
+  MessageSquare,
 } from "lucide-react";
-import { format } from "date-fns";
-import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Post } from "@/types/database";
 import { SyncCockpit } from "@/components/content-library/SyncCockpit";
+import { PostCard } from "@/components/content-library/PostCard";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+type SortOption = "performance" | "newest" | "comments";
 
 export default function ContentLibraryPage() {
   const { user } = useAuth();
@@ -28,6 +38,7 @@ export default function ContentLibraryPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SortOption>("performance");
 
   useEffect(() => {
     if (user) loadImportedPosts();
@@ -37,9 +48,9 @@ export default function ContentLibraryPage() {
     try {
       if (showRefreshToast) setRefreshing(true);
       
-      const { data, error, count } = await supabase
+      const { data, error } = await supabase
         .from("posts")
-        .select("*", { count: 'exact' })
+        .select("*")
         .eq("is_imported", true)
         .order("likes_count", { ascending: false });
 
@@ -64,6 +75,12 @@ export default function ContentLibraryPage() {
     loadImportedPosts(true);
   };
 
+  const handleImageRefreshed = useCallback((postId: string, newUrl: string) => {
+    setPosts(prev => prev.map(p => 
+      p.id === postId ? { ...p, original_media_url: newUrl } : p
+    ));
+  }, []);
+
   // Calculate virality score for each post
   const calculateViralityScore = (post: Post) => {
     const likes = post.likes_count || 0;
@@ -72,20 +89,47 @@ export default function ContentLibraryPage() {
     return likes + (comments * 3) + (saved * 2);
   };
 
-  // Get sorted posts by virality score
-  const sortedPosts = [...posts].sort((a, b) => 
+  // Sort posts based on selected option
+  const getSortedPosts = () => {
+    const sorted = [...posts];
+    
+    switch (sortBy) {
+      case "newest":
+        return sorted.sort((a, b) => {
+          const dateA = new Date(a.published_at || a.created_at).getTime();
+          const dateB = new Date(b.published_at || b.created_at).getTime();
+          return dateB - dateA;
+        });
+      case "comments":
+        return sorted.sort((a, b) => (b.comments_count || 0) - (a.comments_count || 0));
+      case "performance":
+      default:
+        return sorted.sort((a, b) => calculateViralityScore(b) - calculateViralityScore(a));
+    }
+  };
+
+  const sortedPosts = getSortedPosts();
+
+  // Top 1% threshold (always based on performance)
+  const performanceSorted = [...posts].sort((a, b) => 
     calculateViralityScore(b) - calculateViralityScore(a)
   );
-
-  // Top 1% threshold
-  const top1PercentThreshold = sortedPosts.length > 0 
-    ? calculateViralityScore(sortedPosts[Math.floor(sortedPosts.length * 0.01)] || sortedPosts[0])
+  const top1PercentThreshold = performanceSorted.length > 0 
+    ? calculateViralityScore(performanceSorted[Math.floor(performanceSorted.length * 0.01)] || performanceSorted[0])
     : 0;
 
   // Stats
   const totalLikes = posts.reduce((sum, p) => sum + (p.likes_count || 0), 0);
   const totalComments = posts.reduce((sum, p) => sum + (p.comments_count || 0), 0);
   const unicornCount = posts.filter(p => calculateViralityScore(p) >= top1PercentThreshold).length;
+
+  const getSortLabel = () => {
+    switch (sortBy) {
+      case "newest": return "Neueste zuerst";
+      case "comments": return "Meiste Diskussionen";
+      default: return "Beste Performance";
+    }
+  };
 
   if (loading) {
     return (
@@ -102,16 +146,47 @@ export default function ContentLibraryPage() {
       title="Post-Historie"
       description="Deine importierten Instagram-Posts mit Erfolgsanalyse"
       actions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="gap-2"
-        >
-          <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-          Aktualisieren
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Sort Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <ArrowUpDown className="h-4 w-4" />
+                {getSortLabel()}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Sortierung</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+                <DropdownMenuRadioItem value="performance" className="gap-2">
+                  <Flame className="h-4 w-4 text-orange-500" />
+                  Beste Performance
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="newest" className="gap-2">
+                  <Calendar className="h-4 w-4 text-blue-500" />
+                  Neueste zuerst
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="comments" className="gap-2">
+                  <MessageSquare className="h-4 w-4 text-cyan-500" />
+                  Meiste Diskussionen
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Refresh Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="gap-2"
+          >
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+            Aktualisieren
+          </Button>
+        </div>
       }
     >
       {/* Sync Cockpit */}
@@ -193,106 +268,15 @@ export default function ContentLibraryPage() {
               const isDiscussionStarter = (post.comments_count || 0) > (totalComments / posts.length) * 2;
 
               return (
-                <Card
+                <PostCard
                   key={post.id}
-                  className={cn(
-                    "glass-card overflow-hidden group transition-all duration-300 hover:scale-[1.02]",
-                    isUnicorn && "ring-2 ring-amber-500/50 bg-gradient-to-br from-amber-500/10 to-orange-500/10"
-                  )}
-                >
-                  <CardContent className="p-0">
-                    {/* Image Preview */}
-                    <div className="aspect-video relative bg-muted">
-                      {post.original_media_url ? (
-                        <img
-                          src={post.original_media_url}
-                          alt="Post preview"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-cyan-500/10">
-                          <BarChart3 className="h-12 w-12 text-muted-foreground/30" />
-                        </div>
-                      )}
-
-                      {/* Unicorn Badge */}
-                      {isUnicorn && (
-                        <div className="absolute top-3 left-3 px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg">
-                          <span>🦄</span> Top 1% Unicorn
-                        </div>
-                      )}
-
-                      {/* Virality Score */}
-                      <div className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-sm text-white text-xs font-semibold flex items-center gap-1.5">
-                        <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
-                        {viralityScore.toLocaleString()}
-                      </div>
-
-                      {/* Link to Original */}
-                      {post.original_ig_permalink && (
-                        <a
-                          href={post.original_ig_permalink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="absolute bottom-3 right-3 p-2 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      )}
-                    </div>
-
-                    {/* Content */}
-                    <div className="p-4 space-y-3">
-                      {/* Performance Labels */}
-                      <div className="flex flex-wrap gap-2">
-                        {isHighEngagement && (
-                          <Badge variant="secondary" className="bg-rose-500/20 text-rose-400 border-rose-500/30">
-                            <Heart className="h-3 w-3 mr-1" />
-                            High Engagement
-                          </Badge>
-                        )}
-                        {isDiscussionStarter && (
-                          <Badge variant="secondary" className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">
-                            <MessageCircle className="h-3 w-3 mr-1" />
-                            Diskussions-Starter
-                          </Badge>
-                        )}
-                      </div>
-
-                      {/* Caption Snippet */}
-                      <p className="text-sm text-foreground line-clamp-2">
-                        {post.caption?.slice(0, 120) || "Kein Text"}
-                        {(post.caption?.length || 0) > 120 && "..."}
-                      </p>
-
-                      {/* Stats Row */}
-                      <div className="flex items-center gap-4 text-muted-foreground">
-                        <div className="flex items-center gap-1.5">
-                          <Heart className="h-4 w-4 text-rose-500" />
-                          <span className="text-sm font-medium">{(post.likes_count || 0).toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <MessageCircle className="h-4 w-4 text-cyan-500" />
-                          <span className="text-sm font-medium">{(post.comments_count || 0).toLocaleString()}</span>
-                        </div>
-                        {(post.saved_count || 0) > 0 && (
-                          <div className="flex items-center gap-1.5">
-                            <Bookmark className="h-4 w-4 text-violet-500" />
-                            <span className="text-sm font-medium">{(post.saved_count || 0).toLocaleString()}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Date */}
-                      <p className="text-xs text-muted-foreground">
-                        {post.published_at 
-                          ? format(new Date(post.published_at), "dd. MMMM yyyy", { locale: de })
-                          : format(new Date(post.created_at), "dd. MMMM yyyy", { locale: de })
-                        }
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
+                  post={post}
+                  viralityScore={viralityScore}
+                  isUnicorn={isUnicorn}
+                  isHighEngagement={isHighEngagement}
+                  isDiscussionStarter={isDiscussionStarter}
+                  onImageRefreshed={handleImageRefreshed}
+                />
               );
             })}
           </div>

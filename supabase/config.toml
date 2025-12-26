@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.fetch-instagram-history]
 verify_jwt = false
+
+[functions.refresh-media-url]
+verify_jwt = false
