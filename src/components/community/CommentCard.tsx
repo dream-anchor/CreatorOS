@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ImageWithFallback } from "./ImageWithFallback";
 import { Sparkles, ExternalLink, CheckCircle2, User, RefreshCw } from "lucide-react";
+import { getInstagramUrl } from "@/lib/instagram-utils";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -146,17 +147,22 @@ export function CommentCard({
           <p className="text-xs text-muted-foreground line-clamp-2">
             {truncatedCaption}
           </p>
-          {comment.post_permalink && /instagram\.com\/(p|reel|tv)\/[A-Za-z0-9_-]+/.test(comment.post_permalink) && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="w-full text-xs h-7 gap-1"
-              onClick={() => window.open(comment.post_permalink!, '_blank', 'noopener,noreferrer')}
-            >
-              <ExternalLink className="h-3 w-3" />
-              Original ansehen
-            </Button>
-          )}
+          {(() => {
+            const safeUrl = getInstagramUrl(comment.post_permalink);
+            if (!safeUrl) return null;
+            return (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full text-xs h-7 gap-1"
+                onClick={() => window.open(safeUrl, '_blank', 'noopener,noreferrer')}
+                title={`Öffnen: ${safeUrl}`}
+              >
+                <ExternalLink className="h-3 w-3" />
+                Original ansehen
+              </Button>
+            );
+          })()}
         </div>
       </div>
     </div>
