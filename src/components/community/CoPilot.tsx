@@ -108,6 +108,21 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
     }
   };
 
+  // Handle draft actions
+  const handleApproveDraft = async (draftId: string) => {
+    try {
+      const { error } = await supabase
+        .from('content_plan')
+        .update({ status: 'approved' })
+        .eq('id', draftId);
+      
+      if (error) throw error;
+      toast.success("Entwurf genehmigt und eingeplant!");
+    } catch (err) {
+      toast.error("Fehler beim Genehmigen");
+    }
+  };
+
   // Render rich tool results
   const renderToolResult = (result: ToolResult) => {
     const { function_name, result: data } = result;
@@ -122,6 +137,110 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
     }
 
     switch (function_name) {
+      case "plan_post":
+        // Interactive Draft Card
+        if (data.draft_data) {
+          return (
+            <div className="bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 rounded-xl p-3 space-y-3">
+              <div className="flex items-center gap-2 text-xs text-primary font-medium">
+                <Sparkles className="h-3 w-3" />
+                Entwurf zur Genehmigung
+              </div>
+              
+              {/* Image Preview */}
+              {data.draft_data.image_url && (
+                <img
+                  src={data.draft_data.image_url}
+                  alt="Entwurf"
+                  className="w-full h-40 object-cover rounded-lg"
+                />
+              )}
+              
+              {/* Caption */}
+              <div className="bg-background/50 rounded-lg p-2">
+                <p className="text-sm whitespace-pre-wrap line-clamp-4">
+                  {data.draft_data.caption}
+                </p>
+              </div>
+              
+              {/* Scheduled Date */}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>📅</span>
+                <span>{data.draft_data.scheduled_for_formatted}</span>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  size="sm"
+                  className="flex-1 text-xs"
+                  onClick={() => handleApproveDraft(data.draft_data.id)}
+                >
+                  ✅ Genehmigen
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => {
+                    setInputValue("Generiere das Bild neu mit einem anderen Stil");
+                    inputRef.current?.focus();
+                  }}
+                >
+                  🔄 Neu
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => {
+                    setInputValue("Ändere die Caption zu: ");
+                    inputRef.current?.focus();
+                  }}
+                >
+                  ✏️ Text
+                </Button>
+              </div>
+            </div>
+          );
+        }
+        break;
+
+      case "generate_personalized_image":
+        if (data.image_url) {
+          return (
+            <div className="space-y-2">
+              <img
+                src={data.image_url}
+                alt="Generiertes Bild"
+                className="w-full rounded-lg"
+              />
+              <p className="text-xs text-muted-foreground">
+                🎬 {data.theme} - {data.safety_note}
+              </p>
+            </div>
+          );
+        }
+        break;
+
+      case "analyze_best_time":
+        if (data.optimal_posting_slot) {
+          return (
+            <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">⏰ Optimale Zeit</span>
+                <Badge variant="secondary">{data.optimal_posting_slot.formatted}</Badge>
+              </div>
+              <div className="text-xs text-muted-foreground space-y-1">
+                {data.recommendations?.slice(0, 3).map((rec: string, i: number) => (
+                  <p key={i}>{rec}</p>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        break;
+
       case "search_posts":
         return (
           <div className="space-y-2">
@@ -223,14 +342,14 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
             )}
           </div>
         );
-
-      default:
-        return (
-          <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-40">
-            {JSON.stringify(data, null, 2)}
-          </pre>
-        );
     }
+
+    // Default fallback
+    return (
+      <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-40">
+        {JSON.stringify(data, null, 2)}
+      </pre>
+    );
   };
 
   return (
