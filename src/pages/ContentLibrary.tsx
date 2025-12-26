@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { differenceInDays } from "date-fns";
 
 type SortOption = "performance" | "newest" | "comments";
 
@@ -39,10 +40,54 @@ export default function ContentLibraryPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>("performance");
+  const backgroundRefreshRef = useRef(false);
 
   useEffect(() => {
     if (user) loadImportedPosts();
   }, [user]);
+
+  // Background check for stale URLs
+  useEffect(() => {
+    if (posts.length > 0 && !backgroundRefreshRef.current) {
+      backgroundRefreshRef.current = true;
+      checkAndRefreshStaleUrls();
+    }
+  }, [posts]);
+
+  const checkAndRefreshStaleUrls = async () => {
+    const staleThresholdDays = 3;
+    const stalePosts = posts.filter(post => {
+      if (!post.updated_at || !post.ig_media_id) return false;
+      const daysSinceUpdate = differenceInDays(new Date(), new Date(post.updated_at));
+      return daysSinceUpdate > staleThresholdDays;
+    });
+
+    if (stalePosts.length === 0) return;
+
+    console.log(`Found ${stalePosts.length} posts with potentially stale URLs`);
+    
+    // Refresh up to 5 stale URLs in background (to avoid rate limits)
+    const postsToRefresh = stalePosts.slice(0, 5);
+    
+    for (const post of postsToRefresh) {
+      try {
+        const { data } = await supabase.functions.invoke('refresh-media-url', {
+          body: {
+            post_id: post.id,
+            ig_media_id: post.ig_media_id,
+          },
+        });
+
+        if (data?.success && data?.media_url) {
+          setPosts(prev => prev.map(p => 
+            p.id === post.id ? { ...p, original_media_url: data.media_url, updated_at: new Date().toISOString() } : p
+          ));
+        }
+      } catch (err) {
+        console.error(`Background refresh failed for post ${post.id}:`, err);
+      }
+    }
+  };
 
   const loadImportedPosts = async (showRefreshToast = false) => {
     try {

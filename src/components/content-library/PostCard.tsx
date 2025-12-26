@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import {
   TrendingUp,
@@ -11,11 +12,13 @@ import {
   ExternalLink,
   ImageOff,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Post } from "@/types/database";
+import { toast } from "sonner";
 
 interface PostCardProps {
   post: Post;
@@ -35,20 +38,30 @@ export function PostCard({
   onImageRefreshed,
 }: PostCardProps) {
   const [imageError, setImageError] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [localImageUrl, setLocalImageUrl] = useState(post.original_media_url);
+  const [refreshAttempted, setRefreshAttempted] = useState(false);
 
-  const handleImageError = async () => {
-    setImageError(true);
-    
-    // Only try to refresh if we have ig_media_id
+  // Check if URL is stale (older than 3 days based on updated_at)
+  const isUrlStale = () => {
+    if (!post.updated_at) return false;
+    const daysSinceUpdate = differenceInDays(new Date(), new Date(post.updated_at));
+    return daysSinceUpdate > 3;
+  };
+
+  // Manual refresh function
+  const handleManualRefresh = async () => {
     if (!post.ig_media_id || refreshing) return;
     
     setRefreshing(true);
     
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) {
+        toast.error("Nicht angemeldet");
+        return;
+      }
 
       const { data, error } = await supabase.functions.invoke('refresh-media-url', {
         body: {
@@ -62,14 +75,40 @@ export function PostCard({
       if (data?.success && data?.media_url) {
         setLocalImageUrl(data.media_url);
         setImageError(false);
+        setImageLoaded(false);
+        setRefreshAttempted(true);
         onImageRefreshed?.(post.id, data.media_url);
+        toast.success("Bild aktualisiert");
+      } else {
+        toast.error(data?.message || "Bild konnte nicht geladen werden");
       }
     } catch (err) {
       console.error('Failed to refresh image URL:', err);
+      toast.error("Fehler beim Aktualisieren");
     } finally {
       setRefreshing(false);
     }
   };
+
+  // Auto-refresh on error (only once)
+  const handleImageError = async () => {
+    setImageError(true);
+    setImageLoaded(false);
+    
+    // Only auto-retry once if we haven't tried yet
+    if (!refreshAttempted && post.ig_media_id && !refreshing) {
+      setRefreshAttempted(true);
+      await handleManualRefresh();
+    }
+  };
+
+  const handleImageLoad = () => {
+    setImageLoaded(true);
+    setImageError(false);
+  };
+
+  // Show expired state: error occurred OR no URL
+  const showExpiredState = imageError || !localImageUrl;
 
   return (
     <Card
@@ -81,29 +120,66 @@ export function PostCard({
       <CardContent className="p-0">
         {/* Image Preview */}
         <div className="aspect-video relative bg-muted">
-          {localImageUrl && !imageError ? (
-            <img
-              src={localImageUrl}
-              alt="Post preview"
-              className="w-full h-full object-cover"
-              onError={handleImageError}
-            />
+          {localImageUrl && !showExpiredState ? (
+            <>
+              {/* Loading state while image loads */}
+              {!imageLoaded && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted z-10">
+                  <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                </div>
+              )}
+              <img
+                src={localImageUrl}
+                alt="Post preview"
+                className={cn(
+                  "w-full h-full object-cover transition-opacity",
+                  imageLoaded ? "opacity-100" : "opacity-0"
+                )}
+                onError={handleImageError}
+                onLoad={handleImageLoad}
+              />
+            </>
           ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-primary/10 to-cyan-500/10 gap-2">
+            /* Expired/Error State with Refresh Button */
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-muted to-muted/80 gap-3">
               {refreshing ? (
                 <>
                   <Loader2 className="h-8 w-8 text-primary animate-spin" />
-                  <span className="text-xs text-muted-foreground">Lade Bild neu...</span>
-                </>
-              ) : imageError ? (
-                <>
-                  <ImageOff className="h-10 w-10 text-muted-foreground/40" />
-                  <span className="text-xs text-muted-foreground">Bild abgelaufen</span>
+                  <span className="text-sm text-muted-foreground">Aktualisiere...</span>
                 </>
               ) : (
-                <BarChart3 className="h-12 w-12 text-muted-foreground/30" />
+                <>
+                  <div className="w-16 h-16 rounded-full bg-muted-foreground/10 flex items-center justify-center">
+                    <ImageOff className="h-8 w-8 text-muted-foreground/50" />
+                  </div>
+                  <span className="text-sm font-medium text-muted-foreground">Bild abgelaufen</span>
+                  {post.ig_media_id && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleManualRefresh}
+                      className="gap-2 mt-1"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Bild aktualisieren
+                    </Button>
+                  )}
+                </>
               )}
             </div>
+          )}
+
+          {/* Stale indicator - shows refresh button on hover for images that might be stale */}
+          {imageLoaded && isUrlStale() && !refreshing && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleManualRefresh}
+              className="absolute bottom-3 left-3 gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 hover:bg-black/80 text-white border-0"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Aktualisieren
+            </Button>
           )}
 
           {/* Unicorn Badge */}
