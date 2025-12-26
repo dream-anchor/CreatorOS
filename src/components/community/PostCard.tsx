@@ -23,9 +23,27 @@ interface PostGroup {
   igMediaId: string;
   postCaption: string | null;
   postPermalink: string | null;
+  postShortcode?: string | null;
   publishedAt: string | null;
   postImageUrl?: string | null;
   comments: CommentWithContext[];
+}
+
+// Helper to extract a valid Instagram URL
+function getInstagramUrl(permalink: string | null, shortcode?: string | null): string | null {
+  // Priority 1: Use permalink if it's a valid Instagram URL
+  if (permalink && /^https?:\/\/(www\.)?instagram\.com\/(p|reel|tv)\/[A-Za-z0-9_-]+/.test(permalink)) {
+    return permalink;
+  }
+  
+  // Priority 2: Build URL from shortcode if available
+  if (shortcode && /^[A-Za-z0-9_-]+$/.test(shortcode)) {
+    return `https://www.instagram.com/p/${shortcode}/`;
+  }
+  
+  // FORBIDDEN: Never use internal IDs, media_id, or numeric values
+  // Return null to disable the button
+  return null;
 }
 
 interface PostCardProps {
@@ -127,17 +145,36 @@ export function PostCard({
 
           {/* Right: Actions */}
           <div className="flex items-center gap-3 flex-shrink-0">
-            {group.postPermalink && /instagram\.com\/(p|reel|tv)\/[A-Za-z0-9_-]+/.test(group.postPermalink) && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                onClick={() => window.open(group.postPermalink!, "_blank", "noopener,noreferrer")}
-                title="Auf Instagram ansehen"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </Button>
-            )}
+            {(() => {
+              const instagramUrl = getInstagramUrl(group.postPermalink, group.postShortcode);
+              
+              if (instagramUrl) {
+                return (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onClick={() => window.open(instagramUrl, "_blank", "noopener,noreferrer")}
+                    title={`Original ansehen: ${instagramUrl}`}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                );
+              }
+              
+              // No valid URL available - show disabled button
+              return (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground/40 cursor-not-allowed"
+                  disabled
+                  title="Link nicht verfügbar – kein gültiger Instagram-Permalink vorhanden"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+              );
+            })()}
             
             <div className="flex items-center gap-2 pl-3 border-l border-border/50">
               <span className="text-xs text-muted-foreground whitespace-nowrap">Alle</span>
