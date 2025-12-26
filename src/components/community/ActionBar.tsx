@@ -21,12 +21,7 @@ export function ActionBar({
       {/* Solid background bar */}
       <div className="bg-background/95 backdrop-blur-md border-t border-border shadow-[0_-4px_20px_rgba(0,0,0,0.15)]">
         <div className="max-w-5xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
-            {/* Left side: Simple count */}
-            <div className="text-sm text-foreground">
-              <span className="font-semibold">{selectedCount}</span>
-              <span className="text-muted-foreground"> Entwürfe bereit zur Freigabe</span>
-            </div>
+          <div className="flex items-center justify-end gap-4">
 
             {/* Right side: Main action button */}
             <Button
