@@ -76,7 +76,9 @@ export interface Post {
   likes_count?: number;
   comments_count?: number;
   saved_count?: number;
+  reach_count?: number;
   impressions_count?: number;
+  engagement_rate?: number;
   is_imported?: boolean;
   original_ig_permalink?: string | null;
   original_media_url?: string | null;
