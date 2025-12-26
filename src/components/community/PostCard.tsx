@@ -88,7 +88,17 @@ export function PostCard({
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Try to parse error message for more details
+        let errorMessage = error.message;
+        try {
+          const parsed = JSON.parse(error.message);
+          errorMessage = parsed.error || parsed.message || error.message;
+        } catch {
+          // Keep original message
+        }
+        throw new Error(errorMessage);
+      }
 
       if (data?.success) {
         toast.success("✅ Metadaten erfolgreich repariert!", {
@@ -99,12 +109,16 @@ export function PostCard({
         // Trigger a refresh of the parent component
         onMetadataRepaired?.();
       } else {
-        throw new Error(data?.error || "Unbekannter Fehler");
+        // Show detailed error from API response
+        const errorMsg = data?.error || data?.message || "Unbekannter Fehler";
+        throw new Error(errorMsg);
       }
     } catch (err) {
       console.error("Repair error:", err);
-      toast.error("❌ Reparatur fehlgeschlagen", {
-        description: err instanceof Error ? err.message : "Bitte später erneut versuchen",
+      const message = err instanceof Error ? err.message : "Bitte später erneut versuchen";
+      toast.error(`❌ Reparatur fehlgeschlagen`, {
+        description: message,
+        duration: 8000,
       });
     } finally {
       setIsRepairing(false);

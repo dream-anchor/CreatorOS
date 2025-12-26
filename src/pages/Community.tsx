@@ -16,6 +16,7 @@ import {
   Check,
   ExternalLink,
   User,
+  Wrench,
 } from "lucide-react";
 import { format, formatDistanceToNow, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
@@ -52,6 +53,7 @@ export default function Community() {
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [forceResyncing, setForceResyncing] = useState(false);
   const [comments, setComments] = useState<CommentWithContext[]>([]);
   const [criticalComments, setCriticalComments] = useState<CommentWithContext[]>([]);
   const [blacklistTopics, setBlacklistTopics] = useState<BlacklistTopic[]>([]);
@@ -329,6 +331,46 @@ export default function Community() {
     } finally {
       setLoading(false);
       setAnalyzing(false);
+    }
+  };
+
+  // Force Resync - fetches fresh data from Instagram and overwrites DB
+  const forceResyncFeed = async () => {
+    setForceResyncing(true);
+    toast.info("🔧 Lade letzte 20 Posts direkt von Instagram...");
+
+    try {
+      const { data, error } = await supabase.functions.invoke("fetch-instagram-history", {
+        body: { mode: "force_resync" },
+      });
+
+      if (error) {
+        // Extract detailed error from response if available
+        const errorMessage = error.message || "Unbekannter Fehler";
+        toast.error(`❌ Feed-Reparatur fehlgeschlagen: ${errorMessage}`);
+        console.error("Force resync error:", error);
+        return;
+      }
+
+      if (!data?.success) {
+        // Show detailed error from API response
+        const errorCode = data?.error_code || "Unbekannt";
+        const errorMsg = data?.message || data?.error || "Unbekannter API-Fehler";
+        toast.error(`❌ API-Fehler (${errorCode}): ${errorMsg}`, { duration: 8000 });
+        console.error("Force resync API error:", data);
+        return;
+      }
+
+      toast.success(`✅ ${data.synced} Posts repariert & aktualisiert!`);
+      
+      // Reload data to show fresh posts
+      await loadData();
+    } catch (err) {
+      console.error("Force resync exception:", err);
+      const message = err instanceof Error ? err.message : "Netzwerkfehler";
+      toast.error(`❌ Verbindungsfehler: ${message}`);
+    } finally {
+      setForceResyncing(false);
     }
   };
 
@@ -795,8 +837,8 @@ export default function Community() {
         </div>
 
         {/* Fetch Button & Stats */}
-        <div className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-card border border-gray-200 dark:border-border shadow-sm">
-          <div>
+        <div className="flex items-center justify-between gap-4 p-5 rounded-2xl bg-white dark:bg-card border border-gray-200 dark:border-border shadow-sm">
+          <div className="flex-1">
             <h3 className="font-medium text-sm">Kommentare synchronisieren</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               {lastFetch
@@ -807,18 +849,33 @@ export default function Community() {
                 : "Noch nicht synchronisiert"}
             </p>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={fetchComments}
-            disabled={loading || analyzing}
-            className="gap-2"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-            />
-            {loading ? "Lade..." : analyzing ? "Analysiere..." : "Sync"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={forceResyncFeed}
+              disabled={forceResyncing || loading || analyzing}
+              className="gap-2 text-amber-600 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-600 dark:hover:bg-amber-950"
+              title="Lädt die letzten 20 Posts direkt von Instagram und überschreibt fehlerhafte Daten"
+            >
+              <Wrench
+                className={`h-4 w-4 ${forceResyncing ? "animate-spin" : ""}`}
+              />
+              {forceResyncing ? "Repariere..." : "Feed reparieren"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={fetchComments}
+              disabled={loading || analyzing || forceResyncing}
+              className="gap-2"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+              />
+              {loading ? "Lade..." : analyzing ? "Analysiere..." : "Sync"}
+            </Button>
+          </div>
         </div>
 
         {/* Critical Comments Section */}
