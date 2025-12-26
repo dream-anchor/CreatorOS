@@ -49,17 +49,20 @@ serve(async (req) => {
       .eq('user_id', user.id)
       .order('priority', { ascending: false });
 
-    // Get available content snippets (unused or least used images)
-    const { data: snippets } = await supabase
-      .from('content_snippets')
+    // Get available media assets (unused or least used images from "Meine Bilder")
+    const { data: mediaAssets } = await supabase
+      .from('media_assets')
       .select('*')
       .eq('user_id', user.id)
       .order('used_count', { ascending: true })
       .order('last_used_at', { ascending: true, nullsFirst: true })
-      .limit(10);
+      .limit(20);
 
-    console.log('Found snippets:', snippets?.length || 0);
+    console.log('Found media assets:', mediaAssets?.length || 0);
     console.log('Found topics:', topics?.length || 0);
+
+    // Warn if no images available
+    const hasImages = mediaAssets && mediaAssets.length > 0;
 
     // Check next 7 days for gaps
     const now = new Date();
@@ -121,9 +124,9 @@ serve(async (req) => {
         selectedTopic = topics[i % topics.length];
       }
 
-      // Pick a random snippet if available
-      const selectedSnippet = snippets && snippets.length > 0 
-        ? snippets[Math.floor(Math.random() * snippets.length)]
+      // Pick a random image from media library if available
+      const selectedImage = hasImages 
+        ? mediaAssets[Math.floor(Math.random() * mediaAssets.length)]
         : null;
 
       try {
@@ -186,7 +189,7 @@ Format deine Antwort als JSON:
           }
         }
 
-        // Create the post
+        // Create the post with image URL if available
         const { data: newPost, error: postError } = await supabase
           .from('posts')
           .insert({
@@ -196,6 +199,7 @@ Format deine Antwort als JSON:
             status: 'READY_FOR_REVIEW',
             scheduled_at: gapDate.toISOString(),
             topic_id: selectedTopic?.id || null,
+            original_media_url: selectedImage?.public_url || null,
           })
           .select()
           .single();
@@ -205,24 +209,26 @@ Format deine Antwort als JSON:
           continue;
         }
 
-        // If we have a snippet, attach it as asset
-        if (selectedSnippet && newPost) {
+        // If we have an image, also create an asset record for proper display
+        if (selectedImage && newPost) {
           await supabase.from('assets').insert({
             user_id: user.id,
             post_id: newPost.id,
-            storage_path: selectedSnippet.storage_path,
-            public_url: selectedSnippet.public_url,
+            storage_path: selectedImage.storage_path,
+            public_url: selectedImage.public_url,
             source: 'upload',
           });
 
-          // Update snippet usage
+          // Update media asset usage counter
           await supabase
-            .from('content_snippets')
+            .from('media_assets')
             .update({
-              used_count: (selectedSnippet.used_count || 0) + 1,
+              used_count: (selectedImage.used_count || 0) + 1,
               last_used_at: new Date().toISOString(),
             })
-            .eq('id', selectedSnippet.id);
+            .eq('id', selectedImage.id);
+          
+          console.log(`Attached image to post: ${selectedImage.filename || selectedImage.id}`);
         }
 
         draftsCreated++;
@@ -240,14 +246,16 @@ Format deine Antwort als JSON:
       details: { 
         drafts_created: draftsCreated, 
         gaps_found: gaps.length,
-        snippets_available: snippets?.length || 0,
+        images_available: mediaAssets?.length || 0,
+        warning: !hasImages ? 'Keine Bilder im Archiv gefunden' : null,
       },
     });
 
     return new Response(JSON.stringify({ 
       draftsCreated, 
       gapsFound: gaps.length,
-      message: `${draftsCreated} Entwürfe für die nächsten 7 Tage erstellt`
+      imagesAttached: hasImages,
+      message: `${draftsCreated} Entwürfe erstellt${!hasImages ? ' (⚠️ Keine Bilder im Archiv)' : ''}`
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

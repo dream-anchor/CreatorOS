@@ -9,7 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Post, Asset } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Calendar as CalendarIcon, Clock, Image as ImageIcon } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, Clock, Image as ImageIcon, Recycle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { format, startOfWeek, endOfWeek, addDays, isSameDay } from "date-fns";
 import { de } from "date-fns/locale";
@@ -192,7 +193,15 @@ export default function CalendarPage() {
                     onClick={() => openScheduleDialog(post)}
                     className="p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors"
                   >
-                    <StatusBadge status={post.status} />
+                    <div className="flex items-center gap-2 mb-1">
+                      <StatusBadge status={post.status} />
+                      {post.remixed_from_id && (
+                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
+                          <Recycle className="h-3 w-3 mr-1" />
+                          Remix
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-sm mt-2 line-clamp-2">{post.caption}</p>
                   </div>
                 ))
@@ -251,6 +260,11 @@ export default function CalendarPage() {
                                 {post.scheduled_at &&
                                   format(new Date(post.scheduled_at), "HH:mm")}
                               </span>
+                              {post.remixed_from_id && (
+                                <span className="text-xs bg-amber-500/20 text-amber-600 px-1 rounded">
+                                  ♻️
+                                </span>
+                              )}
                             </div>
                             <StatusBadge status={post.status} className="mb-1" />
                             <p className="text-xs line-clamp-2">{post.caption}</p>
