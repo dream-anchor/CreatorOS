@@ -12,6 +12,12 @@ function calculateViralityScore(likes: number, comments: number, saved: number =
   return likes + (comments * 3) + (saved * 2);
 }
 
+// Calculate engagement rate: (likes + comments + saves) / reach * 100
+function calculateEngagementRate(likes: number, comments: number, saved: number, reach: number): number {
+  if (reach <= 0) return 0;
+  return Math.round(((likes + comments + saved) / reach) * 10000) / 100; // 2 decimal places
+}
+
 // Get performance label based on metrics
 function getPerformanceLabel(likes: number, comments: number, saved: number): string {
   const commentRatio = likes > 0 ? comments / likes : 0;
@@ -32,13 +38,13 @@ interface InstagramMedia {
   timestamp: string;
   like_count?: number;
   comments_count?: number;
-  // Insights for business accounts
-  insights?: {
-    data: Array<{
-      name: string;
-      values: Array<{ value: number }>;
-    }>;
-  };
+}
+
+interface MediaInsights {
+  saved?: number;
+  reach?: number;
+  impressions?: number;
+  plays?: number; // For reels
 }
 
 interface PaginatedResponse {
@@ -47,6 +53,58 @@ interface PaginatedResponse {
     cursors?: { after?: string };
     next?: string;
   };
+}
+
+// Fetch insights for a single media item
+async function fetchMediaInsights(mediaId: string, accessToken: string, mediaType: string): Promise<MediaInsights> {
+  try {
+    // Different metrics for different media types
+    // Images/Carousels: impressions, reach, saved
+    // Reels: plays, reach, saved
+    const isReel = mediaType === 'VIDEO' || mediaType === 'REELS';
+    const metrics = isReel 
+      ? 'plays,reach,saved' 
+      : 'impressions,reach,saved';
+    
+    const url = `https://graph.facebook.com/v17.0/${mediaId}/insights?metric=${metrics}&access_token=${accessToken}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      // Insights might not be available for all posts (e.g., older posts)
+      console.log(`Insights not available for ${mediaId}: ${response.status}`);
+      return {};
+    }
+    
+    const data = await response.json();
+    const insights: MediaInsights = {};
+    
+    if (data.data) {
+      for (const metric of data.data) {
+        const value = metric.values?.[0]?.value || 0;
+        switch (metric.name) {
+          case 'saved':
+            insights.saved = value;
+            break;
+          case 'reach':
+            insights.reach = value;
+            break;
+          case 'impressions':
+            insights.impressions = value;
+            break;
+          case 'plays':
+            insights.plays = value;
+            // For reels, use plays as impressions equivalent
+            insights.impressions = value;
+            break;
+        }
+      }
+    }
+    
+    return insights;
+  } catch (error) {
+    console.error(`Error fetching insights for ${mediaId}:`, error);
+    return {};
+  }
 }
 
 serve(async (req) => {
@@ -217,11 +275,35 @@ serve(async (req) => {
       });
     }
 
-    // Prepare data for upsert
-    const postsToUpsert = allMedia.map(media => {
+    // Fetch insights for each post (with rate limiting)
+    console.log(`${logPrefix}: Fetching deep insights for ${allMedia.length} posts...`);
+    
+    const mediaWithInsights: Array<InstagramMedia & { insights: MediaInsights }> = [];
+    
+    for (let i = 0; i < allMedia.length; i++) {
+      const media = allMedia[i];
+      
+      // Fetch insights for this media
+      const insights = await fetchMediaInsights(media.id, accessToken, media.media_type);
+      mediaWithInsights.push({ ...media, insights });
+      
+      // Rate limiting: pause every 10 requests to avoid hitting API limits
+      if ((i + 1) % 10 === 0) {
+        console.log(`${logPrefix}: Processed insights for ${i + 1}/${allMedia.length} posts`);
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    
+    console.log(`${logPrefix}: Insights fetched for all ${allMedia.length} posts`);
+
+    // Prepare data for upsert with deep metrics
+    const postsToUpsert = mediaWithInsights.map(media => {
       const likes = media.like_count || 0;
       const comments = media.comments_count || 0;
-      const saved = 0;
+      const saved = media.insights.saved || 0;
+      const reach = media.insights.reach || 0;
+      const impressions = media.insights.impressions || 0;
+      const engagementRate = calculateEngagementRate(likes, comments, saved, reach);
 
       return {
         user_id: user.id,
@@ -235,6 +317,9 @@ serve(async (req) => {
         likes_count: likes,
         comments_count: comments,
         saved_count: saved,
+        reach_count: reach,
+        impressions_count: impressions,
+        engagement_rate: engagementRate,
         is_imported: true,
       };
     });

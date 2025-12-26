@@ -483,6 +483,7 @@ export type Database = {
           caption_short: string | null
           comments_count: number | null
           created_at: string
+          engagement_rate: number | null
           error_message: string | null
           format: Database["public"]["Enums"]["post_format"] | null
           hashtags: string | null
@@ -494,6 +495,7 @@ export type Database = {
           original_ig_permalink: string | null
           original_media_url: string | null
           published_at: string | null
+          reach_count: number | null
           remix_reason: string | null
           remixed_from_id: string | null
           saved_count: number | null
@@ -513,6 +515,7 @@ export type Database = {
           caption_short?: string | null
           comments_count?: number | null
           created_at?: string
+          engagement_rate?: number | null
           error_message?: string | null
           format?: Database["public"]["Enums"]["post_format"] | null
           hashtags?: string | null
@@ -524,6 +527,7 @@ export type Database = {
           original_ig_permalink?: string | null
           original_media_url?: string | null
           published_at?: string | null
+          reach_count?: number | null
           remix_reason?: string | null
           remixed_from_id?: string | null
           saved_count?: number | null
@@ -543,6 +547,7 @@ export type Database = {
           caption_short?: string | null
           comments_count?: number | null
           created_at?: string
+          engagement_rate?: number | null
           error_message?: string | null
           format?: Database["public"]["Enums"]["post_format"] | null
           hashtags?: string | null
@@ -554,6 +559,7 @@ export type Database = {
           original_ig_permalink?: string | null
           original_media_url?: string | null
           published_at?: string | null
+          reach_count?: number | null
           remix_reason?: string | null
           remixed_from_id?: string | null
           saved_count?: number | null

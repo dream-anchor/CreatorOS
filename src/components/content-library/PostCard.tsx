@@ -260,7 +260,7 @@ export function PostCard({
           </p>
 
           {/* Stats Row */}
-          <div className="flex items-center gap-4 text-muted-foreground">
+          <div className="flex items-center gap-4 text-muted-foreground flex-wrap">
             <div className="flex items-center gap-1.5">
               <Heart className="h-4 w-4 text-rose-500" />
               <span className="text-sm font-medium">{(post.likes_count || 0).toLocaleString()}</span>
@@ -269,13 +269,33 @@ export function PostCard({
               <MessageCircle className="h-4 w-4 text-cyan-500" />
               <span className="text-sm font-medium">{(post.comments_count || 0).toLocaleString()}</span>
             </div>
-            {(post.saved_count || 0) > 0 && (
-              <div className="flex items-center gap-1.5">
-                <Bookmark className="h-4 w-4 text-violet-500" />
-                <span className="text-sm font-medium">{(post.saved_count || 0).toLocaleString()}</span>
+            <div className="flex items-center gap-1.5">
+              <Bookmark className="h-4 w-4 text-violet-500" />
+              <span className="text-sm font-medium">{(post.saved_count || 0).toLocaleString()}</span>
+            </div>
+            {((post as any).reach_count || 0) > 0 && (
+              <div className="flex items-center gap-1.5" title="Reichweite (Unique Users)">
+                <BarChart3 className="h-4 w-4 text-emerald-500" />
+                <span className="text-sm font-medium">{((post as any).reach_count || 0).toLocaleString()}</span>
               </div>
             )}
           </div>
+          
+          {/* Engagement Rate Badge */}
+          {((post as any).engagement_rate || 0) > 0 && (
+            <div className="pt-1">
+              <span className={cn(
+                "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold",
+                (post as any).engagement_rate >= 5 
+                  ? "bg-emerald-500/20 text-emerald-400" 
+                  : (post as any).engagement_rate >= 2 
+                    ? "bg-amber-500/20 text-amber-400"
+                    : "bg-muted text-muted-foreground"
+              )} title="Engagement Rate = (Likes + Kommentare + Saves) / Reichweite × 100">
+                📊 {((post as any).engagement_rate).toFixed(1)}% Engagement
+              </span>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
