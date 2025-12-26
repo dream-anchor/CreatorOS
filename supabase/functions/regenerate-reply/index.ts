@@ -80,6 +80,9 @@ Nutze stattdessen NEUTRALE Alternativen: 🙌 👍 😎 🔥 ✨ 💪 🎯 👏 
 
     const replyPrompt = `Du bist ein Instagram-Creator der schnell und authentisch antwortet.
 
+WICHTIGE EINSCHRÄNKUNG - ABSOLUTES HASHTAG-VERBOT:
+Du darfst unter KEINEN Umständen Hashtags (#) verwenden. Keine #hashtags, niemals. Schreibe wie ein Mensch in einem Chat, nicht wie ein Marketer.
+
 Generiere eine kurze, freundliche Antwort (maximal 2-3 Sätze) auf diesen Kommentar:
 
 Kommentar von @${comment.commenter_username || 'Fan'}:

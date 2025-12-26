@@ -33,12 +33,12 @@ interface CachedData {
   timestamp: number;
 }
 
-function loadFromCache(): ModelResponse[] | null {
+function loadFromCache(): { results: ModelResponse[]; timestamp: number } | null {
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
       const data: CachedData = JSON.parse(cached);
-      return data.results;
+      return { results: data.results, timestamp: data.timestamp };
     }
   } catch (e) {
     console.error("Error loading cache:", e);
@@ -63,10 +63,25 @@ function clearCache() {
   }
 }
 
+function formatTimestamp(timestamp: number): string {
+  const now = Date.now();
+  const diffMs = now - timestamp;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMin < 1) return "gerade eben";
+  if (diffMin < 60) return `vor ${diffMin} Min.`;
+  if (diffHours < 24) return `vor ${diffHours} Std.`;
+  if (diffDays === 1) return "gestern";
+  return `vor ${diffDays} Tagen`;
+}
+
 export function ModelComparisonModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<ModelResponse[]>([]);
+  const [cacheTimestamp, setCacheTimestamp] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const loadingRef = useRef(false);
@@ -91,9 +106,10 @@ export function ModelComparisonModal() {
     // Check cache first (unless force refresh)
     if (!forceRefresh) {
       const cached = loadFromCache();
-      if (cached && cached.length > 0) {
-        console.log("Loading from cache:", cached.length, "results");
-        setResults(cached);
+      if (cached && cached.results.length > 0) {
+        console.log("Loading from cache:", cached.results.length, "results");
+        setResults(cached.results);
+        setCacheTimestamp(cached.timestamp);
         setError(null);
         return;
       }
@@ -102,6 +118,7 @@ export function ModelComparisonModal() {
     // Clear cache on force refresh
     if (forceRefresh) {
       clearCache();
+      setCacheTimestamp(null);
     }
 
     // Abort any existing request
@@ -142,6 +159,7 @@ export function ModelComparisonModal() {
       if (data?.results) {
         setResults(data.results);
         saveToCache(data.results);
+        setCacheTimestamp(Date.now());
       } else {
         setError("Keine Ergebnisse erhalten");
       }
@@ -202,6 +220,11 @@ export function ModelComparisonModal() {
               </DialogTitle>
               <p className="text-sm text-muted-foreground mt-1">
                 Echte Kommentare, echte Antworten von allen 4 Modellen
+                {cacheTimestamp && !isLoading && (
+                  <span className="ml-2 text-xs opacity-70">
+                    · Erstellt: {formatTimestamp(cacheTimestamp)}
+                  </span>
+                )}
               </p>
             </div>
             {!isLoading && results.length > 0 && (
@@ -212,7 +235,7 @@ export function ModelComparisonModal() {
                 className="gap-2"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                Neu laden
+                Neue Beispiele laden
               </Button>
             )}
           </div>

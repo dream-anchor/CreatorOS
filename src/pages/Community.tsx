@@ -814,8 +814,8 @@ export default function Community() {
                         </p>
                       </div>
 
-                      {/* Original post link - only show if valid Instagram permalink exists */}
-                      {comment.post_permalink && comment.post_permalink.includes("instagram.com") && (
+                      {/* Original post link - only show if valid Instagram permalink with shortcode exists */}
+                      {comment.post_permalink && /instagram\.com\/(p|reel|tv)\/[A-Za-z0-9_-]+/.test(comment.post_permalink) && (
                         <Button
                           size="sm"
                           variant="ghost"

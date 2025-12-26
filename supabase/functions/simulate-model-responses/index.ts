@@ -99,6 +99,9 @@ ${writingStyle ? `Schreibstil: ${writingStyle}` : ""}
 ${doList ? `Was du tun sollst: ${doList}` : ""}
 ${dontList ? `Was du vermeiden sollst: ${dontList}` : ""}
 
+WICHTIGE EINSCHRÄNKUNG - ABSOLUTES HASHTAG-VERBOT:
+Du darfst unter KEINEN Umständen Hashtags (#) verwenden. Keine #hashtags, niemals. Schreibe wie ein Mensch in einem Chat, nicht wie ein Marketer.
+
 Schreibe kurze, authentische Antworten (1-2 Sätze). Nutze passende Emojis sparsam.`;
 
     // Generate responses for each comment from each model

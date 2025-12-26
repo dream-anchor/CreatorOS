@@ -127,7 +127,7 @@ export function PostCard({
 
           {/* Right: Actions */}
           <div className="flex items-center gap-3 flex-shrink-0">
-            {group.postPermalink && group.postPermalink.includes("instagram.com") && (
+            {group.postPermalink && /instagram\.com\/(p|reel|tv)\/[A-Za-z0-9_-]+/.test(group.postPermalink) && (
               <Button
                 size="icon"
                 variant="ghost"
