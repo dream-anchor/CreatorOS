@@ -13,6 +13,8 @@ import {
   Ban,
   Trash2,
   Check as CheckIcon,
+  ExternalLink,
+  User,
 } from "lucide-react";
 import { format, formatDistanceToNow, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
@@ -771,79 +773,130 @@ export default function Community() {
         {/* Critical Comments Section */}
         {criticalComments.length > 0 && (
           <Card className="border-destructive/50 bg-destructive/5">
-            <div className="p-4">
-              <div className="flex items-center gap-2 mb-3">
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-4">
                 <AlertTriangle className="h-4 w-4 text-destructive" />
                 <h3 className="font-medium text-sm text-destructive">
                   Zur Prüfung ({criticalComments.length})
                 </h3>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-4">
                 {criticalComments.map((comment) => (
                   <div
                     key={comment.id}
-                    className="flex items-start justify-between gap-3 p-3 bg-background rounded-lg border border-destructive/20"
+                    className="rounded-xl bg-background border border-destructive/20 overflow-hidden"
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="font-medium text-sm">
-                          @{comment.commenter_username}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {format(
-                            new Date(comment.comment_timestamp),
-                            "dd.MM. HH:mm",
-                            { locale: de }
-                          )}
-                        </span>
-                        {comment.sentiment_score !== null && (
-                          <Badge variant="destructive" className="text-xs">
-                            Score: {comment.sentiment_score.toFixed(2)}
-                          </Badge>
+                    {/* Post Context Header */}
+                    <div className="p-4 bg-muted/30 border-b border-border/50 flex items-center gap-3">
+                      {/* Small thumbnail */}
+                      <div className="w-12 h-12 rounded-lg bg-muted flex-shrink-0 overflow-hidden border border-border/30">
+                        {comment.post_image_url ? (
+                          <img
+                            src={comment.post_image_url}
+                            alt="Post"
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <MessageCircle className="h-5 w-5 text-muted-foreground/40" />
+                          </div>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {comment.comment_text}
-                      </p>
+                      
+                      {/* Post caption context */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-muted-foreground mb-0.5">Bezieht sich auf:</p>
+                        <p className="text-sm text-foreground/80 line-clamp-1">
+                          {comment.post_caption || <span className="italic text-muted-foreground">Kein Caption</span>}
+                        </p>
+                      </div>
+
+                      {/* Original post link - only show if valid Instagram permalink exists */}
+                      {comment.post_permalink && comment.post_permalink.includes("instagram.com") && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground flex-shrink-0"
+                          onClick={() => window.open(comment.post_permalink!, "_blank", "noopener,noreferrer")}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Original
+                        </Button>
+                      )}
                     </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      {/* Rehabilitate - move to normal workflow */}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 px-2 gap-1 text-xs border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600"
-                        onClick={() => rehabilitateComment(comment)}
-                      >
-                        <CheckIcon className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">Ist okay</span>
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        onClick={() => moderateComment(comment.id, "hide")}
-                        title="Verbergen"
-                      >
-                        <EyeOff className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        onClick={() => moderateComment(comment.id, "block")}
-                        title="Blockieren"
-                      >
-                        <Ban className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => moderateComment(comment.id, "delete")}
-                        title="Löschen"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+
+                    {/* Critical Comment Content */}
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
+                              <User className="h-3.5 w-3.5 text-muted-foreground" />
+                            </div>
+                            <span className="font-medium text-sm">
+                              @{comment.commenter_username || "Unbekannt"}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {format(
+                                new Date(comment.comment_timestamp),
+                                "dd.MM. HH:mm",
+                                { locale: de }
+                              )}
+                            </span>
+                            {comment.sentiment_score !== null && (
+                              <Badge variant="destructive" className="text-xs">
+                                Score: {comment.sentiment_score.toFixed(2)}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-foreground leading-relaxed pl-9">
+                            {comment.comment_text}
+                          </p>
+                        </div>
+                        
+                        <div className="flex gap-1.5 flex-shrink-0">
+                          {/* Rehabilitate - move to normal workflow */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-3 gap-1.5 text-xs border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/60"
+                            onClick={() => rehabilitateComment(comment)}
+                          >
+                            <CheckIcon className="h-3.5 w-3.5" />
+                            Zulassen & Antworten
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            onClick={() => moderateComment(comment.id, "hide")}
+                            title="Verbergen"
+                          >
+                            <EyeOff className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            onClick={() => moderateComment(comment.id, "block")}
+                            title="Blockieren"
+                          >
+                            <Ban className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => moderateComment(comment.id, "delete")}
+                            title="Löschen"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
