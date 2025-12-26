@@ -359,7 +359,7 @@ export default function DashboardPage() {
                   "shadow-[0_0_40px_rgba(168,85,247,0.4)] hover:shadow-[0_0_60px_rgba(168,85,247,0.6)]",
                   "transition-all duration-500",
                   "group-hover:scale-105",
-                  "animate-pulse hover:animate-none"
+                  "animate-[pulse_2s_ease-in-out_2]"
                 )}
               >
                 {runningAutopilot ? (
