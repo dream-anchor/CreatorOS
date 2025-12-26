@@ -341,11 +341,18 @@ export default function Community() {
 
   const findViolatingEmojis = (text: string, newTerm: string): boolean => {
     const termLower = newTerm.toLowerCase();
-    const emojisToCheck = emojiMappings[termLower] || [];
+    
+    // Collect all emojis to check - use a new array to avoid mutation
+    const emojisToCheck: string[] = [];
+    
+    // Get direct match
+    if (emojiMappings[termLower]) {
+      emojisToCheck.push(...emojiMappings[termLower]);
+    }
 
     // Also check if the term itself appears as part of any emoji mapping key
     for (const [key, emojis] of Object.entries(emojiMappings)) {
-      if (key.includes(termLower) || termLower.includes(key)) {
+      if (key !== termLower && (key.includes(termLower) || termLower.includes(key))) {
         emojisToCheck.push(...emojis);
       }
     }
