@@ -23,65 +23,58 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) throw new Error('Unauthorized');
 
-    console.log(`Starting style analysis for user ${user.id}`);
+    console.log(`Starting style analysis for user ${user.id} - reading from database only`);
 
-    // Get Instagram connection
-    const { data: connection, error: connError } = await supabase
+    // Get Instagram username from meta_connections for context
+    const { data: connection } = await supabase
       .from('meta_connections')
-      .select('*')
+      .select('ig_username')
       .eq('user_id', user.id)
       .single();
 
-    if (connError || !connection) {
-      throw new Error('Keine Instagram-Verbindung gefunden. Bitte verbinde zuerst deinen Account.');
+    const igUsername = connection?.ig_username || 'User';
+
+    // WICHTIG: Lese NUR aus der Datenbank-Tabelle posts (imported posts)
+    // Keine Instagram API Aufrufe mehr!
+    const { data: posts, error: postsError } = await supabase
+      .from('posts')
+      .select('caption, published_at, likes_count, comments_count')
+      .eq('user_id', user.id)
+      .eq('is_imported', true)
+      .not('caption', 'is', null)
+      .order('published_at', { ascending: false })
+      .limit(50);
+
+    if (postsError) {
+      console.error('Database error:', postsError);
+      throw new Error('Fehler beim Lesen der Posts aus der Datenbank');
     }
 
-    if (!connection.token_encrypted || !connection.ig_user_id) {
-      throw new Error('Instagram-Token fehlt. Bitte verbinde deinen Account erneut.');
+    console.log(`Found ${posts?.length || 0} imported posts in database`);
+
+    if (!posts || posts.length === 0) {
+      throw new Error('Keine importierten Posts gefunden. Bitte importiere zuerst Posts in der Post-Historie.');
     }
 
-    const accessToken = connection.token_encrypted;
-    const igUserId = connection.ig_user_id;
-    const igUsername = connection.ig_username || 'Unknown';
-
-    console.log(`Fetching media for IG user ${igUserId} (@${igUsername})`);
-
-    // Fetch last 20 posts from Instagram Graph API
-    const mediaUrl = `https://graph.facebook.com/v17.0/${igUserId}/media?fields=id,caption,timestamp,like_count,comments_count,media_type&limit=20&access_token=${accessToken}`;
-    
-    const mediaResponse = await fetch(mediaUrl);
-    
-    if (!mediaResponse.ok) {
-      const errorData = await mediaResponse.json();
-      console.error('Instagram API error:', errorData);
-      throw new Error(`Instagram API Fehler: ${errorData.error?.message || 'Unbekannter Fehler'}`);
-    }
-
-    const mediaData = await mediaResponse.json();
-    const posts = mediaData.data || [];
-
-    console.log(`Found ${posts.length} posts`);
-
-    if (posts.length === 0) {
-      throw new Error('Keine Posts gefunden. Bitte stelle sicher, dass dein Account Posts hat.');
-    }
-
-    // Filter posts with captions
-    const postsWithCaptions = posts.filter((post: any) => post.caption && post.caption.trim());
+    // Filter posts with valid captions
+    const postsWithCaptions = posts.filter((post: any) => post.caption && post.caption.trim().length > 10);
     
     if (postsWithCaptions.length < 3) {
-      throw new Error('Zu wenige Posts mit Captions gefunden. Mindestens 3 werden benötigt.');
+      throw new Error(`Nur ${postsWithCaptions.length} Posts mit Captions gefunden. Mindestens 3 werden benötigt.`);
     }
 
+    // Take top 20 for analysis
+    const analysisPool = postsWithCaptions.slice(0, 20);
+
     // Prepare captions for analysis
-    const captionsText = postsWithCaptions
+    const captionsText = analysisPool
       .map((post: any, index: number) => `POST ${index + 1}:\n"${post.caption}"`)
       .join('\n\n---\n\n');
 
-    console.log(`Analyzing ${postsWithCaptions.length} posts with Ghostwriter prompt`);
+    console.log(`Analyzing ${analysisPool.length} posts with Ghostwriter prompt (from DB, not Instagram API)`);
 
-    // The specific Ghostwriter analysis prompt as requested
-    const analysisPrompt = `Du bist ein erfahrener Ghostwriter. Hier sind ${postsWithCaptions.length} Original-Posts von @${igUsername}. Analysiere seine DNA:
+    // The specific Ghostwriter analysis prompt
+    const analysisPrompt = `Du bist ein erfahrener Ghostwriter. Hier sind ${analysisPool.length} Original-Posts von @${igUsername}. Analysiere seine DNA:
 
 ${captionsText}
 
@@ -136,7 +129,7 @@ Antworte NUR mit validem JSON in diesem Format:
   "unique_elements": ["Besonderheit 1", "Besonderheit 2"]
 }`;
 
-    // Call Lovable AI with GPT-5 or Gemini Pro for best quality
+    // Call Lovable AI with GPT-5 for best quality
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -144,7 +137,7 @@ Antworte NUR mit validem JSON in diesem Format:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'openai/gpt-5', // Using GPT-5 for nuanced language analysis
+        model: 'openai/gpt-5',
         messages: [
           { 
             role: 'system', 
@@ -210,18 +203,22 @@ Antworte NUR mit validem JSON in diesem Format:
       event_type: 'style_analysis_completed',
       level: 'info',
       details: { 
-        posts_analyzed: postsWithCaptions.length,
+        posts_analyzed: analysisPool.length,
+        total_posts_in_db: posts.length,
         model: 'openai/gpt-5',
-        auto_saved: true
+        auto_saved: true,
+        source: 'database' // Wichtig: Kennzeichnung dass Daten aus DB kommen
       },
     });
 
     return new Response(JSON.stringify({ 
       success: true,
       analysis,
-      posts_analyzed: postsWithCaptions.length,
+      posts_analyzed: analysisPool.length,
+      total_posts_available: posts.length,
       saved: true,
-      analyzed_at: new Date().toISOString()
+      analyzed_at: new Date().toISOString(),
+      source: 'database'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

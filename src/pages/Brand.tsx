@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,9 +12,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { BrandRules } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Save, Plus, X, Sparkles, Brain, Wand2, Instagram, CheckCircle2, Clock, RefreshCw } from "lucide-react";
+import { Loader2, Save, Plus, X, Sparkles, Brain, Wand2, CheckCircle2, Clock, Database, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format } from "date-fns";
 import { de } from "date-fns/locale";
 
 const AI_MODELS = [
@@ -24,6 +25,7 @@ const AI_MODELS = [
 
 export default function BrandPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [brand, setBrand] = useState<BrandRules | null>(null);
@@ -31,12 +33,13 @@ export default function BrandPage() {
   const [dontInput, setDontInput] = useState("");
   const [tabooInput, setTabooInput] = useState("");
   
-  // Style Analysis State
-  const [analyzing, setAnalyzing] = useState(false);
+  // Data source state
+  const [postCount, setPostCount] = useState(0);
 
   useEffect(() => {
     if (user) {
       loadBrandRules();
+      loadPostCount();
     }
   }, [user]);
 
@@ -53,6 +56,21 @@ export default function BrandPage() {
       toast.error("Fehler beim Laden: " + error.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadPostCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from("posts")
+        .select("*", { count: "exact", head: true })
+        .eq("is_imported", true);
+
+      if (!error && count !== null) {
+        setPostCount(count);
+      }
+    } catch (error) {
+      console.error("Error loading post count:", error);
     }
   };
 
@@ -90,23 +108,12 @@ export default function BrandPage() {
     }
   };
 
-  const handleStyleAnalysis = async () => {
-    setAnalyzing(true);
-
+  const formatLastAnalysisDate = () => {
+    if (!brand?.last_style_analysis_at) return null;
     try {
-      const { data, error } = await supabase.functions.invoke("analyze-style");
-
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      // Reload brand rules to get the auto-saved analysis
-      await loadBrandRules();
-      
-      toast.success(`${data.posts_analyzed} Posts analysiert und gespeichert!`);
-    } catch (error: any) {
-      toast.error("Analyse fehlgeschlagen: " + error.message);
-    } finally {
-      setAnalyzing(false);
+      return format(new Date(brand.last_style_analysis_at), "dd.MM.yyyy 'um' HH:mm", { locale: de });
+    } catch {
+      return null;
     }
   };
 
@@ -166,61 +173,62 @@ export default function BrandPage() {
       }
     >
       <div className="space-y-6">
-        {/* KI-Stil-Analyse Card */}
+        {/* Datenquelle Info-Box */}
         <Card className="glass-card border-2 border-primary/30 bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5">
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Wand2 className="h-5 w-5 text-primary" />
-              <CardTitle>KI-Stil-Analyse</CardTitle>
+              <Database className="h-5 w-5 text-primary" />
+              <CardTitle>Deine Stil-DNA</CardTitle>
             </div>
             <CardDescription>
-              Analysiere deinen Instagram-Account automatisch mit GPT-5 und lerne deinen einzigartigen Schreibstil
+              Dein Schreibstil, automatisch aus deiner Post-Historie analysiert
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex-1 space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Die KI analysiert deine letzten 20 Instagram-Posts und erstellt eine präzise System-Instruktion für den Generator.
-                </p>
-                {formatLastAnalysis() && (
+              <div className="flex-1 space-y-3">
+                {/* Data Source Info */}
+                <div className="flex items-center gap-2 text-sm">
+                  <Database className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Datenbasis:</span>
+                  <Badge variant="secondary" className="font-medium">
+                    {postCount} Posts aus deiner Historie
+                  </Badge>
+                </div>
+                
+                {/* Last Analysis Info */}
+                {formatLastAnalysisDate() && (
                   <div className="flex items-center gap-2 text-sm">
                     <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Letzte Analyse:</span>
+                    <span className="text-muted-foreground">Letztes Update:</span>
                     <Badge variant="outline" className="font-normal">
-                      {formatLastAnalysis()}
+                      {formatLastAnalysisDate()}
                     </Badge>
                   </div>
                 )}
+                
+                {/* Status */}
                 {brand?.style_system_prompt && (
                   <div className="flex items-center gap-2 text-sm">
                     <CheckCircle2 className="h-4 w-4 text-success" />
                     <span className="text-success">Stil-Profil aktiv</span>
                   </div>
                 )}
+                
+                {postCount === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Importiere zuerst deine Posts in der Historie, um dein Stil-Profil zu erstellen.
+                  </p>
+                )}
               </div>
+              
               <Button 
-                onClick={handleStyleAnalysis} 
-                disabled={analyzing}
-                size="lg"
+                variant="outline"
+                onClick={() => navigate("/content-library")}
                 className="shrink-0"
               >
-                {analyzing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Analysiere...
-                  </>
-                ) : brand?.last_style_analysis_at ? (
-                  <>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Erneut analysieren
-                  </>
-                ) : (
-                  <>
-                    <Instagram className="mr-2 h-4 w-4" />
-                    Meinen Account analysieren
-                  </>
-                )}
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Daten in Historie aktualisieren
               </Button>
             </div>
 
@@ -232,7 +240,7 @@ export default function BrandPage() {
                   value={brand.style_system_prompt}
                   onChange={(e) => setBrand(brand ? { ...brand, style_system_prompt: e.target.value } : null)}
                   className="min-h-[150px] text-sm font-mono bg-muted/30"
-                  placeholder="Die System-Instruktion wird nach der Analyse hier angezeigt..."
+                  placeholder="Die System-Instruktion wird nach dem Import und der Analyse hier angezeigt..."
                 />
                 <p className="text-xs text-muted-foreground">
                   Diese Instruktion wird automatisch vom Generator verwendet. Du kannst sie manuell anpassen.
