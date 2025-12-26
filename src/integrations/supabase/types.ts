@@ -474,6 +474,7 @@ export type Database = {
           description: string | null
           filename: string | null
           id: string
+          is_reference: boolean | null
           is_selfie: boolean | null
           last_used_at: string | null
           mood: string | null
@@ -490,6 +491,7 @@ export type Database = {
           description?: string | null
           filename?: string | null
           id?: string
+          is_reference?: boolean | null
           is_selfie?: boolean | null
           last_used_at?: string | null
           mood?: string | null
@@ -506,6 +508,7 @@ export type Database = {
           description?: string | null
           filename?: string | null
           id?: string
+          is_reference?: boolean | null
           is_selfie?: boolean | null
           last_used_at?: string | null
           mood?: string | null
