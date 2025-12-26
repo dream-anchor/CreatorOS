@@ -84,6 +84,9 @@ export default {
           failed: "hsl(var(--status-failed))",
           rejected: "hsl(var(--status-rejected))",
         },
+        "status-review": "hsl(var(--status-review))",
+        "status-scheduled": "hsl(var(--status-scheduled))",
+        "status-published": "hsl(var(--status-published))",
         aurora: {
           cyan: "hsl(var(--aurora-cyan))",
           violet: "hsl(var(--aurora-violet))",
