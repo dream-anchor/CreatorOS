@@ -354,10 +354,10 @@ export default function Community() {
     return emojisToCheck.some((emoji) => text.includes(emoji));
   };
 
-  const sanitizeExistingReplies = async (newTerm: string) => {
-    // Find comments that have replies containing forbidden emojis
+  const sanitizeExistingReplies = async (newTerms: string[]) => {
+    // Find comments that have replies containing forbidden emojis for ANY of the new terms
     const violatingComments = comments.filter(
-      (c) => c.editedReply && findViolatingEmojis(c.editedReply, newTerm)
+      (c) => c.editedReply && newTerms.some((term) => findViolatingEmojis(c.editedReply!, term))
     );
 
     if (violatingComments.length === 0) {
@@ -366,18 +366,19 @@ export default function Community() {
 
     toast.info(`🔄 Korrigiere Emoji-Stil in ${violatingComments.length} Antworten...`);
 
-    // Mark comments as being sanitized
-    setSanitizingComments(new Set(violatingComments.map((c) => c.id)));
+    // Mark comments as being sanitized IMMEDIATELY for UI feedback
+    const sanitizingIds = new Set(violatingComments.map((c) => c.id));
+    setSanitizingComments(sanitizingIds);
 
-    // Regenerate each violating reply
-    for (const comment of violatingComments) {
+    // Regenerate ALL violating replies in PARALLEL
+    const regeneratePromises = violatingComments.map(async (comment) => {
       try {
         const { data, error } = await supabase.functions.invoke("regenerate-reply", {
           body: { comment_id: comment.id, model: selectedAiModel },
         });
 
         if (!error && data?.new_reply) {
-          // Update local state with new reply
+          // Update local state with new reply immediately when this one completes
           setComments((prev) =>
             prev.map((c) =>
               c.id === comment.id
@@ -385,15 +386,31 @@ export default function Community() {
                 : c
             )
           );
+          // Remove this comment from sanitizing set
+          setSanitizingComments((prev) => {
+            const next = new Set(prev);
+            next.delete(comment.id);
+            return next;
+          });
+          return { success: true, id: comment.id };
         }
+        return { success: false, id: comment.id };
       } catch (err) {
         console.error("Regenerate error:", err);
+        return { success: false, id: comment.id };
       }
-    }
+    });
 
-    // Clear sanitizing state
+    // Wait for all to complete
+    const results = await Promise.all(regeneratePromises);
+    const successCount = results.filter((r) => r.success).length;
+
+    // Clear any remaining sanitizing state
     setSanitizingComments(new Set());
-    toast.success(`✨ ${violatingComments.length} Antworten bereinigt!`);
+    
+    if (successCount > 0) {
+      toast.success(`✨ ${successCount} Antworten bereinigt!`);
+    }
   };
 
   // Add multiple emoji nogo terms at once
@@ -434,10 +451,8 @@ export default function Community() {
           : `${newTerms.length} Begriffe zu Emoji-No-Gos hinzugefügt`
       );
 
-      // Retroactive sanitization for all new terms
-      for (const term of newTerms) {
-        await sanitizeExistingReplies(term);
-      }
+      // Retroactive sanitization for ALL new terms at once (parallel)
+      await sanitizeExistingReplies(newTerms);
     }
   };
 
