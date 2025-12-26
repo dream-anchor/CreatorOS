@@ -12,10 +12,7 @@ import Topics from "./pages/Topics";
 import Generator from "./pages/Generator";
 import Review from "./pages/Review";
 import Calendar from "./pages/Calendar";
-import MetaSettings from "./pages/MetaSettings";
-import InstagramSettings from "./pages/InstagramSettings";
-import DebugOAuth from "./pages/DebugOAuth";
-import Logs from "./pages/Logs";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,11 +33,8 @@ const App = () => (
           <Route path="/generator" element={<ProtectedRoute><Generator /></ProtectedRoute>} />
           <Route path="/review" element={<ProtectedRoute><Review /></ProtectedRoute>} />
           <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
-          <Route path="/settings/meta" element={<ProtectedRoute><MetaSettings /></ProtectedRoute>} />
-          <Route path="/settings/instagram" element={<ProtectedRoute><InstagramSettings /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><MetaSettings /></ProtectedRoute>} />
-          <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
-          <Route path="/debug/oauth" element={<ProtectedRoute><DebugOAuth /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          <Route path="/settings/*" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
