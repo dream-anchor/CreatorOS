@@ -10,20 +10,39 @@ interface AppLayoutProps {
 
 export function AppLayout({ children, title, description, actions }: AppLayoutProps) {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen relative">
+      {/* Aurora Background Effects */}
+      <div className="aurora-container">
+        <div className="aurora-blob aurora-blob-1 animate-aurora" />
+        <div className="aurora-blob aurora-blob-2 animate-aurora" />
+        <div className="aurora-blob aurora-blob-3 animate-aurora" />
+      </div>
+
       <AppSidebar />
-      <main className="pl-64">
-        <div className="p-8">
-          <div className="mb-8 flex items-start justify-between">
+      
+      <main className="pl-72 relative z-10">
+        <div className="p-10">
+          {/* Header */}
+          <div className="mb-10 flex items-start justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">{title}</h1>
+              <h1 className="text-3xl font-bold text-foreground font-display tracking-tight">
+                {title}
+              </h1>
               {description && (
-                <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+                <p className="mt-2 text-base text-muted-foreground">
+                  {description}
+                </p>
               )}
             </div>
-            {actions && <div className="flex items-center gap-3">{actions}</div>}
+            {actions && (
+              <div className="flex items-center gap-4">{actions}</div>
+            )}
           </div>
-          {children}
+          
+          {/* Content */}
+          <div className="animate-fade-in">
+            {children}
+          </div>
         </div>
       </main>
     </div>

@@ -66,32 +66,39 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen relative">
+      {/* Aurora Background Effects */}
+      <div className="aurora-container">
+        <div className="aurora-blob aurora-blob-1 animate-aurora" />
+        <div className="aurora-blob aurora-blob-2 animate-aurora" />
+        <div className="aurora-blob aurora-blob-3 animate-aurora" />
+      </div>
+
       {/* Left side - Form */}
-      <div className="flex w-full lg:w-1/2 flex-col justify-center px-8 lg:px-16">
+      <div className="flex w-full lg:w-1/2 flex-col justify-center px-8 lg:px-16 relative z-10">
         <div className="mx-auto w-full max-w-md">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 glow-effect">
-              <Instagram className="h-6 w-6 text-primary" />
+          <div className="flex items-center gap-4 mb-10">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 backdrop-blur-sm border border-white/10 shadow-glow-sm">
+              <Instagram className="h-7 w-7 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-foreground">IG Autopublisher</h1>
+              <h1 className="text-xl font-bold text-foreground font-display tracking-tight">IG Autopublisher</h1>
               <p className="text-sm text-muted-foreground">v1.0</p>
             </div>
           </div>
 
-          <h2 className="text-2xl font-bold text-foreground mb-2">
+          <h2 className="text-3xl font-bold text-foreground mb-3 font-display tracking-tight">
             {isSignUp ? "Konto erstellen" : "Willkommen zurück"}
           </h2>
-          <p className="text-muted-foreground mb-8">
+          <p className="text-muted-foreground mb-10">
             {isSignUp
               ? "Erstelle dein Konto, um loszulegen"
               : "Melde dich an, um fortzufahren"}
           </p>
 
-          <form onSubmit={handleAuth} className="space-y-4">
+          <form onSubmit={handleAuth} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email">E-Mail</Label>
+              <Label htmlFor="email" className="text-sm font-medium">E-Mail</Label>
               <Input
                 id="email"
                 type="email"
@@ -99,12 +106,11 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="h-11"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Passwort</Label>
+              <Label htmlFor="password" className="text-sm font-medium">Passwort</Label>
               <Input
                 id="password"
                 type="password"
@@ -112,21 +118,20 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="h-11"
               />
             </div>
 
-            <Button type="submit" className="w-full h-11" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isSignUp ? "Registrieren" : "Anmelden"}
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
+          <p className="mt-8 text-center text-sm text-muted-foreground">
             {isSignUp ? "Schon ein Konto?" : "Noch kein Konto?"}{" "}
             <button
               onClick={() => setIsSignUp(!isSignUp)}
-              className="font-medium text-primary hover:underline"
+              className="font-medium text-primary hover:text-primary/80 transition-colors"
             >
               {isSignUp ? "Anmelden" : "Registrieren"}
             </button>
@@ -135,17 +140,17 @@ export default function LoginPage() {
       </div>
 
       {/* Right side - Branding */}
-      <div className="hidden lg:flex w-1/2 flex-col items-center justify-center bg-gradient-to-br from-primary/20 via-background to-background p-16">
+      <div className="hidden lg:flex w-1/2 flex-col items-center justify-center p-16 relative z-10">
         <div className="max-w-md text-center">
-          <div className="mb-8 flex justify-center">
-            <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-primary/10 glow-effect">
-              <Instagram className="h-12 w-12 text-primary" />
+          <div className="mb-10 flex justify-center">
+            <div className="flex h-28 w-28 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/10 to-accent/10 backdrop-blur-xl border border-white/10 shadow-glow-md animate-glow">
+              <Instagram className="h-14 w-14 text-primary" />
             </div>
           </div>
-          <h2 className="text-3xl font-bold text-foreground mb-4">
+          <h2 className="text-4xl font-bold text-foreground mb-5 font-display tracking-tight">
             Automatisiere deinen Instagram Content
           </h2>
-          <p className="text-lg text-muted-foreground">
+          <p className="text-lg text-muted-foreground leading-relaxed">
             KI-gestützte Caption-Generierung, Brand Guidelines, und geplantes Publishing – alles an einem Ort.
           </p>
         </div>
