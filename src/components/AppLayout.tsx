@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { AppSidebar } from "./AppSidebar";
 import { ThemeToggle } from "./ThemeToggle";
+import { CoPilot } from "./community/CoPilot";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -47,6 +48,9 @@ export function AppLayout({ children, title, description, actions }: AppLayoutPr
           </div>
         </div>
       </main>
+      
+      {/* Global Co-Pilot AI Agent */}
+      <CoPilot />
     </div>
   );
 }
