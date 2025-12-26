@@ -65,14 +65,35 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) throw new Error('Unauthorized');
 
+    // Parse request body for mode
+    let mode = 'full'; // Default: full import
+    try {
+      const body = await req.json();
+      if (body?.mode === 'sync_recent') {
+        mode = 'sync_recent';
+      }
+    } catch {
+      // No body or invalid JSON - use default mode
+    }
+
     // Get user's Meta connection
     const { data: connection, error: connError } = await supabase
       .from('meta_connections')
       .select('*')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (connError || !connection?.token_encrypted) {
+      // For sync_recent, silently return if not connected
+      if (mode === 'sync_recent') {
+        return new Response(JSON.stringify({ 
+          success: true, 
+          synced: 0,
+          message: 'Instagram nicht verbunden - Sync übersprungen'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       throw new Error('Instagram nicht verbunden. Bitte zuerst verbinden.');
     }
 
@@ -80,16 +101,26 @@ serve(async (req) => {
     const igUserId = connection.ig_user_id;
 
     if (!igUserId) {
+      if (mode === 'sync_recent') {
+        return new Response(JSON.stringify({ 
+          success: true, 
+          synced: 0,
+          message: 'IG User ID nicht gefunden - Sync übersprungen'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       throw new Error('Instagram User ID nicht gefunden');
     }
 
-    console.log(`Starting deep import for user ${user.id}, IG user ${igUserId}`);
+    // Mode-specific settings
+    const MAX_POSTS = mode === 'sync_recent' ? 50 : 1000;
+    const BATCH_SIZE = mode === 'sync_recent' ? 50 : 50;
+    const logPrefix = mode === 'sync_recent' ? 'Smart Sync' : 'Deep Import';
 
-    // Pagination settings
-    const MAX_POSTS = 1000; // Safety limit
-    const BATCH_SIZE = 50; // Posts per API request
+    console.log(`${logPrefix} starting for user ${user.id}, IG user ${igUserId}, mode: ${mode}`);
+
     let allMedia: InstagramMedia[] = [];
-    let nextUrl: string | null = null;
     let pageCount = 0;
 
     // Initial request
@@ -97,16 +128,27 @@ serve(async (req) => {
     const fields = 'id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count';
     let currentUrl = `${baseUrl}?fields=${fields}&limit=${BATCH_SIZE}&access_token=${accessToken}`;
 
-    // Pagination loop
+    // Pagination loop (for sync_recent, only 1 page)
     while (currentUrl && allMedia.length < MAX_POSTS) {
       pageCount++;
-      console.log(`Fetching page ${pageCount}, current total: ${allMedia.length}`);
+      console.log(`${logPrefix}: Fetching page ${pageCount}, current total: ${allMedia.length}`);
 
       const response = await fetch(currentUrl);
       
       if (!response.ok) {
         const errorData = await response.json();
         console.error('Instagram API error:', errorData);
+        
+        // For sync_recent, don't throw - just return gracefully
+        if (mode === 'sync_recent') {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            synced: 0,
+            message: 'API-Fehler beim Sync'
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
         throw new Error(errorData.error?.message || 'Instagram API Fehler');
       }
 
@@ -114,14 +156,18 @@ serve(async (req) => {
       
       if (data.data && data.data.length > 0) {
         allMedia = [...allMedia, ...data.data];
-        console.log(`Page ${pageCount}: Got ${data.data.length} posts, total now: ${allMedia.length}`);
+        console.log(`${logPrefix}: Page ${pageCount}: Got ${data.data.length} posts, total now: ${allMedia.length}`);
       }
 
-      // Check for next page
+      // For sync_recent, only fetch first page (50 posts)
+      if (mode === 'sync_recent') {
+        break;
+      }
+
+      // Check for next page (full import only)
       if (data.paging?.next && allMedia.length < MAX_POSTS) {
         currentUrl = data.paging.next;
       } else {
-        currentUrl = null as unknown as string; // Type fix to break loop
         break;
       }
 
@@ -129,25 +175,24 @@ serve(async (req) => {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    console.log(`Import complete: ${allMedia.length} posts fetched in ${pageCount} pages`);
+    console.log(`${logPrefix} complete: ${allMedia.length} posts fetched in ${pageCount} pages`);
 
     if (allMedia.length === 0) {
       return new Response(JSON.stringify({ 
         success: true, 
         imported: 0,
-        message: 'Keine Posts zum Importieren gefunden'
+        synced: 0,
+        message: 'Keine Posts gefunden'
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Calculate virality scores and prepare data for upsert
+    // Prepare data for upsert
     const postsToUpsert = allMedia.map(media => {
       const likes = media.like_count || 0;
       const comments = media.comments_count || 0;
-      const saved = 0; // Instagram API doesn't provide this for regular media endpoint
-      const viralityScore = calculateViralityScore(likes, comments, saved);
-      const performanceLabel = getPerformanceLabel(likes, comments, saved);
+      const saved = 0;
 
       return {
         user_id: user.id,
@@ -165,15 +210,13 @@ serve(async (req) => {
       };
     });
 
-    // Batch upsert - split into chunks to avoid timeout
+    // Batch upsert
     const UPSERT_BATCH_SIZE = 100;
-    let insertedCount = 0;
-    let updatedCount = 0;
+    let upsertedCount = 0;
 
     for (let i = 0; i < postsToUpsert.length; i += UPSERT_BATCH_SIZE) {
       const batch = postsToUpsert.slice(i, i + UPSERT_BATCH_SIZE);
       
-      // Use upsert with ig_media_id as conflict key
       const { data: upsertedData, error: upsertError } = await supabase
         .from('posts')
         .upsert(batch, { 
@@ -184,15 +227,38 @@ serve(async (req) => {
 
       if (upsertError) {
         console.error(`Batch ${i / UPSERT_BATCH_SIZE + 1} error:`, upsertError);
-        // Continue with other batches even if one fails
       } else {
-        insertedCount += upsertedData?.length || 0;
+        upsertedCount += upsertedData?.length || 0;
       }
 
-      console.log(`Upserted batch ${i / UPSERT_BATCH_SIZE + 1}: ${batch.length} posts`);
+      console.log(`${logPrefix}: Upserted batch ${i / UPSERT_BATCH_SIZE + 1}: ${batch.length} posts`);
     }
 
-    // Calculate top performers (Top 1%)
+    // For sync_recent, return minimal response
+    if (mode === 'sync_recent') {
+      // Log the sync (only if we actually synced something)
+      if (upsertedCount > 0) {
+        await supabase.from('logs').insert({
+          user_id: user.id,
+          event_type: 'instagram_smart_sync',
+          level: 'info',
+          details: {
+            synced_count: upsertedCount,
+            mode: 'sync_recent',
+          },
+        });
+      }
+
+      return new Response(JSON.stringify({ 
+        success: true,
+        synced: upsertedCount,
+        message: `${upsertedCount} Posts synchronisiert`
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Full import: Calculate top performers
     const allScores = postsToUpsert.map(p => 
       calculateViralityScore(p.likes_count, p.comments_count, p.saved_count)
     );
@@ -208,13 +274,13 @@ serve(async (req) => {
       details: {
         total_fetched: allMedia.length,
         pages_fetched: pageCount,
-        inserted_count: insertedCount,
+        inserted_count: upsertedCount,
         top_1_percent_threshold: top1PercentThreshold,
         unicorn_count: unicornCount,
       },
     });
 
-    // Find the best performing post for preview
+    // Find best performing post
     let bestPost = postsToUpsert[0];
     let bestScore = 0;
     for (const post of postsToUpsert) {
