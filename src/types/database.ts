@@ -140,6 +140,7 @@ export interface Settings {
   preferred_hours: { start: number; end: number };
   auto_sync_enabled?: boolean;
   last_sync_at?: string | null;
+  preferred_ai_model?: string;
   created_at: string;
   updated_at: string;
 }
