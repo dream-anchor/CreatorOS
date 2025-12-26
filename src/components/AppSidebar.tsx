@@ -11,6 +11,7 @@ import {
   Zap,
   ClipboardCheck,
   FolderOpen,
+  ImageIcon,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -19,13 +20,14 @@ import { toast } from "sonner";
 const studioNav = [
   { name: "Cockpit", href: "/dashboard", icon: LayoutDashboard },
   { name: "Magic Create", href: "/generator", icon: Sparkles, highlight: true },
-  { name: "Tinder Review", href: "/review", icon: ClipboardCheck },
+  { name: "Review", href: "/review", icon: ClipboardCheck },
   { name: "Planung", href: "/calendar", icon: CalendarClock },
 ];
 
 const brandNav = [
   { name: "Meine DNA", href: "/brand", icon: Fingerprint },
   { name: "Themen", href: "/topics", icon: Hash },
+  { name: "Media-Archiv", href: "/media", icon: ImageIcon },
   { name: "Content-Pool", href: "/library", icon: FolderOpen },
 ];
 
@@ -49,8 +51,8 @@ export function AppSidebar() {
         className={cn(
           "flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 group",
           isActive
-            ? "bg-white/10 text-foreground shadow-glow-sm border border-white/10"
-            : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+            ? "bg-primary/10 text-foreground shadow-sm border border-primary/20"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
           isHighlight && !isActive && "text-primary hover:text-primary"
         )}
       >
@@ -71,11 +73,11 @@ export function AppSidebar() {
   };
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-72 bg-sidebar/80 backdrop-blur-2xl border-r border-white/5">
+    <aside className="fixed left-0 top-0 z-40 h-screen w-72 bg-card/80 backdrop-blur-xl border-r border-border">
       <div className="flex h-full flex-col">
         {/* Logo */}
-        <div className="flex h-20 items-center gap-4 px-6 border-b border-white/5">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 backdrop-blur-sm border border-white/10 shadow-glow-sm">
+        <div className="flex h-20 items-center gap-4 px-6 border-b border-border">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-accent/15 border border-primary/20">
             <Sparkles className="h-5 w-5 text-primary" />
           </div>
           <div>
@@ -114,14 +116,14 @@ export function AppSidebar() {
         </nav>
 
         {/* Footer - System */}
-        <div className="border-t border-white/5 p-4 space-y-1">
+        <div className="border-t border-border p-4 space-y-1">
           <Link
             to="/settings"
             className={cn(
               "flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
               location.pathname === "/settings" || location.pathname.startsWith("/settings/")
-                ? "bg-white/10 text-foreground shadow-glow-sm border border-white/10"
-                : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                ? "bg-primary/10 text-foreground shadow-sm border border-primary/20"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
             )}
           >
             <Settings className={cn(
@@ -132,7 +134,7 @@ export function AppSidebar() {
           </Link>
           <button
             onClick={handleSignOut}
-            className="flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground transition-all duration-200"
+            className="flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-200"
           >
             <LogOut className="h-4.5 w-4.5" />
             Abmelden
