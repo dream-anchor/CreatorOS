@@ -64,25 +64,24 @@ export interface Post {
   hashtags: string | null;
   alt_text: string | null;
   format: PostFormat;
-  slides: SlideContent[] | Record<string, unknown>[] | null;
+  slides?: unknown[] | null;
   scheduled_at: string | null;
   approved_at: string | null;
   approved_by: string | null;
   published_at: string | null;
   ig_media_id: string | null;
   error_message: string | null;
-  slides: SlideContent[] | null;
   // Engagement metrics
-  likes_count: number;
-  comments_count: number;
-  saved_count: number;
-  impressions_count: number;
-  is_imported: boolean;
-  original_ig_permalink: string | null;
-  original_media_url: string | null;
+  likes_count?: number;
+  comments_count?: number;
+  saved_count?: number;
+  impressions_count?: number;
+  is_imported?: boolean;
+  original_ig_permalink?: string | null;
+  original_media_url?: string | null;
   // Remix tracking
-  remixed_from_id: string | null;
-  remix_reason: string | null;
+  remixed_from_id?: string | null;
+  remix_reason?: string | null;
   created_at: string;
   updated_at: string;
   topic?: Topic;

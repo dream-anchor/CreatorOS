@@ -34,7 +34,7 @@ interface Slide {
   body: string;
 }
 
-interface ExtendedPost extends Post {
+interface ExtendedPost extends Omit<Post, 'slides'> {
   assets?: Asset[];
   slides?: Slide[] | null;
 }
