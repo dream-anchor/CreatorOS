@@ -59,3 +59,6 @@ verify_jwt = false
 
 [functions.moderate-comment]
 verify_jwt = false
+
+[functions.regenerate-reply]
+verify_jwt = false

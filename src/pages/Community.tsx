@@ -46,6 +46,7 @@ export default function Community() {
   const [emojiNogoTerms, setEmojiNogoTerms] = useState<EmojiNogoTerm[]>([]);
   const [newEmojiTerm, setNewEmojiTerm] = useState("");
   const [smartStrategy, setSmartStrategy] = useState<SmartStrategy>(null);
+  const [sanitizingComments, setSanitizingComments] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadData();
@@ -244,15 +245,86 @@ export default function Community() {
     setBlacklistTopics(blacklistTopics.filter(t => t.id !== id));
   };
 
+  // Emoji mapping for retroactive sanitization
+  const emojiMappings: Record<string, string[]> = {
+    'liebe': ['❤️', '💕', '💖', '💗', '💝', '😍', '🥰', '😘', '💋', '😻', '💘', '💓', '💞', '💟', '♥️', '💑', '💏'],
+    'herzen': ['❤️', '💕', '💖', '💗', '💝', '💘', '💓', '💞', '💟', '♥️', '🖤', '🤍', '💜', '💙', '💚', '🧡', '💛'],
+    'trauer': ['😢', '😭', '😿', '💔', '🥺', '😥', '😪', '😞', '😔', '🥀'],
+    'weinen': ['😢', '😭', '😿', '🥺', '😥', '😪'],
+    'kitsch': ['🥹', '🤗', '😊', '🥰', '💖', '✨', '🌸', '🦋', '🌈', '💫', '🌟', '💝'],
+    'süß': ['🥹', '🤗', '😊', '🥰', '💖', '🍭', '🧁', '🍬', '🎀'],
+    'wut': ['😡', '🤬', '💢', '👊', '😤', '🔥'],
+    'aggression': ['😡', '🤬', '💢', '👊', '🥊', '💥'],
+    'religion': ['🙏', '✝️', '☪️', '✡️', '🕉️', '☯️', '⛪', '🕌', '🕍'],
+    'tod': ['💀', '☠️', '⚰️', '🪦', '👻', '🥀'],
+  };
+
+  const findViolatingEmojis = (text: string, newTerm: string): boolean => {
+    const termLower = newTerm.toLowerCase();
+    const emojisToCheck = emojiMappings[termLower] || [];
+    
+    // Also check if the term itself appears as part of any emoji mapping key
+    for (const [key, emojis] of Object.entries(emojiMappings)) {
+      if (key.includes(termLower) || termLower.includes(key)) {
+        emojisToCheck.push(...emojis);
+      }
+    }
+
+    // Check if any of the forbidden emojis are in the text
+    return emojisToCheck.some(emoji => text.includes(emoji));
+  };
+
+  const sanitizeExistingReplies = async (newTerm: string) => {
+    // Find comments that have replies containing forbidden emojis
+    const violatingComments = comments.filter(c => 
+      c.editedReply && findViolatingEmojis(c.editedReply, newTerm)
+    );
+
+    if (violatingComments.length === 0) {
+      return;
+    }
+
+    toast.info(`🔄 Korrigiere Emoji-Stil in ${violatingComments.length} Antworten...`);
+
+    // Mark comments as being sanitized
+    setSanitizingComments(new Set(violatingComments.map(c => c.id)));
+
+    // Regenerate each violating reply
+    for (const comment of violatingComments) {
+      try {
+        const { data, error } = await supabase.functions.invoke('regenerate-reply', {
+          body: { comment_id: comment.id }
+        });
+
+        if (!error && data?.new_reply) {
+          // Update local state with new reply
+          setComments(prev => prev.map(c => 
+            c.id === comment.id 
+              ? { ...c, editedReply: data.new_reply, approved: false } 
+              : c
+          ));
+        }
+      } catch (err) {
+        console.error('Regenerate error:', err);
+      }
+    }
+
+    // Clear sanitizing state
+    setSanitizingComments(new Set());
+    toast.success(`✨ ${violatingComments.length} Antworten bereinigt!`);
+  };
+
   const addEmojiNogoTerm = async () => {
     if (!newEmojiTerm.trim()) return;
 
     const { data: user } = await supabase.auth.getUser();
     if (!user.user) return;
 
+    const termToAdd = newEmojiTerm.trim();
+
     const { data, error } = await supabase
       .from('emoji_nogo_terms')
-      .insert({ term: newEmojiTerm.trim(), user_id: user.user.id })
+      .insert({ term: termToAdd, user_id: user.user.id })
       .select()
       .single();
 
@@ -265,6 +337,9 @@ export default function Community() {
       setEmojiNogoTerms([data, ...emojiNogoTerms]);
       setNewEmojiTerm("");
       toast.success(`"${data.term}" zu Emoji-No-Gos hinzugefügt`);
+      
+      // Retroactive sanitization
+      await sanitizeExistingReplies(termToAdd);
     }
   };
 
@@ -588,6 +663,7 @@ export default function Community() {
                   onToggleSelect={toggleCommentSelection}
                   onUpdateReply={updateReplyText}
                   onApprove={approveComment}
+                  isSanitizing={sanitizingComments.has(comment.id)}
                 />
               ))}
             </CardContent>
