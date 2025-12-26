@@ -331,7 +331,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Auto-Fill Button - The Heart */}
+          {/* Autopilot Button - The Heart */}
           <Card className="md:col-span-2 lg:col-span-2 relative overflow-hidden group cursor-pointer hover:scale-[1.02] transition-all duration-500"
             onClick={!runningAutopilot ? runAutopilot : undefined}
           >
@@ -344,28 +344,33 @@ export default function DashboardPage() {
             <div className="absolute top-8 right-16 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" style={{ animationDuration: '2.5s', animationDelay: '0.5s' }} />
             <div className="absolute bottom-6 right-12 w-1 h-1 rounded-full bg-violet-400 animate-ping" style={{ animationDuration: '3s', animationDelay: '1s' }} />
             
-            <CardContent className="relative z-10 p-8 h-full flex items-center justify-center">
+            <CardContent className="relative z-10 p-8 h-full flex flex-col items-center justify-center gap-3">
+              <div className="text-center mb-2">
+                <h3 className="text-lg font-bold text-foreground mb-1">🤖 Autopilot: Lücken füllen</h3>
+                <p className="text-sm text-muted-foreground">Keine Zeit? Die KI plant automatisch Content für leere Tage im Kalender.</p>
+              </div>
               <Button 
                 disabled={runningAutopilot}
                 className={cn(
-                  "h-16 px-10 text-lg font-semibold rounded-2xl",
+                  "h-14 px-8 text-base font-semibold rounded-2xl",
                   "bg-gradient-to-r from-primary via-cyan-500 to-violet-500",
                   "hover:from-primary/90 hover:via-cyan-500/90 hover:to-violet-500/90",
                   "border-2 border-white/20 hover:border-white/40",
                   "shadow-[0_0_40px_rgba(168,85,247,0.4)] hover:shadow-[0_0_60px_rgba(168,85,247,0.6)]",
                   "transition-all duration-500",
-                  "group-hover:scale-105"
+                  "group-hover:scale-105",
+                  "animate-pulse hover:animate-none"
                 )}
               >
                 {runningAutopilot ? (
                   <>
-                    <Loader2 className="mr-3 h-6 w-6 animate-spin" />
+                    <Loader2 className="mr-3 h-5 w-5 animate-spin" />
                     Generiere Entwürfe...
                   </>
                 ) : (
                   <>
-                    <Wand2 className="mr-3 h-6 w-6" />
-                    ✨ Woche automatisch füllen
+                    <Wand2 className="mr-3 h-5 w-5" />
+                    Autopilot starten
                   </>
                 )}
               </Button>

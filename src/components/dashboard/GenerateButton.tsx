@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Sparkles } from "lucide-react";
+import { Lightbulb } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function GenerateButton() {
@@ -36,14 +36,17 @@ export function GenerateButton() {
         {/* Content */}
         <div className="relative z-10 h-full flex flex-col items-center justify-center p-6 text-center">
           <div className="p-4 rounded-2xl bg-primary/20 group-hover:bg-primary/30 transition-colors mb-4 group-hover:scale-110 duration-300">
-            <Sparkles className="h-8 w-8 text-primary group-hover:text-white transition-colors" />
+            <Lightbulb className="h-8 w-8 text-primary group-hover:text-white transition-colors" />
           </div>
           <h3 className="text-xl font-bold text-foreground mb-2">
-            Jetzt Post generieren
+            ✨ Eine Idee umsetzen
           </h3>
-          <p className="text-sm text-muted-foreground">
-            Erstelle deinen nächsten viralen Post
+          <p className="text-sm text-muted-foreground mb-4">
+            Erstelle gezielt EINEN Post zu einem Thema deiner Wahl.
           </p>
+          <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/20 text-primary text-sm font-medium group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
+            Manuellen Entwurf starten
+          </span>
         </div>
 
         <style>{`
