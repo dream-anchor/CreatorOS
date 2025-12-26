@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   TrendingUp,
   ArrowRight,
+  RefreshCw,
+  Check,
 } from "lucide-react";
 import { format, addDays, startOfDay, endOfDay } from "date-fns";
 import { de } from "date-fns/locale";
@@ -27,6 +29,8 @@ import { RingProgress } from "@/components/dashboard/RingProgress";
 import { WaveAnimation } from "@/components/dashboard/WaveAnimation";
 import { cn } from "@/lib/utils";
 
+type SyncStatus = 'idle' | 'syncing' | 'done' | 'error';
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
@@ -35,6 +39,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [runningAutopilot, setRunningAutopilot] = useState(false);
   const [profile, setProfile] = useState<{ display_name: string | null } | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const syncAttempted = useRef(false);
 
   useEffect(() => {
     if (user) {
@@ -42,13 +48,30 @@ export default function DashboardPage() {
     }
   }, [user]);
 
+  // Smart Sync on mount (only once per session)
+  useEffect(() => {
+    if (user && !syncAttempted.current && !loading) {
+      syncAttempted.current = true;
+      runSmartSync();
+    }
+  }, [user, loading]);
+
+  // Listen for workspace-reset events
+  useEffect(() => {
+    const handleWorkspaceReset = () => {
+      loadData();
+    };
+    window.addEventListener('workspace-reset', handleWorkspaceReset);
+    return () => window.removeEventListener('workspace-reset', handleWorkspaceReset);
+  }, []);
+
   const loadData = async () => {
     try {
       const [postsRes, connRes, settingsRes, profileRes] = await Promise.all([
         supabase.from("posts").select("*").order("created_at", { ascending: false }),
-        supabase.from("meta_connections").select("*").single(),
-        supabase.from("settings").select("*").single(),
-        supabase.from("profiles").select("display_name").single(),
+        supabase.from("meta_connections").select("*").maybeSingle(),
+        supabase.from("settings").select("*").maybeSingle(),
+        supabase.from("profiles").select("display_name").maybeSingle(),
       ]);
 
       if (postsRes.data) setPosts(postsRes.data as Post[]);
@@ -59,6 +82,41 @@ export default function DashboardPage() {
       console.error("Error loading data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runSmartSync = async () => {
+    setSyncStatus('syncing');
+    try {
+      const { data, error } = await supabase.functions.invoke("fetch-instagram-history", {
+        body: { mode: 'sync_recent' }
+      });
+      
+      if (error) {
+        console.warn('Smart sync failed:', error);
+        setSyncStatus('error');
+        return;
+      }
+
+      if (data?.synced > 0) {
+        // Reload posts to get updated data
+        const { data: postsRes } = await supabase
+          .from("posts")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (postsRes) setPosts(postsRes as Post[]);
+      }
+
+      setSyncStatus('done');
+      
+      // Reset to idle after 3 seconds
+      setTimeout(() => {
+        setSyncStatus('idle');
+      }, 3000);
+    } catch (error) {
+      console.warn('Smart sync error:', error);
+      setSyncStatus('error');
+      setTimeout(() => setSyncStatus('idle'), 3000);
     }
   };
 
@@ -109,8 +167,38 @@ export default function DashboardPage() {
   return (
     <AppLayout title="" description="">
       <div className="space-y-8">
-        {/* Greeting Header */}
-        <GreetingHeader userName={profile?.display_name || undefined} />
+        {/* Greeting Header with Sync Status */}
+        <div className="flex items-center justify-between">
+          <GreetingHeader userName={profile?.display_name || undefined} />
+          
+          {/* Subtle Sync Indicator */}
+          <div className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs transition-all duration-500",
+            syncStatus === 'syncing' && "bg-primary/10 text-primary",
+            syncStatus === 'done' && "bg-emerald-500/10 text-emerald-500",
+            syncStatus === 'error' && "bg-destructive/10 text-destructive",
+            syncStatus === 'idle' && "opacity-0"
+          )}>
+            {syncStatus === 'syncing' && (
+              <>
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                <span>Daten werden aktualisiert...</span>
+              </>
+            )}
+            {syncStatus === 'done' && (
+              <>
+                <Check className="h-3 w-3" />
+                <span>Daten aktuell</span>
+              </>
+            )}
+            {syncStatus === 'error' && (
+              <>
+                <AlertCircle className="h-3 w-3" />
+                <span>Sync fehlgeschlagen</span>
+              </>
+            )}
+          </div>
+        </div>
 
         {/* Connection Warning */}
         {!connection?.ig_user_id && (
