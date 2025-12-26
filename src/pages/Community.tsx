@@ -26,6 +26,7 @@ import { PostCard } from "@/components/community/PostCard";
 import { ActionBar } from "@/components/community/ActionBar";
 import { AiModelSelector } from "@/components/community/AiModelSelector";
 import { getInstagramUrl } from "@/lib/instagram-utils";
+import { CoPilot } from "@/components/community/CoPilot";
 
 // Check icon alias for consistency
 
@@ -1084,6 +1085,9 @@ export default function Community() {
         sending={sending}
         onSmartReply={smartReply}
       />
+      
+      {/* Co-Pilot AI Agent */}
+      <CoPilot />
     </AppLayout>
   );
 }
