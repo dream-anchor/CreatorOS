@@ -85,17 +85,21 @@ export function PostCard({
 
           {/* Right side actions */}
           <div className="flex items-center gap-4 flex-shrink-0">
-            {/* Original Post Link */}
-            {group.postPermalink && (
+            {/* Original Post Link - only show if we have a valid Instagram permalink */}
+            {group.postPermalink && group.postPermalink.includes("instagram.com") ? (
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
-                onClick={() => window.open(group.postPermalink!, "_blank")}
+                onClick={() => window.open(group.postPermalink!, "_blank", "noopener,noreferrer")}
               >
                 Original Post
                 <ExternalLink className="h-3.5 w-3.5" />
               </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground/50 italic">
+                Link nicht verfügbar
+              </span>
             )}
 
             {/* Bulk Toggle */}
