@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
+  Recycle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -439,6 +440,17 @@ export default function ReviewPage() {
                           <div className="absolute top-4 left-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/80 backdrop-blur-sm text-white text-sm">
                             <Layers className="h-4 w-4" />
                             {slides.length} Slides
+                          </div>
+                        )}
+
+                        {/* Remix badge */}
+                        {currentPost.remixed_from_id && (
+                          <div className={cn(
+                            "absolute left-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/90 backdrop-blur-sm text-white text-sm",
+                            isCarousel ? "top-14" : "top-4"
+                          )}>
+                            <Recycle className="h-4 w-4" />
+                            ♻️ Remix
                           </div>
                         )}
                       </div>
