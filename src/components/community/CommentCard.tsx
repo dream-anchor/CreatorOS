@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ImageWithFallback } from "./ImageWithFallback";
-import { Sparkles, ExternalLink, CheckCircle2, User } from "lucide-react";
+import { Sparkles, ExternalLink, CheckCircle2, User, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -36,6 +36,7 @@ interface CommentCardProps {
   onToggleSelect: (id: string) => void;
   onUpdateReply: (id: string, text: string) => void;
   onApprove: (id: string) => void;
+  isSanitizing?: boolean;
 }
 
 export function CommentCard({
@@ -43,13 +44,14 @@ export function CommentCard({
   onToggleSelect,
   onUpdateReply,
   onApprove,
+  isSanitizing = false,
 }: CommentCardProps) {
   const truncatedCaption = comment.post_caption
     ? comment.post_caption.slice(0, 50) + (comment.post_caption.length > 50 ? '...' : '')
     : 'Kein Caption';
 
   return (
-    <div className="p-4 bg-muted/30 rounded-lg border">
+    <div className={`p-4 bg-muted/30 rounded-lg border ${isSanitizing ? 'opacity-70' : ''}`}>
       <div className="flex gap-4">
         {/* Left: Checkbox + Comment */}
         <div className="flex items-start gap-3 flex-1">
@@ -57,10 +59,11 @@ export function CommentCard({
             checked={comment.selected}
             onCheckedChange={() => onToggleSelect(comment.id)}
             className="mt-1"
+            disabled={isSanitizing}
           />
           <div className="flex-1 space-y-2">
             {/* Commenter info */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                 <User className="h-4 w-4 text-muted-foreground" />
               </div>
@@ -80,6 +83,12 @@ export function CommentCard({
                   ✅ Freigegeben
                 </Badge>
               )}
+              {isSanitizing && (
+                <Badge variant="outline" className="text-xs gap-1 animate-pulse">
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                  Korrigiere Emoji-Stil...
+                </Badge>
+              )}
             </div>
             
             {/* Comment text */}
@@ -93,16 +102,23 @@ export function CommentCard({
                 <Sparkles className="h-3 w-3" />
                 Antwort-Vorschlag
               </label>
-              <Textarea
-                value={comment.editedReply || ''}
-                onChange={(e) => onUpdateReply(comment.id, e.target.value)}
-                placeholder="Antwort eingeben..."
-                rows={2}
-                className="text-sm"
-              />
+              {isSanitizing ? (
+                <div className="h-16 bg-muted rounded-md flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Generiere neue Antwort...
+                </div>
+              ) : (
+                <Textarea
+                  value={comment.editedReply || ''}
+                  onChange={(e) => onUpdateReply(comment.id, e.target.value)}
+                  placeholder="Antwort eingeben..."
+                  rows={2}
+                  className="text-sm"
+                />
+              )}
               
               {/* Approve button */}
-              {!comment.approved && comment.editedReply && (
+              {!isSanitizing && !comment.approved && comment.editedReply && (
                 <Button 
                   size="sm" 
                   variant="outline"
