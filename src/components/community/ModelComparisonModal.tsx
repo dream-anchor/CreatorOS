@@ -330,6 +330,10 @@ export function ModelComparisonModal() {
                           ${model.color === "purple" ? "bg-purple-500/5 border-purple-500/20" : ""}
                         `}
                       >
+                        {/* Fallback header (useful if the sticky header is out of view) */}
+                        <div className="text-[11px] font-medium text-muted-foreground mb-2 md:hidden">
+                          {model.name}
+                        </div>
                         {result.responses[model.id] || "—"}
                       </div>
                     ))}

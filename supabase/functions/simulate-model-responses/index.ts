@@ -14,25 +14,133 @@ const MODELS = [
   { id: "openai/gpt-5", name: "GPT-5" },
 ];
 
-// Helper to detect if fan uses formal "Sie" language
 function detectFormalLanguage(text: string): boolean {
   const formalPatterns = [
-    /\bSie\b/,           // "Sie" as pronoun
-    /\bIhnen\b/,         // "Ihnen"
-    /\bIhr\b/,           // "Ihr" (formal)
-    /\bIhre\b/,          // "Ihre"
-    /\bHerr\s+\w+/i,     // "Herr [Name]"
-    /\bFrau\s+\w+/i,     // "Frau [Name]"
-    /\bkönnten Sie\b/i,  // "könnten Sie"
-    /\bwürden Sie\b/i,   // "würden Sie"
+    /\bSie\b/,
+    /\bIhnen\b/,
+    /\bIhr\b/,
+    /\bIhre\b/,
+    /\bHerr\s+\w+/i,
+    /\bFrau\s+\w+/i,
+    /\bkönnten Sie\b/i,
+    /\bwürden Sie\b/i,
   ];
-  return formalPatterns.some(pattern => pattern.test(text));
+  return formalPatterns.some((pattern) => pattern.test(text));
+}
+
+function hasLettersOrNumbers(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text);
+}
+
+function isEmojiOnly(text: string): boolean {
+  return !hasLettersOrNumbers((text || "").trim());
+}
+
+const CTA_PATTERNS = [
+  /link\s+in\s+bio/i,
+  /mehr\s+infos/i,
+  /schau\s+mal\s+vorbei/i,
+  /hier\s+klicken/i,
+  /check\s+mal/i,
+];
+
+const SIGNATURE_PATTERNS = [
+  /(^|\n)\s*lg\b[.!]?\s*$/im,
+  /(^|\n)\s*(liebe|viele)?\s*grüße\b.*$/im,
+  /(^|\n)\s*dein\s+(team|crew|support)\b.*$/im,
+  /@support\b/i,
+  /@team\b/i,
+  /\bdein\s+antoine\b/i,
+];
+
+function validateReply(text: string) {
+  const violations: string[] = [];
+  const t = (text || "").trim();
+
+  if (t.includes("#")) violations.push("Hashtag (#)");
+  if (/\bwir\b|\buns\b|\bunser(e|)\b/i.test(t)) violations.push('"Wir/Uns/Unser"');
+  if (CTA_PATTERNS.some((p) => p.test(t))) violations.push("CTA (z.B. Link in Bio)");
+  if (SIGNATURE_PATTERNS.some((p) => p.test(t))) violations.push("Signatur (LG/@team/etc.)");
+
+  return { ok: violations.length === 0, violations };
+}
+
+function sanitizeReply(text: string): string {
+  let t = (text || "").trim();
+  t = t.replace(/#\S+/g, " ").replace(/\s{2,}/g, " ").trim();
+  t = t
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => !SIGNATURE_PATTERNS.some((p) => p.test(line)))
+    .join("\n")
+    .trim();
+  for (const p of CTA_PATTERNS) t = t.replace(p, "");
+  return t.replace(/\s{2,}/g, " ").trim();
+}
+
+async function callLovableAi({
+  lovableApiKey,
+  model,
+  systemPrompt,
+  userMessage,
+}: {
+  lovableApiKey: string;
+  model: string;
+  systemPrompt: string;
+  userMessage: string;
+}): Promise<string> {
+  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${lovableApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+    }),
+  });
+
+  if (!resp.ok) {
+    console.error("AI gateway error:", model, resp.status);
+    return "⚠️ Fehler bei der Generierung";
+  }
+
+  const data = await resp.json();
+  const reply = (data.choices?.[0]?.message?.content ?? "").trim();
+  return reply || "⚠️ Keine Antwort generiert";
+}
+
+async function generateWithGuards({
+  lovableApiKey,
+  model,
+  systemPrompt,
+  userMessage,
+}: {
+  lovableApiKey: string;
+  model: string;
+  systemPrompt: string;
+  userMessage: string;
+}): Promise<string> {
+  // Attempt #1
+  let reply = await callLovableAi({ lovableApiKey, model, systemPrompt, userMessage });
+  let v = validateReply(reply);
+  if (v.ok) return reply;
+
+  // Attempt #2
+  const repairSystemPrompt = `${systemPrompt}\n\nWICHTIG: Du hast gegen Regeln verstoßen (${v.violations.join(", ")}).\nFormuliere KOMPLETT neu ohne diese Verstöße. NUR die korrigierte Antwort.`;
+  reply = await callLovableAi({ lovableApiKey, model, systemPrompt: repairSystemPrompt, userMessage });
+  v = validateReply(reply);
+  if (v.ok) return reply;
+
+  return sanitizeReply(reply);
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const authHeader = req.headers.get("Authorization");
@@ -49,7 +157,8 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    const user = authData?.user;
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -57,7 +166,7 @@ serve(async (req) => {
       });
     }
 
-    // Get 3 random unanswered comments WITH their post context
+    // Pick 3 unanswered comments
     const { data: comments, error: commentsError } = await supabase
       .from("instagram_comments")
       .select("id, comment_text, commenter_username, ig_media_id")
@@ -81,43 +190,36 @@ serve(async (req) => {
       });
     }
 
-    // Get all unique ig_media_ids to fetch post captions
-    const mediaIds = [...new Set(comments.map(c => c.ig_media_id).filter(Boolean))];
-    
-    // Fetch all related posts for context
+    // Fetch related post captions
+    const mediaIds = [...new Set(comments.map((c) => c.ig_media_id).filter(Boolean))];
     const { data: posts } = await supabase
       .from("posts")
       .select("ig_media_id, caption")
       .in("ig_media_id", mediaIds);
 
     const postCaptionMap = new Map<string, string>();
-    posts?.forEach(p => {
-      if (p.ig_media_id && p.caption) {
-        postCaptionMap.set(p.ig_media_id, p.caption);
-      }
+    posts?.forEach((p) => {
+      if (p.ig_media_id && p.caption) postCaptionMap.set(p.ig_media_id, p.caption);
     });
 
-    // Shuffle and pick 3 random comments
     const shuffled = comments.sort(() => Math.random() - 0.5);
     const selectedComments = shuffled.slice(0, 3);
 
-    // Get brand rules for context
     const { data: brandRules } = await supabase
       .from("brand_rules")
-      .select("tone_style, writing_style, language_primary, do_list, dont_list, formality_mode")
+      .select("tone_style, writing_style, language_primary, formality_mode")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
+    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+    if (!lovableApiKey) {
       return new Response(JSON.stringify({ error: "LOVABLE_API_KEY not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // ========== DYNAMIC STYLE LEARNING ==========
-    // Use service role to fetch past replies
+    // Few-shot examples via service role (reply_queue)
     const supabaseService = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -131,52 +233,23 @@ serve(async (req) => {
       .order("sent_at", { ascending: false })
       .limit(20);
 
-    // Filter out emoji-only replies
     const validExamples = (pastReplies || [])
-      .map(r => r.reply_text)
-      .filter(text => {
-        const withoutEmojis = text.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').trim();
-        return withoutEmojis.length >= 3;
-      })
-      .slice(0, 15);
+      .map((r) => (r.reply_text || "").trim())
+      .filter((t) => t.length >= 3)
+      .filter((t) => !isEmojiOnly(t))
+      .slice(0, 20);
 
-    const fewShotSection = validExamples.length > 0
-      ? `
-========== LERNE VON MEINEN ECHTEN ANTWORTEN ==========
-Kopiere den Vibe, die Satzlänge und Formatierung dieser echten Beispiele:
+    const examplesBlock = validExamples.length
+      ? validExamples.map((ex, i) => `${i + 1}. ${ex}`).join("\n")
+      : "(keine Beispiele verfügbar)";
 
-${validExamples.map((ex, i) => `${i + 1}. "${ex}"`).join('\n')}
-======================================================`
-      : '';
-
-    // Build system prompt with strict constraints
     const toneStyle = brandRules?.tone_style || "locker und authentisch";
     const writingStyle = brandRules?.writing_style || "";
     const language = brandRules?.language_primary || "DE";
     const formalityMode = brandRules?.formality_mode || "smart";
 
-    const systemPrompt = `ROLLE: Du BIST der User (Antoine). Du bist KEIN Assistent. Du antwortest persönlich auf Fan-Kommentare.
+    const baseSystemPrompt = `ROLE: Du bist ICH (Antoine). Du bist kein Assistent und keine Marke.\n\nSTYLE-GUIDE (echte Beispiele von mir):\n${examplesBlock}\n\nANALYSE: Kopiere Vibe, Satzlänge, Kleinschreibung/Formatierung und Emoji-Nutzung dieser Beispiele so exakt wie möglich.\n\nREGELN (hart, niemals brechen):\n- Perspektive: IMMER 1. Person Singular (\"Ich\"). Niemals \"Wir/Uns/Unser\".\n- Keine Hashtags (#) – absolut verboten.\n- Keine Signaturen (z.B. \"LG\", \"Grüße\", \"Dein Team\", \"@support\", \"@team\").\n- Keine CTAs (\"Link in Bio\", \"schau mal vorbei\", \"mehr Infos\"), außer der Fan fragt explizit danach.\n- Schreibe kurz, natürlich, wie vom Handy (1–2 Sätze).\n\nSPRACHE: ${language === "DE" ? "Deutsch" : language}\nTONALITÄT: ${toneStyle}${writingStyle ? `\nSTIL-HINWEIS: ${writingStyle}` : ""}`;
 
-SPRACHE: ${language === "DE" ? "Deutsch" : language}
-TONALITÄT: ${toneStyle}
-${writingStyle ? `STIL: ${writingStyle}` : ""}
-${fewShotSection}
-
-===== PERSONA-REGELN (NIEMALS BRECHEN!) =====
-✅ IMMER in der 1. Person Singular ("Ich")
-❌ NIEMALS "Wir", "Uns", "Das Team", "Unser"
-❌ KEINE Signaturen ("Dein Antoine", "LG", "Grüße")
-❌ KEINE Hashtags (#)
-❌ KEINE CTAs ("Link in Bio", "Schau mal hier")
-❌ KEINE Marketing-Sprache ("Wir freuen uns")
-❌ KEINE Support-Floskeln ("Bei Fragen stehen wir zur Verfügung")
-==============================================
-
-Schreibe wie jemand, der kurz vom Handy antwortet - direkt, knackig, authentisch.
-Verstehe Witze und Anspielungen und reagiere darauf.
-Kurze Antworten (1-2 Sätze), passende Emojis sparsam nutzen.`;
-
-    // Generate responses for each comment from each model
     const results: Array<{
       commentId: string;
       commentText: string;
@@ -186,74 +259,38 @@ Kurze Antworten (1-2 Sätze), passende Emojis sparsam nutzen.`;
 
     for (const comment of selectedComments) {
       const responses: Record<string, string> = {};
-      
-      // Get post context for this comment
-      const postCaption = postCaptionMap.get(comment.ig_media_id) || '';
-      const contextSection = postCaption 
-        ? `\n\nKONTEXT - MEIN ORIGINAL-POST:\n"${postCaption.substring(0, 300)}${postCaption.length > 300 ? '...' : ''}"`
-        : '';
 
-      // Determine formality for this comment
+      const postCaption = postCaptionMap.get(comment.ig_media_id) || "";
+
       const fanUsesFormal = detectFormalLanguage(comment.comment_text);
-      let formalityInstruction = '';
-      if (formalityMode === 'smart') {
-        formalityInstruction = fanUsesFormal 
-          ? '\nANSPRACHE: Der Fan siezt → Antworte mit "Sie".'
-          : '\nANSPRACHE: Der Fan duzt → Antworte mit "Du".';
-      } else if (formalityMode === 'sie') {
-        formalityInstruction = '\nANSPRACHE: Antworte mit "Sie" (formell).';
+      let formalityInstruction = "";
+      if (formalityMode === "smart") {
+        formalityInstruction = fanUsesFormal
+          ? 'FORMALITÄT: Der Fan siezt → antworte mit "Sie".'
+          : 'FORMALITÄT: Der Fan duzt → antworte mit "Du".';
+      } else if (formalityMode === "sie") {
+        formalityInstruction = 'FORMALITÄT: Antworte IMMER mit "Sie".';
       } else {
-        formalityInstruction = '\nANSPRACHE: Antworte mit "Du" (informell).';
+        formalityInstruction = 'FORMALITÄT: Antworte IMMER mit "Du".';
       }
 
-      // Generate from all models in parallel
-      const modelPromises = MODELS.map(async (model) => {
-        try {
-          console.log(`Generating response for comment ${comment.id} with model ${model.id}`);
-          
-          const userMessage = `${contextSection}
-${formalityInstruction}
+      const systemPrompt = `${baseSystemPrompt}\nFORMALITÄT: ${formalityInstruction}`;
 
-KOMMENTAR VON @${comment.commenter_username || "Fan"}:
-"${comment.comment_text}"
+      const userMessage = `CONTEXT (du MUSST dich auf BEIDE Teile beziehen):\n\nA) POST-CAPTION (worum ging's?):\n\"\"\"${(postCaption || "").slice(0, 700)}\"\"\"\n\nB) FAN-KOMMENTAR (worauf antworte ich?):\n\"\"\"${comment.comment_text}\"\"\"\n\nAUFGABE: Antworte spezifisch auf den Fan-Kommentar, aber immer im Kontext der Caption. NUR die Antwort.`;
 
-Antworte KURZ (1-2 Sätze), DIREKT auf den Kommentar, im Kontext meines Posts.`;
-
-          const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${LOVABLE_API_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: model.id,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userMessage },
-              ],
-            }),
-          });
-
-          if (!response.ok) {
-            console.error(`Model ${model.id} error:`, response.status);
-            return { modelId: model.id, reply: "⚠️ Fehler bei der Generierung" };
-          }
-
-          const data = await response.json();
-          const reply = data.choices?.[0]?.message?.content || "Keine Antwort generiert";
-          
-          return { modelId: model.id, reply };
-        } catch (err) {
-          console.error(`Error with model ${model.id}:`, err);
-          return { modelId: model.id, reply: "⚠️ Fehler" };
-        }
+      const modelPromises = MODELS.map(async (m) => {
+        console.log(`Generating response for comment ${comment.id} with model ${m.id}`);
+        const reply = await generateWithGuards({
+          lovableApiKey,
+          model: m.id,
+          systemPrompt,
+          userMessage,
+        });
+        return { modelId: m.id, reply };
       });
 
       const modelResults = await Promise.all(modelPromises);
-      
-      for (const result of modelResults) {
-        responses[result.modelId] = result.reply;
-      }
+      for (const r of modelResults) responses[r.modelId] = r.reply;
 
       results.push({
         commentId: comment.id,
@@ -270,9 +307,9 @@ Antworte KURZ (1-2 Sätze), DIREKT auf den Kommentar, im Kontext meines Posts.`;
     });
   } catch (err) {
     console.error("Error in simulate-model-responses:", err);
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 });
