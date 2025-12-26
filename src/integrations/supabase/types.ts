@@ -323,13 +323,22 @@ export type Database = {
           caption: string | null
           caption_alt: string | null
           caption_short: string | null
+          comments_count: number | null
           created_at: string
           error_message: string | null
           format: Database["public"]["Enums"]["post_format"] | null
           hashtags: string | null
           id: string
           ig_media_id: string | null
+          impressions_count: number | null
+          is_imported: boolean | null
+          likes_count: number | null
+          original_ig_permalink: string | null
+          original_media_url: string | null
           published_at: string | null
+          remix_reason: string | null
+          remixed_from_id: string | null
+          saved_count: number | null
           scheduled_at: string | null
           slides: Json | null
           status: Database["public"]["Enums"]["post_status"]
@@ -344,13 +353,22 @@ export type Database = {
           caption?: string | null
           caption_alt?: string | null
           caption_short?: string | null
+          comments_count?: number | null
           created_at?: string
           error_message?: string | null
           format?: Database["public"]["Enums"]["post_format"] | null
           hashtags?: string | null
           id?: string
           ig_media_id?: string | null
+          impressions_count?: number | null
+          is_imported?: boolean | null
+          likes_count?: number | null
+          original_ig_permalink?: string | null
+          original_media_url?: string | null
           published_at?: string | null
+          remix_reason?: string | null
+          remixed_from_id?: string | null
+          saved_count?: number | null
           scheduled_at?: string | null
           slides?: Json | null
           status?: Database["public"]["Enums"]["post_status"]
@@ -365,13 +383,22 @@ export type Database = {
           caption?: string | null
           caption_alt?: string | null
           caption_short?: string | null
+          comments_count?: number | null
           created_at?: string
           error_message?: string | null
           format?: Database["public"]["Enums"]["post_format"] | null
           hashtags?: string | null
           id?: string
           ig_media_id?: string | null
+          impressions_count?: number | null
+          is_imported?: boolean | null
+          likes_count?: number | null
+          original_ig_permalink?: string | null
+          original_media_url?: string | null
           published_at?: string | null
+          remix_reason?: string | null
+          remixed_from_id?: string | null
+          saved_count?: number | null
           scheduled_at?: string | null
           slides?: Json | null
           status?: Database["public"]["Enums"]["post_status"]
@@ -380,6 +407,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "posts_remixed_from_id_fkey"
+            columns: ["remixed_from_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "posts_topic_id_fkey"
             columns: ["topic_id"]
