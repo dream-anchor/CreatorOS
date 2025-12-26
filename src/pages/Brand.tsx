@@ -103,6 +103,7 @@ export default function BrandPage() {
           taboo_words: brand.taboo_words,
           ai_model: brand.ai_model,
           style_system_prompt: brand.style_system_prompt,
+          formality_mode: brand.formality_mode,
         })
         .eq("id", brand.id);
 
@@ -428,6 +429,47 @@ Beispiel 3:"
               </Select>
               <p className="text-xs text-muted-foreground">
                 GPT-5 und Gemini Pro liefern kreativere und logisch bessere Texte, verbrauchen aber mehr Credits
+              </p>
+            </div>
+
+            {/* Formality Mode Selection */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <PenLine className="h-4 w-4 text-primary" />
+                <Label>Ansprache (Du/Sie)</Label>
+              </div>
+              <Select
+                value={brand?.formality_mode || "smart"}
+                onValueChange={(value: 'smart' | 'du' | 'sie') =>
+                  setBrand(brand ? { ...brand, formality_mode: value } : null)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Ansprache wählen" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="smart">
+                    <div className="flex flex-col">
+                      <span className="font-medium">🧠 Smart (Empfohlen)</span>
+                      <span className="text-xs text-muted-foreground">Passt sich automatisch an - duzt, wenn der Fan duzt</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="du">
+                    <div className="flex flex-col">
+                      <span className="font-medium">👋 Immer Du</span>
+                      <span className="text-xs text-muted-foreground">Informell, auch wenn der Fan siezt</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="sie">
+                    <div className="flex flex-col">
+                      <span className="font-medium">🎩 Immer Sie</span>
+                      <span className="text-xs text-muted-foreground">Formell, auch wenn der Fan duzt</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Smart erkennt automatisch, ob der Fan "Sie" oder "Du" verwendet und passt die Antwort an
               </p>
             </div>
           </CardContent>

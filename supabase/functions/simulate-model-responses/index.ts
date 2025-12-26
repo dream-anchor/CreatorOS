@@ -14,6 +14,21 @@ const MODELS = [
   { id: "openai/gpt-5", name: "GPT-5" },
 ];
 
+// Helper to detect if fan uses formal "Sie" language
+function detectFormalLanguage(text: string): boolean {
+  const formalPatterns = [
+    /\bSie\b/,           // "Sie" as pronoun
+    /\bIhnen\b/,         // "Ihnen"
+    /\bIhr\b/,           // "Ihr" (formal)
+    /\bIhre\b/,          // "Ihre"
+    /\bHerr\s+\w+/i,     // "Herr [Name]"
+    /\bFrau\s+\w+/i,     // "Frau [Name]"
+    /\bkönnten Sie\b/i,  // "könnten Sie"
+    /\bwürden Sie\b/i,   // "würden Sie"
+  ];
+  return formalPatterns.some(pattern => pattern.test(text));
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -89,7 +104,7 @@ serve(async (req) => {
     // Get brand rules for context
     const { data: brandRules } = await supabase
       .from("brand_rules")
-      .select("tone_style, writing_style, language_primary, do_list, dont_list")
+      .select("tone_style, writing_style, language_primary, do_list, dont_list, formality_mode")
       .eq("user_id", user.id)
       .maybeSingle();
 
@@ -101,26 +116,62 @@ serve(async (req) => {
       });
     }
 
+    // ========== DYNAMIC STYLE LEARNING ==========
+    // Use service role to fetch past replies
+    const supabaseService = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    const { data: pastReplies } = await supabaseService
+      .from("reply_queue")
+      .select("reply_text")
+      .eq("user_id", user.id)
+      .eq("status", "sent")
+      .order("sent_at", { ascending: false })
+      .limit(20);
+
+    // Filter out emoji-only replies
+    const validExamples = (pastReplies || [])
+      .map(r => r.reply_text)
+      .filter(text => {
+        const withoutEmojis = text.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').trim();
+        return withoutEmojis.length >= 3;
+      })
+      .slice(0, 15);
+
+    const fewShotSection = validExamples.length > 0
+      ? `
+========== LERNE VON MEINEN ECHTEN ANTWORTEN ==========
+Kopiere den Vibe, die Satzlänge und Formatierung dieser echten Beispiele:
+
+${validExamples.map((ex, i) => `${i + 1}. "${ex}"`).join('\n')}
+======================================================`
+      : '';
+
     // Build system prompt with strict constraints
     const toneStyle = brandRules?.tone_style || "locker und authentisch";
     const writingStyle = brandRules?.writing_style || "";
     const language = brandRules?.language_primary || "DE";
+    const formalityMode = brandRules?.formality_mode || "smart";
 
-    const systemPrompt = `Du bist Antoine, ein Instagram-Creator. Du antwortest persönlich auf Fan-Kommentare.
+    const systemPrompt = `ROLLE: Du BIST der User (Antoine). Du bist KEIN Assistent. Du antwortest persönlich auf Fan-Kommentare.
 
 SPRACHE: ${language === "DE" ? "Deutsch" : language}
 TONALITÄT: ${toneStyle}
 ${writingStyle ? `STIL: ${writingStyle}` : ""}
+${fewShotSection}
 
-===== ABSOLUTE VERBOTE (NIEMALS BRECHEN!) =====
-❌ KEINE Hashtags (#) - Niemals, unter keinen Umständen
-❌ KEINE Signaturen ("Dein Team", "@support", "Liebe Grüße, das Team")
-❌ KEINE CTAs ("Link in Bio", "Schau mal hier", "Mehr Infos")
-❌ KEINE Marketing-Sprache ("Wir freuen uns", "Vielen Dank für Ihr Feedback")
-❌ KEINE Support-Ticket-Floskeln ("Gerne geschehen", "Bei Fragen stehen wir zur Verfügung")
-===================================================
+===== PERSONA-REGELN (NIEMALS BRECHEN!) =====
+✅ IMMER in der 1. Person Singular ("Ich")
+❌ NIEMALS "Wir", "Uns", "Das Team", "Unser"
+❌ KEINE Signaturen ("Dein Antoine", "LG", "Grüße")
+❌ KEINE Hashtags (#)
+❌ KEINE CTAs ("Link in Bio", "Schau mal hier")
+❌ KEINE Marketing-Sprache ("Wir freuen uns")
+❌ KEINE Support-Floskeln ("Bei Fragen stehen wir zur Verfügung")
+==============================================
 
-DU BIST EIN MENSCH, KEINE MARKE.
 Schreibe wie jemand, der kurz vom Handy antwortet - direkt, knackig, authentisch.
 Verstehe Witze und Anspielungen und reagiere darauf.
 Kurze Antworten (1-2 Sätze), passende Emojis sparsam nutzen.`;
@@ -142,12 +193,26 @@ Kurze Antworten (1-2 Sätze), passende Emojis sparsam nutzen.`;
         ? `\n\nKONTEXT - MEIN ORIGINAL-POST:\n"${postCaption.substring(0, 300)}${postCaption.length > 300 ? '...' : ''}"`
         : '';
 
+      // Determine formality for this comment
+      const fanUsesFormal = detectFormalLanguage(comment.comment_text);
+      let formalityInstruction = '';
+      if (formalityMode === 'smart') {
+        formalityInstruction = fanUsesFormal 
+          ? '\nANSPRACHE: Der Fan siezt → Antworte mit "Sie".'
+          : '\nANSPRACHE: Der Fan duzt → Antworte mit "Du".';
+      } else if (formalityMode === 'sie') {
+        formalityInstruction = '\nANSPRACHE: Antworte mit "Sie" (formell).';
+      } else {
+        formalityInstruction = '\nANSPRACHE: Antworte mit "Du" (informell).';
+      }
+
       // Generate from all models in parallel
       const modelPromises = MODELS.map(async (model) => {
         try {
           console.log(`Generating response for comment ${comment.id} with model ${model.id}`);
           
           const userMessage = `${contextSection}
+${formalityInstruction}
 
 KOMMENTAR VON @${comment.commenter_username || "Fan"}:
 "${comment.comment_text}"

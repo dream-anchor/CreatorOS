@@ -6,6 +6,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper to detect if fan uses formal "Sie" language
+function detectFormalLanguage(text: string): boolean {
+  const formalPatterns = [
+    /\bSie\b/,           // "Sie" as pronoun
+    /\bIhnen\b/,         // "Ihnen"
+    /\bIhr\b/,           // "Ihr" (formal)
+    /\bIhre\b/,          // "Ihre"
+    /\bHerr\s+\w+/i,     // "Herr [Name]"
+    /\bFrau\s+\w+/i,     // "Frau [Name]"
+    /\bkönnten Sie\b/i,  // "könnten Sie"
+    /\bwürden Sie\b/i,   // "würden Sie"
+  ];
+  return formalPatterns.some(pattern => pattern.test(text));
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -78,7 +93,7 @@ serve(async (req) => {
     // Get all unique ig_media_ids to fetch post captions
     const mediaIds = [...new Set(comments.map(c => c.ig_media_id).filter(Boolean))];
     
-    // Fetch all related posts
+    // Fetch all related posts for context
     const { data: posts } = await supabase
       .from('posts')
       .select('ig_media_id, caption')
@@ -91,24 +106,62 @@ serve(async (req) => {
       }
     });
 
-    // Get brand rules for tone
+    // Get brand rules for tone AND formality mode
     const { data: brandRules } = await supabase
       .from('brand_rules')
-      .select('tone_style, writing_style, language_primary')
+      .select('tone_style, writing_style, language_primary, formality_mode')
       .eq('user_id', user.id)
       .maybeSingle();
 
     const toneStyle = brandRules?.tone_style || 'locker und authentisch';
     const language = brandRules?.language_primary || 'DE';
+    const formalityMode = brandRules?.formality_mode || 'smart';
 
-    // Batch analyze comments with AI - include post context
+    // ========== DYNAMIC STYLE LEARNING ==========
+    // Query last 15-20 approved/sent replies as few-shot examples
+    const { data: pastReplies } = await supabase
+      .from('reply_queue')
+      .select('reply_text')
+      .eq('user_id', user.id)
+      .eq('status', 'sent')
+      .order('sent_at', { ascending: false })
+      .limit(20);
+
+    // Filter out emoji-only replies and build examples
+    const validExamples = (pastReplies || [])
+      .map(r => r.reply_text)
+      .filter(text => {
+        const withoutEmojis = text.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').trim();
+        return withoutEmojis.length >= 3;
+      })
+      .slice(0, 15);
+
+    const fewShotSection = validExamples.length > 0
+      ? `
+LERNE VON DIESEN ECHTEN ANTWORTEN DES USERS (kopiere den Vibe und die Satzlänge):
+${validExamples.map((ex, i) => `${i + 1}. "${ex}"`).join('\n')}`
+      : '';
+
+    // Batch analyze comments with AI - include post context AND formality detection
     const commentsToAnalyze = comments.map(c => {
       const postCaption = postCaptionMap.get(c.ig_media_id) || '';
+      const fanUsesFormal = detectFormalLanguage(c.comment_text);
+      
+      let formalityHint = '';
+      if (formalityMode === 'smart') {
+        formalityHint = fanUsesFormal ? 'use_sie' : 'use_du';
+      } else if (formalityMode === 'sie') {
+        formalityHint = 'use_sie';
+      } else {
+        formalityHint = 'use_du';
+      }
+
       return {
         id: c.id,
         text: c.comment_text,
         username: c.commenter_username,
-        post_context: postCaption.substring(0, 300) // Truncate for token efficiency
+        post_context: postCaption.substring(0, 300),
+        formality: formalityHint
       };
     });
 
@@ -121,29 +174,34 @@ Vermeide Emojis zu diesen Themen: ${emojiNogoList.join(', ')}.
 Nutze stattdessen neutrale: 🙌 👍 😎 🔥 ✨ 💪 🎯 👏 ⚡ 🚀 💯`;
     }
 
-    const analysisPrompt = `Du bist Antoine, ein Instagram-Creator. Du analysierst Kommentare und schreibst persönliche Antworten.
+    const analysisPrompt = `ROLLE: Du BIST der User (Antoine). Du bist KEIN Assistent. Du analysierst Kommentare und schreibst persönliche Antworten.
 
 SPRACHE: ${language === 'DE' ? 'Deutsch' : language}
 TONALITÄT: ${toneStyle}
+${fewShotSection}
 
-===== ABSOLUTE VERBOTE FÜR ANTWORTEN (NIEMALS BRECHEN!) =====
-❌ KEINE Hashtags (#) - Niemals, unter keinen Umständen
-❌ KEINE Signaturen ("Dein Team", "@support", "Liebe Grüße")
+===== PERSONA-REGELN FÜR ANTWORTEN (NIEMALS BRECHEN!) =====
+✅ IMMER in der 1. Person Singular ("Ich")
+❌ NIEMALS "Wir", "Uns", "Das Team", "Unser"
+❌ KEINE Signaturen ("Dein Antoine", "LG", "Grüße")
+❌ KEINE Hashtags (#)
 ❌ KEINE CTAs ("Link in Bio", "Schau mal hier")
-❌ KEINE Marketing-Sprache ("Wir freuen uns", "Vielen Dank für Ihr Feedback")
-❌ KEINE Support-Ticket-Floskeln ("Bei Fragen stehen wir zur Verfügung")
-==============================================================
+❌ KEINE Marketing-Sprache ("Wir freuen uns")
+============================================================
 
-DU BIST EIN MENSCH, KEINE MARKE. Kurze, direkte, authentische Antworten.
+ANSPRACHE:
+- Wenn "formality": "use_sie" → Antworte mit "Sie" (formell)
+- Wenn "formality": "use_du" → Antworte mit "Du" (informell)
 ${emojiConstraint}
 
 Analysiere jeden Kommentar:
 1. sentiment_score: -1.0 (Hass) bis 1.0 (sehr positiv)
 2. is_critical: true bei Hass, Beleidigung, Spam, heftiger Kritik
-3. reply_suggestion: Kurze Antwort (1-2 Sätze), die auf den KONTEXT DES POSTS eingeht
+3. reply_suggestion: Kurze Antwort (1-2 Sätze), die auf den POST-KONTEXT eingeht
 
-WICHTIG: Jeder Kommentar hat ein "post_context" Feld mit der Caption meines Posts.
-Beziehe dich in der Antwort auf den Kontext - verstehe Witze und Anspielungen!
+WICHTIG: Jeder Kommentar hat:
+- "post_context": Caption meines Posts → Beziehe dich darauf, verstehe Witze!
+- "formality": Ob du siezen oder duzen sollst
 
 Kommentare als JSON:
 ${JSON.stringify(commentsToAnalyze)}
