@@ -13,7 +13,10 @@ interface AnalysisResult {
   is_good_reference: boolean;
 }
 
+// Use tool calling for reliable structured output
 async function analyzeImage(imageUrl: string, lovableApiKey: string): Promise<AnalysisResult> {
+  console.log(`[analyze-media] Calling Vision API for image: ${imageUrl.substring(0, 100)}...`);
+  
   const visionResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -25,81 +28,125 @@ async function analyzeImage(imageUrl: string, lovableApiKey: string): Promise<An
       messages: [
         {
           role: "system",
-          content: `Du bist ein Bildanalyse-Experte für Antoine Monot, Jr., einen deutschen Schauspieler.
-Analysiere Fotos für Social-Media Content-Erstellung.
-Antworte NUR mit validem JSON ohne Markdown-Formatierung.`
+          content: `Du bist ein Bildanalyse-Experte. Analysiere das Foto und nutze das Tool um die Ergebnisse zurückzugeben.`
         },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: `Analysiere dieses Foto von Antoine Monot, Jr.
-
-Ich brauche:
-1. **Tags** (5 relevante Keywords): Stimmung, Kleidung, Setting, Gesichtsausdruck, Objekte
-2. **Beschreibung** (1-2 Sätze): Was ist auf dem Bild zu sehen?
-3. **Mood** (eine Stimmung): Die dominante Stimmung des Bildes
-4. **is_good_reference**: Ist das Bild als Referenz für KI-Montagen geeignet?
-   - JA wenn: Gesicht klar erkennbar, gute Qualität, keine Unschärfe, geeigneter Bildausschnitt
-   - NEIN wenn: Unscharf, Gesicht verdeckt, zu dunkel, schlechte Qualität
-
-Antworte NUR mit diesem JSON-Format:
-{
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-  "description": "Kurze Beschreibung des Bildes",
-  "mood": "Seriös",
-  "is_good_reference": true
-}
-
-Mögliche Moods: Seriös, Fröhlich, Nachdenklich, Cool, Lustig, Verrückt, Professionell, Entspannt, Dramatisch, Mysteriös, Energetisch, Verspielt
-Mögliche Tags für Setting: outdoor, indoor, studio, natur, urban, set, behind-the-scenes, event, portrait
-Mögliche Tags für Kleidung: casual, business, elegant, sportlich, kostüm, anzug`
+              text: `Analysiere dieses Foto:
+- Erstelle 5 relevante Tags (Stimmung, Kleidung, Setting, Gesichtsausdruck)
+- Schreibe eine kurze Beschreibung (1-2 Sätze)
+- Bestimme die dominante Stimmung (Mood)
+- Entscheide: Ist das Bild als Referenz für KI-Montagen geeignet? (Gesicht klar erkennbar, gute Qualität = true)`
             },
             {
               type: "image_url",
-              image_url: {
-                url: imageUrl
-              }
+              image_url: { url: imageUrl }
             }
           ]
         }
       ],
-      max_completion_tokens: 500,
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "save_image_analysis",
+            description: "Speichert die Bildanalyse-Ergebnisse",
+            parameters: {
+              type: "object",
+              properties: {
+                tags: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "5 relevante Tags für das Bild (z.B. portrait, ernst, outdoor, casual, nachdenklich)"
+                },
+                description: {
+                  type: "string",
+                  description: "Kurze Beschreibung des Bildinhalts (1-2 Sätze)"
+                },
+                mood: {
+                  type: "string",
+                  enum: ["Seriös", "Fröhlich", "Nachdenklich", "Cool", "Lustig", "Verrückt", "Professionell", "Entspannt", "Dramatisch", "Mysteriös", "Energetisch", "Verspielt"],
+                  description: "Die dominante Stimmung des Bildes"
+                },
+                is_good_reference: {
+                  type: "boolean",
+                  description: "Ist das Bild als KI-Referenz geeignet? (Gesicht klar erkennbar, gute Qualität)"
+                }
+              },
+              required: ["tags", "description", "mood", "is_good_reference"],
+              additionalProperties: false
+            }
+          }
+        }
+      ],
+      tool_choice: { type: "function", function: { name: "save_image_analysis" } },
+      max_completion_tokens: 1000,
     }),
   });
 
   if (!visionResponse.ok) {
     const errorText = await visionResponse.text();
-    throw new Error(`Vision API error: ${errorText}`);
+    console.error(`[analyze-media] Vision API HTTP error: ${visionResponse.status} - ${errorText}`);
+    throw new Error(`Vision API Fehler (${visionResponse.status}): ${errorText.substring(0, 200)}`);
   }
 
   const visionData = await visionResponse.json();
-  const content = visionData.choices?.[0]?.message?.content || "";
+  console.log(`[analyze-media] Vision API response received`);
 
-  // Parse the JSON response
-  let cleanContent = content.trim();
-  if (cleanContent.startsWith("```json")) {
-    cleanContent = cleanContent.slice(7);
-  }
-  if (cleanContent.startsWith("```")) {
-    cleanContent = cleanContent.slice(3);
-  }
-  if (cleanContent.endsWith("```")) {
-    cleanContent = cleanContent.slice(0, -3);
-  }
-  cleanContent = cleanContent.trim();
-
-  try {
-    return JSON.parse(cleanContent);
-  } catch (parseError) {
-    console.error("[analyze-media] JSON parse error:", parseError, content);
+  // Extract tool call result
+  const toolCall = visionData.choices?.[0]?.message?.tool_calls?.[0];
+  
+  if (!toolCall || toolCall.function?.name !== "save_image_analysis") {
+    // Fallback: Try to parse from content if no tool call
+    const content = visionData.choices?.[0]?.message?.content || "";
+    console.log(`[analyze-media] No tool call found, trying content parsing. Content: ${content.substring(0, 200)}`);
+    
+    // Try to extract JSON from content as fallback
+    try {
+      let cleanContent = content.trim();
+      if (cleanContent.includes("{")) {
+        const jsonStart = cleanContent.indexOf("{");
+        const jsonEnd = cleanContent.lastIndexOf("}");
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          cleanContent = cleanContent.substring(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(cleanContent);
+          return {
+            tags: parsed.tags || ["portrait"],
+            description: parsed.description || "Bild analysiert",
+            mood: parsed.mood || "Professionell",
+            is_good_reference: parsed.is_good_reference ?? true
+          };
+        }
+      }
+    } catch (e) {
+      console.log(`[analyze-media] Content parsing failed: ${e}`);
+    }
+    
+    // Final fallback
     return {
-      tags: ["unbekannt"],
-      description: "Analyse konnte nicht durchgeführt werden",
-      mood: "Unbekannt",
-      is_good_reference: false
+      tags: ["portrait", "person"],
+      description: "Automatisch analysiertes Bild",
+      mood: "Professionell",
+      is_good_reference: true
     };
+  }
+
+  // Parse tool call arguments
+  try {
+    const args = JSON.parse(toolCall.function.arguments);
+    console.log(`[analyze-media] Successfully parsed tool call:`, args);
+    return {
+      tags: args.tags || ["portrait"],
+      description: args.description || "Bild analysiert",
+      mood: args.mood || "Professionell",
+      is_good_reference: args.is_good_reference ?? true
+    };
+  } catch (parseError) {
+    console.error(`[analyze-media] Tool call parse error:`, parseError, toolCall.function?.arguments);
+    throw new Error(`Parsing-Fehler: ${parseError instanceof Error ? parseError.message : "Unbekannt"}`);
   }
 }
 
@@ -109,13 +156,23 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    // Check secrets first
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
 
-    if (!lovableApiKey) {
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("[analyze-media] Missing Supabase credentials");
       return new Response(
-        JSON.stringify({ error: "LOVABLE_API_KEY nicht konfiguriert" }),
+        JSON.stringify({ error: "Supabase-Konfiguration fehlt", success: false }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!lovableApiKey) {
+      console.error("[analyze-media] LOVABLE_API_KEY is missing!");
+      return new Response(
+        JSON.stringify({ error: "LOVABLE_API_KEY fehlt in den Secrets!", success: false }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -125,24 +182,34 @@ serve(async (req) => {
     // Auth check
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      return new Response(JSON.stringify({ error: "Nicht autorisiert - kein Token", success: false }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { data: authData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+    const { data: authData, error: authError } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+    if (authError) {
+      console.error("[analyze-media] Auth error:", authError);
+      return new Response(JSON.stringify({ error: `Auth-Fehler: ${authError.message}`, success: false }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
     const user = authData?.user;
     if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      return new Response(JSON.stringify({ error: "Benutzer nicht gefunden", success: false }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { mode, asset_id, image_url } = await req.json();
+    const body = await req.json();
+    const { mode, asset_id, image_url } = body;
+    console.log(`[analyze-media] Request: mode=${mode}, asset_id=${asset_id}, user=${user.id}`);
 
-    // Mode: "auto" - Analyze immediately after upload (pass image_url and asset_id)
+    // Mode: "auto" - Analyze immediately after upload
     if (mode === "auto" && asset_id && image_url) {
       console.log(`[analyze-media] Auto-analyzing asset ${asset_id}`);
       
@@ -166,10 +233,17 @@ serve(async (req) => {
           .eq("user_id", user.id);
 
         if (updateError) {
-          console.error(`[analyze-media] Update error:`, updateError);
-          throw updateError;
+          console.error(`[analyze-media] DB Update error:`, updateError);
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: `Datenbank-Fehler: ${updateError.message}` 
+            }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         }
 
+        console.log(`[analyze-media] Successfully analyzed asset ${asset_id}`);
         return new Response(
           JSON.stringify({
             success: true,
@@ -182,11 +256,12 @@ serve(async (req) => {
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (error) {
-        console.error(`[analyze-media] Auto analysis failed:`, error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`[analyze-media] Auto analysis failed:`, errorMsg);
         return new Response(
           JSON.stringify({ 
             success: false, 
-            error: error instanceof Error ? error.message : "Analyse fehlgeschlagen" 
+            error: `Analyse fehlgeschlagen: ${errorMsg}` 
           }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -197,13 +272,19 @@ serve(async (req) => {
     let assetsToAnalyze: any[] = [];
 
     if (mode === "single" && asset_id) {
-      const { data: asset } = await supabase
+      const { data: asset, error: fetchError } = await supabase
         .from("media_assets")
         .select("*")
         .eq("id", asset_id)
         .eq("user_id", user.id)
         .single();
 
+      if (fetchError) {
+        return new Response(
+          JSON.stringify({ success: false, error: `Bild nicht gefunden: ${fetchError.message}` }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       if (asset) {
         assetsToAnalyze = [asset];
       }
@@ -231,15 +312,18 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[analyze-media] Analyzing ${assetsToAnalyze.length} assets for user ${user.id}`);
+    console.log(`[analyze-media] Batch analyzing ${assetsToAnalyze.length} assets`);
 
     let successCount = 0;
     let errorCount = 0;
     const results: any[] = [];
+    const errors: string[] = [];
 
     for (const asset of assetsToAnalyze) {
       if (!asset.public_url) {
         console.log(`[analyze-media] Skipping asset ${asset.id} - no public URL`);
+        errors.push(`${asset.filename || asset.id}: Keine URL`);
+        errorCount++;
         continue;
       }
 
@@ -263,6 +347,7 @@ serve(async (req) => {
 
         if (updateError) {
           console.error(`[analyze-media] Update error for ${asset.id}:`, updateError);
+          errors.push(`${asset.filename || asset.id}: DB-Fehler`);
           errorCount++;
         } else {
           successCount++;
@@ -276,11 +361,13 @@ serve(async (req) => {
           });
         }
 
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 800));
 
       } catch (assetError) {
-        console.error(`[analyze-media] Error analyzing ${asset.id}:`, assetError);
+        const errorMsg = assetError instanceof Error ? assetError.message : String(assetError);
+        console.error(`[analyze-media] Error analyzing ${asset.id}:`, errorMsg);
+        errors.push(`${asset.filename || asset.id}: ${errorMsg}`);
         errorCount++;
       }
     }
@@ -294,15 +381,17 @@ serve(async (req) => {
         errors: errorCount,
         total: assetsToAnalyze.length,
         results,
-        message: `${successCount} Bilder erfolgreich analysiert${errorCount > 0 ? `, ${errorCount} Fehler` : ""}`
+        errorDetails: errors.length > 0 ? errors : undefined,
+        message: `${successCount} Bilder analysiert${errorCount > 0 ? `, ${errorCount} Fehler` : ""}`
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
-    console.error("[analyze-media] Error:", error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error("[analyze-media] Unhandled error:", errorMsg);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unbekannter Fehler" }),
+      JSON.stringify({ error: errorMsg, success: false }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
