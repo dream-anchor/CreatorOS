@@ -47,3 +47,15 @@ verify_jwt = false
 
 [functions.refresh-media-url]
 verify_jwt = false
+
+[functions.fetch-comments]
+verify_jwt = false
+
+[functions.analyze-comments]
+verify_jwt = false
+
+[functions.reply-to-comment]
+verify_jwt = false
+
+[functions.moderate-comment]
+verify_jwt = false

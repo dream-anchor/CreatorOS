@@ -61,6 +61,27 @@ export type Database = {
           },
         ]
       }
+      blacklist_topics: {
+        Row: {
+          created_at: string
+          id: string
+          topic: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          topic: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          topic?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       brand_rules: {
         Row: {
           ai_model: string | null
@@ -165,6 +186,71 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      instagram_comments: {
+        Row: {
+          ai_reply_suggestion: string | null
+          comment_text: string
+          comment_timestamp: string
+          commenter_id: string | null
+          commenter_username: string | null
+          created_at: string
+          id: string
+          ig_comment_id: string
+          ig_media_id: string
+          is_critical: boolean | null
+          is_hidden: boolean | null
+          is_replied: boolean | null
+          post_id: string | null
+          sentiment_score: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_reply_suggestion?: string | null
+          comment_text: string
+          comment_timestamp: string
+          commenter_id?: string | null
+          commenter_username?: string | null
+          created_at?: string
+          id?: string
+          ig_comment_id: string
+          ig_media_id: string
+          is_critical?: boolean | null
+          is_hidden?: boolean | null
+          is_replied?: boolean | null
+          post_id?: string | null
+          sentiment_score?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_reply_suggestion?: string | null
+          comment_text?: string
+          comment_timestamp?: string
+          commenter_id?: string | null
+          commenter_username?: string | null
+          created_at?: string
+          id?: string
+          ig_comment_id?: string
+          ig_media_id?: string
+          is_critical?: boolean | null
+          is_hidden?: boolean | null
+          is_replied?: boolean | null
+          post_id?: string | null
+          sentiment_score?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_comments_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       instagram_tokens: {
         Row: {
@@ -443,6 +529,50 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      reply_queue: {
+        Row: {
+          comment_id: string
+          created_at: string
+          error_message: string | null
+          id: string
+          reply_text: string
+          scheduled_for: string | null
+          sent_at: string | null
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          comment_id: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          reply_text: string
+          scheduled_for?: string | null
+          sent_at?: string | null
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          comment_id?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          reply_text?: string
+          scheduled_for?: string | null
+          sent_at?: string | null
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reply_queue_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_comments"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       settings: {
         Row: {

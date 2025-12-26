@@ -15,6 +15,7 @@ import Calendar from "./pages/Calendar";
 import Settings from "./pages/Settings";
 import ContentLibrary from "./pages/ContentLibrary";
 import MediaArchive from "./pages/MediaArchive";
+import Community from "./pages/Community";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ const App = () => (
           <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
           <Route path="/library" element={<ProtectedRoute><ContentLibrary /></ProtectedRoute>} />
           <Route path="/media" element={<ProtectedRoute><MediaArchive /></ProtectedRoute>} />
+          <Route path="/community" element={<ProtectedRoute><Community /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="/settings/*" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
