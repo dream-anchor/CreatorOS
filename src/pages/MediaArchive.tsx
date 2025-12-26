@@ -48,6 +48,13 @@ interface MediaAsset {
   is_good_reference: boolean | null;
 }
 
+interface UploadingAsset {
+  id: string;
+  filename: string;
+  public_url: string;
+  analyzing: boolean;
+}
+
 const SUGGESTED_TAGS = [
   "Portrait",
   "Set",
@@ -88,6 +95,7 @@ export default function MediaArchivePage() {
   const [togglingReference, setTogglingReference] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [viewingAsset, setViewingAsset] = useState<MediaAsset | null>(null);
+  const [uploadingAssets, setUploadingAssets] = useState<UploadingAsset[]>([]);
 
   useEffect(() => {
     if (user) loadAssets();
@@ -152,6 +160,9 @@ export default function MediaArchivePage() {
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
     setUploading(true);
+    resetDialog();
+
+    const uploadedAssets: UploadingAsset[] = [];
 
     try {
       for (const file of selectedFiles) {
@@ -168,24 +179,64 @@ export default function MediaArchivePage() {
           .from("media-archive")
           .getPublicUrl(fileName);
 
-        const { error: insertError } = await supabase.from("media_assets").insert({
-          user_id: user!.id,
-          storage_path: fileName,
-          public_url: urlData.publicUrl,
-          filename: file.name,
-          tags: selectedTags,
-          mood: mood || null,
-          description: description || null,
-        });
+        const { data: insertData, error: insertError } = await supabase
+          .from("media_assets")
+          .insert({
+            user_id: user!.id,
+            storage_path: fileName,
+            public_url: urlData.publicUrl,
+            filename: file.name,
+            tags: [],
+            analyzed: false,
+          })
+          .select("id")
+          .single();
 
         if (insertError) throw insertError;
+
+        uploadedAssets.push({
+          id: insertData.id,
+          filename: file.name,
+          public_url: urlData.publicUrl,
+          analyzing: true,
+        });
       }
 
-      toast.success(`${selectedFiles.length} Bild(er) hochgeladen!`);
-      resetDialog();
+      // Add to uploading state for visual feedback
+      setUploadingAssets(uploadedAssets);
+      toast.success(`${uploadedAssets.length} Bild(er) hochgeladen! ✨ KI analysiert...`);
       loadAssets();
+
+      // Auto-analyze each uploaded asset
+      for (const asset of uploadedAssets) {
+        try {
+          await supabase.functions.invoke("analyze-media-vision", {
+            body: { 
+              mode: "auto", 
+              asset_id: asset.id,
+              image_url: asset.public_url 
+            }
+          });
+
+          // Mark as done
+          setUploadingAssets(prev => 
+            prev.map(a => a.id === asset.id ? { ...a, analyzing: false } : a)
+          );
+        } catch (error) {
+          console.error(`Auto-analysis failed for ${asset.id}:`, error);
+        }
+      }
+
+      // Clear uploading state after all done
+      setTimeout(() => {
+        setUploadingAssets([]);
+        loadAssets();
+        toast.success("✨ Alle Bilder analysiert!");
+      }, 500);
+
     } catch (error: any) {
       toast.error("Upload fehlgeschlagen: " + error.message);
+      setUploadingAssets([]);
     } finally {
       setUploading(false);
     }
@@ -460,13 +511,20 @@ export default function MediaArchivePage() {
 
                     {/* Status Badges */}
                     <div className="absolute top-2 left-2 flex flex-col gap-1">
+                      {/* Analyzing indicator */}
+                      {uploadingAssets.find(u => u.id === asset.id)?.analyzing && (
+                        <div className="px-2 py-0.5 rounded-full bg-amber-500/90 text-white text-xs flex items-center gap-1 animate-pulse">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          KI analysiert...
+                        </div>
+                      )}
                       {asset.is_good_reference && (
                         <div className="px-2 py-0.5 rounded-full bg-green-500/90 text-white text-xs flex items-center gap-1">
                           <CheckCircle className="h-3 w-3" />
                           REF
                         </div>
                       )}
-                      {asset.analyzed && (
+                      {asset.analyzed && !uploadingAssets.find(u => u.id === asset.id)?.analyzing && (
                         <div className="px-2 py-0.5 rounded-full bg-primary/80 text-white text-xs flex items-center gap-1">
                           <Sparkles className="h-3 w-3" />
                           AI
@@ -668,6 +726,13 @@ export default function MediaArchivePage() {
               </div>
               
               <div className="space-y-4">
+                {viewingAsset.mood && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Stimmung (Mood)</Label>
+                    <Badge className="mt-1 bg-primary/20 text-primary">{viewingAsset.mood}</Badge>
+                  </div>
+                )}
+
                 {viewingAsset.ai_description && (
                   <div>
                     <Label className="text-muted-foreground text-xs">KI-Beschreibung</Label>
