@@ -22,6 +22,7 @@ import {
   Wand2,
   CheckCircle,
   Eye,
+  Zap,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { format } from "date-fns";
@@ -96,6 +97,7 @@ export default function MediaArchivePage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [viewingAsset, setViewingAsset] = useState<MediaAsset | null>(null);
   const [uploadingAssets, setUploadingAssets] = useState<UploadingAsset[]>([]);
+  const [analyzingSingleId, setAnalyzingSingleId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) loadAssets();
@@ -338,6 +340,57 @@ export default function MediaArchivePage() {
       toast.error(`Analyse-Exception: ${error.message || "Netzwerkfehler"}`);
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleAnalyzeSingle = async (asset: MediaAsset) => {
+    if (!asset.public_url) {
+      toast.error("Kein Bild-URL vorhanden");
+      return;
+    }
+    
+    setAnalyzingSingleId(asset.id);
+    toast.info("⚡️ Analyse gestartet...");
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("analyze-media-vision", {
+        body: { 
+          mode: "auto", 
+          asset_id: asset.id,
+          image_url: asset.public_url 
+        }
+      });
+
+      if (error) {
+        // Check for rate limit error
+        if (error.message?.includes("429") || error.message?.toLowerCase().includes("rate")) {
+          toast.error("⏳ Zu schnell! Bitte kurz warten und erneut versuchen.");
+        } else {
+          toast.error(`Analyse-Fehler: ${error.message || "Unbekannt"}`);
+        }
+        return;
+      }
+
+      if (data && !data.success) {
+        // Check for rate limit in response
+        if (data.error?.includes("429") || data.error?.toLowerCase().includes("rate")) {
+          toast.error("⏳ Zu schnell! Bitte kurz warten und erneut versuchen.");
+        } else {
+          toast.error(`Analyse fehlgeschlagen: ${data.error || "Unbekannter Fehler"}`);
+        }
+        return;
+      }
+
+      toast.success("✨ Bild erfolgreich analysiert!");
+      loadAssets();
+    } catch (error: any) {
+      if (error.message?.includes("429") || error.message?.toLowerCase().includes("rate")) {
+        toast.error("⏳ Zu schnell! Bitte kurz warten und erneut versuchen.");
+      } else {
+        toast.error(`Analyse-Exception: ${error.message || "Netzwerkfehler"}`);
+      }
+    } finally {
+      setAnalyzingSingleId(null);
     }
   };
 
@@ -595,15 +648,37 @@ export default function MediaArchivePage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {asset.tags?.slice(0, 3).map(tag => (
-                          <Badge key={tag} variant="outline" className="text-xs">
-                            {tag}
-                          </Badge>
-                        ))}
-                        {!asset.tags?.length && (
-                          <span className="text-xs text-muted-foreground italic">Nicht analysiert</span>
-                        )}
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap gap-1">
+                          {asset.tags?.slice(0, 3).map(tag => (
+                            <Badge key={tag} variant="outline" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                          {!asset.tags?.length && (
+                            <span className="text-xs text-muted-foreground italic">Nicht analysiert</span>
+                          )}
+                        </div>
+                        {/* Permanent Analyze Button for unanalyzed images */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAnalyzeSingle(asset)}
+                          disabled={analyzingSingleId === asset.id}
+                          className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:text-primary"
+                        >
+                          {analyzingSingleId === asset.id ? (
+                            <>
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              Analysiere...
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="mr-1 h-3 w-3" />
+                              Jetzt analysieren
+                            </>
+                          )}
+                        </Button>
                       </div>
                     )}
                     <p className="text-xs text-muted-foreground">
