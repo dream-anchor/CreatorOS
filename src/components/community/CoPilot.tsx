@@ -49,8 +49,31 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
     }
   }, [isOpen]);
 
-  const sendMessage = useCallback(async () => {
-    if (!inputValue.trim() || isLoading) return;
+  const sendMessage = useCallback(async (e?: React.FormEvent | React.MouseEvent) => {
+    // CRITICAL: Prevent form/button default behavior
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    // DEBUG: Log button click
+    console.log('[CoPilot] Button clicked, input:', inputValue);
+    
+    // Validation
+    if (!inputValue.trim()) {
+      toast.error('Eingabe leer');
+      console.log('[CoPilot] Input is empty, returning');
+      return;
+    }
+    
+    if (isLoading) {
+      console.log('[CoPilot] Already loading, returning');
+      return;
+    }
+
+    // IMMEDIATE visual feedback - set loading BEFORE anything else
+    setIsLoading(true);
+    console.log('[CoPilot] Loading set to true');
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -61,29 +84,40 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
 
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
-    setIsLoading(true);
 
     try {
+      console.log('[CoPilot] Starting API call...');
+      
       // Build message history for context
       const messageHistory = [...messages, userMessage].map((m) => ({
         role: m.role,
         content: m.content,
       }));
 
+      console.log('[CoPilot] Invoking copilot-chat with', messageHistory.length, 'messages');
+      
       const { data, error } = await supabase.functions.invoke("copilot-chat", {
         body: { messages: messageHistory },
       });
 
+      console.log('[CoPilot] Response received:', { data: !!data, error: !!error });
+
       // Handle function invoke errors
       if (error) {
-        console.error("CoPilot invoke error:", error);
-        throw new Error(error.message || "Verbindungsfehler");
+        console.error("[CoPilot] Invoke error:", error);
+        const errMsg = error.message || "Verbindungsfehler zur Edge Function";
+        alert(`FEHLER: ${errMsg}`);
+        throw new Error(errMsg);
       }
 
       // Check if response contains an error message from the edge function
       if (data?.error && !data?.message) {
+        console.error("[CoPilot] Edge function returned error:", data.error);
+        alert(`EDGE FUNCTION FEHLER: ${data.error}`);
         throw new Error(data.error);
       }
+
+      console.log('[CoPilot] Success! Message:', data?.message?.substring(0, 100));
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -102,45 +136,48 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
         toast.error("AI-Credits aufgebraucht. Bitte Konto aufladen.");
       }
     } catch (error) {
-      console.error("CoPilot error:", error);
+      console.error("[CoPilot] Catch block error:", error);
+      
+      // ALWAYS show alert for debugging on mobile
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      alert(`CHAT FEHLER:\n${errorMsg}`);
       
       // Detect CORS/Network errors
       const isCorsOrNetworkError = 
         error instanceof TypeError && 
-        (error.message.includes("Failed to fetch") || 
-         error.message.includes("NetworkError") ||
-         error.message.includes("CORS"));
+        (errorMsg.includes("Failed to fetch") || 
+         errorMsg.includes("NetworkError") ||
+         errorMsg.includes("CORS") ||
+         errorMsg.includes("network"));
       
-      let errorMsg: string;
-      let toastMsg: string;
+      let displayMsg: string;
       
       if (isCorsOrNetworkError) {
-        errorMsg = "Verbindungsfehler (CORS/Network). Bitte prüfe die Entwicklerkonsole für Details.";
-        toastMsg = "Verbindungsfehler (CORS/Network). Bitte Entwicklerkonsole prüfen.";
-        console.error("CORS/Network Error - Check if the edge function is deployed and CORS headers are set correctly.");
+        displayMsg = "Verbindungsfehler (CORS/Network). Prüfe Konsole.";
+        console.error("[CoPilot] CORS/Network Error detected");
       } else {
-        errorMsg = error instanceof Error ? error.message : "Unbekannter Fehler";
-        toastMsg = `Fehler: ${errorMsg}`;
+        displayMsg = errorMsg;
       }
       
-      toast.error(toastMsg);
+      toast.error(displayMsg);
       
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `❌ ${errorMsg}. Bitte versuche es erneut oder formuliere deine Anfrage anders.`,
+        content: `❌ ${displayMsg}. Bitte versuche es erneut.`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      console.log('[CoPilot] Loading set to false');
     }
   }, [inputValue, isLoading, messages]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      sendMessage(e);
     }
   };
 
@@ -543,11 +580,16 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
                 className="flex-1 bg-background"
               />
               <Button
-                onClick={sendMessage}
+                onClick={(e) => sendMessage(e)}
                 disabled={!inputValue.trim() || isLoading}
                 size="icon"
+                type="button"
               >
-                <Send className="h-4 w-4" />
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </Button>
             </div>
           </div>
