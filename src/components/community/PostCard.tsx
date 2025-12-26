@@ -5,6 +5,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
@@ -14,10 +20,14 @@ import {
   Calendar,
   MessageSquare,
   Image as ImageIcon,
+  MoreVertical,
+  Wrench,
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { CommentWithContext } from "./CommentCard";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface PostGroup {
   igMediaId: string;
@@ -26,6 +36,7 @@ interface PostGroup {
   postShortcode?: string | null;
   publishedAt: string | null;
   postImageUrl?: string | null;
+  postId?: string | null;
   comments: CommentWithContext[];
 }
 
@@ -52,6 +63,7 @@ interface PostCardProps {
   onUpdateReply: (id: string, text: string) => void;
   onApproveAll: (igMediaId: string) => void;
   sanitizingComments: Set<string>;
+  onMetadataRepaired?: () => void;
 }
 
 export function PostCard({
@@ -60,9 +72,44 @@ export function PostCard({
   onUpdateReply,
   onApproveAll,
   sanitizingComments,
+  onMetadataRepaired,
 }: PostCardProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showFullCaption, setShowFullCaption] = useState(false);
+  const [isRepairing, setIsRepairing] = useState(false);
+
+  const handleRepairMetadata = async () => {
+    setIsRepairing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("repair-post-metadata", {
+        body: {
+          ig_media_id: group.igMediaId,
+          post_id: group.postId,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast.success("✅ Metadaten erfolgreich repariert!", {
+          description: data.data?.permalink 
+            ? `Neuer Link: ${data.data.permalink.substring(0, 40)}...`
+            : "Daten wurden aktualisiert",
+        });
+        // Trigger a refresh of the parent component
+        onMetadataRepaired?.();
+      } else {
+        throw new Error(data?.error || "Unbekannter Fehler");
+      }
+    } catch (err) {
+      console.error("Repair error:", err);
+      toast.error("❌ Reparatur fehlgeschlagen", {
+        description: err instanceof Error ? err.message : "Bitte später erneut versuchen",
+      });
+    } finally {
+      setIsRepairing(false);
+    }
+  };
 
   const selectedCount = group.comments.filter((c) => c.selected).length;
   const totalCount = group.comments.length;
@@ -175,6 +222,34 @@ export function PostCard({
                 </Button>
               );
             })()}
+
+            {/* Repair Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  disabled={isRepairing}
+                >
+                  {isRepairing ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <MoreVertical className="h-4 w-4" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={handleRepairMetadata}
+                  disabled={isRepairing}
+                  className="cursor-pointer"
+                >
+                  <Wrench className="h-4 w-4 mr-2" />
+                  Metadaten neu synchronisieren
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             
             <div className="flex items-center gap-2 pl-3 border-l border-border/50">
               <span className="text-xs text-muted-foreground whitespace-nowrap">Alle</span>
