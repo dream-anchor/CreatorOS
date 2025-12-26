@@ -103,13 +103,32 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
       }
     } catch (error) {
       console.error("CoPilot error:", error);
-      const errorMsg = error instanceof Error ? error.message : "Unbekannter Fehler";
-      toast.error(`Fehler: ${errorMsg}`);
+      
+      // Detect CORS/Network errors
+      const isCorsOrNetworkError = 
+        error instanceof TypeError && 
+        (error.message.includes("Failed to fetch") || 
+         error.message.includes("NetworkError") ||
+         error.message.includes("CORS"));
+      
+      let errorMsg: string;
+      let toastMsg: string;
+      
+      if (isCorsOrNetworkError) {
+        errorMsg = "Verbindungsfehler (CORS/Network). Bitte prüfe die Entwicklerkonsole für Details.";
+        toastMsg = "Verbindungsfehler (CORS/Network). Bitte Entwicklerkonsole prüfen.";
+        console.error("CORS/Network Error - Check if the edge function is deployed and CORS headers are set correctly.");
+      } else {
+        errorMsg = error instanceof Error ? error.message : "Unbekannter Fehler";
+        toastMsg = `Fehler: ${errorMsg}`;
+      }
+      
+      toast.error(toastMsg);
       
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `❌ Es gab einen Fehler: ${errorMsg}. Bitte versuche es erneut oder formuliere deine Anfrage anders.`,
+        content: `❌ ${errorMsg}. Bitte versuche es erneut oder formuliere deine Anfrage anders.`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
