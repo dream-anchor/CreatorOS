@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -11,9 +12,9 @@ import {
   Heart,
   MessageCircle,
   Bookmark,
-  Sparkles,
   BarChart3,
   ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -23,27 +24,43 @@ import { Post } from "@/types/database";
 export default function ContentLibraryPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) loadImportedPosts();
   }, [user]);
 
-  const loadImportedPosts = async () => {
+  const loadImportedPosts = async (showRefreshToast = false) => {
     try {
-      const { data, error } = await supabase
+      if (showRefreshToast) setRefreshing(true);
+      
+      const { data, error, count } = await supabase
         .from("posts")
-        .select("*")
+        .select("*", { count: 'exact' })
         .eq("is_imported", true)
         .order("likes_count", { ascending: false });
 
       if (error) throw error;
+      
       setPosts((data as Post[]) || []);
+      setDebugInfo(`Abfrage abgeschlossen: ${data?.length || 0} Posts mit is_imported=true gefunden`);
+      
+      if (showRefreshToast) {
+        toast.success(`${data?.length || 0} Posts geladen`);
+      }
     } catch (error: any) {
       toast.error("Fehler: " + error.message);
+      setDebugInfo(`Fehler: ${error.message}`);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    loadImportedPosts(true);
   };
 
   // Calculate virality score for each post
@@ -71,7 +88,7 @@ export default function ContentLibraryPage() {
 
   if (loading) {
     return (
-      <AppLayout title="📊 Post-Historie">
+      <AppLayout title="Post-Historie">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -81,8 +98,20 @@ export default function ContentLibraryPage() {
 
   return (
     <AppLayout
-      title="📊 Post-Historie"
+      title="Post-Historie"
       description="Deine importierten Instagram-Posts mit Erfolgsanalyse"
+      actions={
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="gap-2"
+        >
+          <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+          Aktualisieren
+        </Button>
+      }
     >
       {posts.length === 0 ? (
         <Card className="glass-card">
@@ -97,6 +126,11 @@ export default function ContentLibraryPage() {
               Importiere deine Instagram-Posts in den Einstellungen unter "Meta-Verbindung", 
               um hier deine Erfolgsstatistiken zu sehen.
             </p>
+            {debugInfo && (
+              <p className="text-xs text-muted-foreground/60 font-mono mt-4 p-2 bg-muted/50 rounded">
+                Debug: {debugInfo}
+              </p>
+            )}
           </CardContent>
         </Card>
       ) : (
