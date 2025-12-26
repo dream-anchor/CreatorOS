@@ -187,6 +187,27 @@ export type Database = {
         }
         Relationships: []
       }
+      emoji_nogo_terms: {
+        Row: {
+          created_at: string
+          id: string
+          term: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          term: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          term?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       instagram_comments: {
         Row: {
           ai_reply_suggestion: string | null

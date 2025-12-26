@@ -41,6 +41,14 @@ serve(async (req) => {
 
     const blacklist = blacklistTopics?.map(t => t.topic.toLowerCase()) || [];
 
+    // Get emoji no-go terms
+    const { data: emojiNogoTerms } = await supabase
+      .from('emoji_nogo_terms')
+      .select('term')
+      .eq('user_id', user.id);
+
+    const emojiNogoList = emojiNogoTerms?.map(t => t.term) || [];
+
     // Fetch unreplied comments without AI analysis yet
     const { data: comments, error: commentsError } = await supabase
       .from('instagram_comments')
@@ -74,12 +82,25 @@ serve(async (req) => {
       username: c.commenter_username
     }));
 
+    // Build emoji constraint section for prompt
+    let emojiConstraint = '';
+    if (emojiNogoList.length > 0) {
+      emojiConstraint = `
+
+WICHTIGE EMOJI-EINSCHRÄNKUNG:
+Du darfst unter KEINEN Umständen Emojis verwenden, die mit folgenden Begriffen assoziiert sind: ${emojiNogoList.join(', ')}.
+Beispiel: Wenn "Liebe" in der Liste steht, nutze KEINE Herz-Emojis (❤️, 😍, 😘, 💕, 💖, 💗, 💝, 🥰, 😻) oder andere romantische/liebevolle Emojis.
+Nutze stattdessen neutrale, coole Gesten wie 🙌, 👍, 😎, 🔥, ✨, 💪, 🎯, 👏 oder ⚡.
+Halte dich STRIKT an diese Vorgabe!`;
+    }
+
     const analysisPrompt = `Du bist ein Sentiment-Analysator für Instagram-Kommentare.
 
 Analysiere jeden Kommentar und gib für jeden zurück:
 1. sentiment_score: Eine Zahl von -1.0 (sehr negativ/Hass) bis 1.0 (sehr positiv)
 2. is_critical: true wenn der Kommentar Hass, Beleidigung, Spam oder heftige Kritik enthält
 3. reply_suggestion: Ein freundlicher, kurzer Antwort-Vorschlag (maximal 2-3 Sätze, darf Emojis nutzen, sei direkt und reaktiv wie ein Creator der mal eben vom Set schreibt)
+${emojiConstraint}
 
 Hier sind die Kommentare als JSON:
 ${JSON.stringify(commentsToAnalyze)}
