@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.simulate-model-responses]
 verify_jwt = false
+
+[functions.copilot-chat]
+verify_jwt = false
