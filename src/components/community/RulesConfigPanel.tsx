@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useRef, KeyboardEvent, ClipboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Settings, ChevronDown, ChevronUp, X, Plus, EyeOff, Ban } from "lucide-react";
+import { Settings, ChevronDown, ChevronUp, X, EyeOff, Ban } from "lucide-react";
 
 interface BlacklistTopic {
   id: string;
@@ -18,31 +18,103 @@ interface EmojiNogoTerm {
 interface RulesConfigPanelProps {
   emojiNogoTerms: EmojiNogoTerm[];
   blacklistTopics: BlacklistTopic[];
-  newEmojiTerm: string;
-  newTopic: string;
-  onNewEmojiTermChange: (value: string) => void;
-  onNewTopicChange: (value: string) => void;
-  onAddEmojiNogoTerm: () => void;
+  onAddEmojiNogoTerms: (terms: string[]) => void;
   onRemoveEmojiNogoTerm: (id: string) => void;
-  onAddBlacklistTopic: () => void;
+  onAddBlacklistTopics: (topics: string[]) => void;
   onRemoveBlacklistTopic: (id: string) => void;
 }
 
 export function RulesConfigPanel({
   emojiNogoTerms,
   blacklistTopics,
-  newEmojiTerm,
-  newTopic,
-  onNewEmojiTermChange,
-  onNewTopicChange,
-  onAddEmojiNogoTerm,
+  onAddEmojiNogoTerms,
   onRemoveEmojiNogoTerm,
-  onAddBlacklistTopic,
+  onAddBlacklistTopics,
   onRemoveBlacklistTopic,
 }: RulesConfigPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [emojiInput, setEmojiInput] = useState("");
+  const [topicInput, setTopicInput] = useState("");
+  const emojiInputRef = useRef<HTMLInputElement>(null);
+  const topicInputRef = useRef<HTMLInputElement>(null);
 
   const totalRules = emojiNogoTerms.length + blacklistTopics.length;
+
+  // Parse input string into array of trimmed, non-empty terms
+  const parseTerms = (input: string): string[] => {
+    return input
+      .split(",")
+      .map((term) => term.trim())
+      .filter((term) => term.length > 0);
+  };
+
+  // Handle emoji input key events
+  const handleEmojiKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "," || e.key === "Enter") {
+      e.preventDefault();
+      const terms = parseTerms(emojiInput);
+      if (terms.length > 0) {
+        onAddEmojiNogoTerms(terms);
+        setEmojiInput("");
+      }
+    }
+  };
+
+  // Handle topic input key events
+  const handleTopicKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "," || e.key === "Enter") {
+      e.preventDefault();
+      const terms = parseTerms(topicInput);
+      if (terms.length > 0) {
+        onAddBlacklistTopics(terms);
+        setTopicInput("");
+      }
+    }
+  };
+
+  // Handle paste for emoji input
+  const handleEmojiPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const pastedText = e.clipboardData.getData("text");
+    if (pastedText.includes(",")) {
+      e.preventDefault();
+      const terms = parseTerms(pastedText);
+      if (terms.length > 0) {
+        onAddEmojiNogoTerms(terms);
+        setEmojiInput("");
+      }
+    }
+  };
+
+  // Handle paste for topic input
+  const handleTopicPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const pastedText = e.clipboardData.getData("text");
+    if (pastedText.includes(",")) {
+      e.preventDefault();
+      const terms = parseTerms(pastedText);
+      if (terms.length > 0) {
+        onAddBlacklistTopics(terms);
+        setTopicInput("");
+      }
+    }
+  };
+
+  // Handle blur for emoji input - add remaining text
+  const handleEmojiBlur = () => {
+    const terms = parseTerms(emojiInput);
+    if (terms.length > 0) {
+      onAddEmojiNogoTerms(terms);
+      setEmojiInput("");
+    }
+  };
+
+  // Handle blur for topic input - add remaining text
+  const handleTopicBlur = () => {
+    const terms = parseTerms(topicInput);
+    if (terms.length > 0) {
+      onAddBlacklistTopics(terms);
+      setTopicInput("");
+    }
+  };
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -76,52 +148,41 @@ export function RulesConfigPanel({
               <Ban className="h-4 w-4 text-destructive" />
               <h4 className="font-medium text-sm">Emoji-No-Gos</h4>
               <span className="text-xs text-muted-foreground">
-                Begriffe, deren assoziierte Emojis vermieden werden
+                Begriffe mit Komma trennen
               </span>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {emojiNogoTerms.length === 0 ? (
-                <span className="text-sm text-muted-foreground italic">
-                  Keine Einschränkungen definiert
-                </span>
-              ) : (
-                emojiNogoTerms.map((term) => (
-                  <Badge
-                    key={term.id}
-                    variant="outline"
-                    className="gap-1.5 pr-1.5 h-7 border-destructive/40 text-destructive bg-destructive/5 hover:bg-destructive/10"
+            {/* Tags display */}
+            <div className="min-h-[40px] p-2 rounded-lg border bg-background/50 flex flex-wrap gap-2 items-center">
+              {emojiNogoTerms.map((term) => (
+                <Badge
+                  key={term.id}
+                  variant="outline"
+                  className="gap-1.5 pr-1.5 h-7 border-destructive/40 text-destructive bg-destructive/5 hover:bg-destructive/10 animate-fade-in"
+                >
+                  ⛔ {term.term}
+                  <button
+                    onClick={() => onRemoveEmojiNogoTerm(term.id)}
+                    className="ml-0.5 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
                   >
-                    ⛔ {term.term}
-                    <button
-                      onClick={() => onRemoveEmojiNogoTerm(term.id)}
-                      className="ml-0.5 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))
-              )}
-            </div>
-
-            <div className="flex gap-2">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
               <Input
-                placeholder="z.B. Liebe, Herzen, Kitsch"
-                value={newEmojiTerm}
-                onChange={(e) => onNewEmojiTermChange(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && onAddEmojiNogoTerm()}
-                className="max-w-xs h-9 text-sm"
+                ref={emojiInputRef}
+                placeholder={emojiNogoTerms.length === 0 ? "Liebe, Herzen, Kitsch..." : ""}
+                value={emojiInput}
+                onChange={(e) => setEmojiInput(e.target.value)}
+                onKeyDown={handleEmojiKeyDown}
+                onPaste={handleEmojiPaste}
+                onBlur={handleEmojiBlur}
+                className="flex-1 min-w-[120px] h-7 border-0 bg-transparent shadow-none focus-visible:ring-0 text-sm px-1"
               />
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={onAddEmojiNogoTerm}
-                className="h-9"
-              >
-                <Plus className="h-3.5 w-3.5 mr-1.5" />
-                Hinzufügen
-              </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Tippe Begriffe und drücke <kbd className="px-1.5 py-0.5 rounded bg-muted font-mono text-[10px]">Enter</kbd> oder <kbd className="px-1.5 py-0.5 rounded bg-muted font-mono text-[10px]">,</kbd> zum Hinzufügen
+            </p>
           </div>
 
           {/* Separator */}
@@ -133,52 +194,41 @@ export function RulesConfigPanel({
               <EyeOff className="h-4 w-4 text-muted-foreground" />
               <h4 className="font-medium text-sm">Themen ausblenden</h4>
               <span className="text-xs text-muted-foreground">
-                Kommentare mit diesen Begriffen werden nicht angezeigt
+                Begriffe mit Komma trennen
               </span>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {blacklistTopics.length === 0 ? (
-                <span className="text-sm text-muted-foreground italic">
-                  Keine Themen auf der Blacklist
-                </span>
-              ) : (
-                blacklistTopics.map((topic) => (
-                  <Badge
-                    key={topic.id}
-                    variant="secondary"
-                    className="gap-1.5 pr-1.5 h-7"
+            {/* Tags display */}
+            <div className="min-h-[40px] p-2 rounded-lg border bg-background/50 flex flex-wrap gap-2 items-center">
+              {blacklistTopics.map((topic) => (
+                <Badge
+                  key={topic.id}
+                  variant="secondary"
+                  className="gap-1.5 pr-1.5 h-7 animate-fade-in"
+                >
+                  {topic.topic}
+                  <button
+                    onClick={() => onRemoveBlacklistTopic(topic.id)}
+                    className="ml-0.5 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
                   >
-                    {topic.topic}
-                    <button
-                      onClick={() => onRemoveBlacklistTopic(topic.id)}
-                      className="ml-0.5 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))
-              )}
-            </div>
-
-            <div className="flex gap-2">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
               <Input
-                placeholder="z.B. Pater Brown, Werbung"
-                value={newTopic}
-                onChange={(e) => onNewTopicChange(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && onAddBlacklistTopic()}
-                className="max-w-xs h-9 text-sm"
+                ref={topicInputRef}
+                placeholder={blacklistTopics.length === 0 ? "Pater Brown, Werbung..." : ""}
+                value={topicInput}
+                onChange={(e) => setTopicInput(e.target.value)}
+                onKeyDown={handleTopicKeyDown}
+                onPaste={handleTopicPaste}
+                onBlur={handleTopicBlur}
+                className="flex-1 min-w-[120px] h-7 border-0 bg-transparent shadow-none focus-visible:ring-0 text-sm px-1"
               />
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={onAddBlacklistTopic}
-                className="h-9"
-              >
-                <Plus className="h-3.5 w-3.5 mr-1.5" />
-                Hinzufügen
-              </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Kommentare mit diesen Begriffen werden komplett ausgeblendet
+            </p>
           </div>
         </div>
       </CollapsibleContent>
