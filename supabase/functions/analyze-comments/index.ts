@@ -100,10 +100,13 @@ Analysiere jeden Kommentar und gib für jeden zurück:
 1. sentiment_score: Eine Zahl von -1.0 (sehr negativ/Hass) bis 1.0 (sehr positiv)
 2. is_critical: true wenn der Kommentar Hass, Beleidigung, Spam oder heftige Kritik enthält
 3. reply_suggestion: Ein freundlicher, kurzer Antwort-Vorschlag (maximal 2-3 Sätze, darf Emojis nutzen, sei direkt und reaktiv wie ein Creator der mal eben vom Set schreibt)
+
+WICHTIGE EINSCHRÄNKUNG - ABSOLUTES HASHTAG-VERBOT:
+Du darfst unter KEINEN Umständen Hashtags (#) verwenden. Keine #hashtags, niemals. Schreibe wie ein Mensch in einem Chat, nicht wie ein Marketer.
 ${emojiConstraint}
 
 Hier sind die Kommentare als JSON:
-${JSON.stringify(commentsToAnalyze)}
+\${JSON.stringify(commentsToAnalyze)}
 
 Antworte NUR mit einem JSON-Array in diesem Format:
 [
