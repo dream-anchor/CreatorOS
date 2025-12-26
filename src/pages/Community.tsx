@@ -3,44 +3,24 @@ import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { 
   MessageCircle, 
   RefreshCw, 
   AlertTriangle, 
-  Flame, 
-  Sparkles,
   EyeOff,
   Ban,
   Trash2,
   X,
   Plus,
-  Send,
-  Clock
+  Rocket,
+  Zap
 } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
-
-interface Comment {
-  id: string;
-  ig_comment_id: string;
-  ig_media_id: string;
-  commenter_username: string;
-  comment_text: string;
-  comment_timestamp: string;
-  is_replied: boolean;
-  is_hidden: boolean;
-  is_critical: boolean;
-  sentiment_score: number | null;
-  ai_reply_suggestion: string | null;
-  selected?: boolean;
-  editedReply?: string;
-}
+import { CommentCard, CommentWithContext } from "@/components/community/CommentCard";
 
 interface BlacklistTopic {
   id: string;
@@ -52,17 +32,20 @@ interface EmojiNogoTerm {
   term: string;
 }
 
+type SmartStrategy = 'warmup' | 'afterglow' | 'natural' | null;
+
 export default function Community() {
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [sending, setSending] = useState(false);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [criticalComments, setCriticalComments] = useState<Comment[]>([]);
+  const [comments, setComments] = useState<CommentWithContext[]>([]);
+  const [criticalComments, setCriticalComments] = useState<CommentWithContext[]>([]);
   const [blacklistTopics, setBlacklistTopics] = useState<BlacklistTopic[]>([]);
   const [newTopic, setNewTopic] = useState("");
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
   const [emojiNogoTerms, setEmojiNogoTerms] = useState<EmojiNogoTerm[]>([]);
   const [newEmojiTerm, setNewEmojiTerm] = useState("");
+  const [smartStrategy, setSmartStrategy] = useState<SmartStrategy>(null);
 
   useEffect(() => {
     loadData();
@@ -70,14 +53,10 @@ export default function Community() {
 
   const loadData = async () => {
     // Load blacklist topics
-    const { data: topics, error: topicsError } = await supabase
+    const { data: topics } = await supabase
       .from('blacklist_topics')
       .select('*')
       .order('created_at', { ascending: false });
-
-    if (topicsError) {
-      console.error('Failed to load blacklist topics:', topicsError);
-    }
 
     if (topics && topics.length > 0) {
       setBlacklistTopics(topics);
@@ -87,19 +66,15 @@ export default function Community() {
       const userId = userRes.user?.id;
 
       if (userId) {
-        const { data: created, error: createErr } = await supabase
+        const { data: created } = await supabase
           .from('blacklist_topics')
           .insert({ topic: 'Pater Brown', user_id: userId })
           .select()
           .maybeSingle();
 
-        if (!createErr && created) {
+        if (created) {
           setBlacklistTopics([created]);
-        } else {
-          setBlacklistTopics([]);
         }
-      } else {
-        setBlacklistTopics([]);
       }
     }
 
@@ -113,21 +88,96 @@ export default function Community() {
       setEmojiNogoTerms(emojiTerms);
     }
 
-    // Load comments
+    // Get blacklist for filtering
+    const blacklistLower = (topics || []).map(t => t.topic.toLowerCase());
+
+    // Load comments with post context - filter blacklist already here
     const { data: allComments } = await supabase
       .from('instagram_comments')
-      .select('*')
+      .select(`
+        *,
+        posts:post_id (
+          caption,
+          original_media_url,
+          original_ig_permalink,
+          ig_media_id
+        )
+      `)
       .eq('is_replied', false)
       .eq('is_hidden', false)
       .order('comment_timestamp', { ascending: false });
 
     if (allComments) {
-      const critical = allComments.filter(c => c.is_critical);
-      const normal = allComments.filter(c => !c.is_critical);
+      // Filter out comments containing blacklisted topics in comment OR caption
+      const filteredComments = allComments.filter(c => {
+        const commentLower = c.comment_text.toLowerCase();
+        const captionLower = (c.posts?.caption || '').toLowerCase();
+        
+        // Check if any blacklist topic is in comment or caption
+        const isBlacklisted = blacklistLower.some(topic => 
+          commentLower.includes(topic) || captionLower.includes(topic)
+        );
+        
+        return !isBlacklisted;
+      });
 
-      setCriticalComments(critical.map(c => ({ ...c, selected: false, editedReply: c.ai_reply_suggestion || '' })));
-      setComments(normal.map(c => ({ ...c, selected: true, editedReply: c.ai_reply_suggestion || '' })));
+      // Map to our interface with post context
+      const mappedComments: CommentWithContext[] = filteredComments.map(c => ({
+        ...c,
+        post_caption: c.posts?.caption || null,
+        post_image_url: c.posts?.original_media_url || null,
+        post_permalink: c.posts?.original_ig_permalink || null,
+        selected: !c.is_critical,
+        editedReply: c.ai_reply_suggestion || '',
+        approved: false,
+      }));
+
+      const critical = mappedComments.filter(c => c.is_critical);
+      const normal = mappedComments.filter(c => !c.is_critical);
+
+      setCriticalComments(critical);
+      setComments(normal);
     }
+
+    // Determine smart strategy based on calendar
+    await determineSmartStrategy();
+  };
+
+  const determineSmartStrategy = async () => {
+    const now = new Date();
+    const in60Min = addMinutes(now, 60);
+    const before60Min = subMinutes(now, 60);
+
+    // Check for scheduled posts in next 60 minutes (Warm-Up)
+    const { data: upcomingPosts } = await supabase
+      .from('posts')
+      .select('id, scheduled_at')
+      .eq('status', 'SCHEDULED')
+      .gte('scheduled_at', now.toISOString())
+      .lte('scheduled_at', in60Min.toISOString())
+      .limit(1);
+
+    if (upcomingPosts && upcomingPosts.length > 0) {
+      setSmartStrategy('warmup');
+      return;
+    }
+
+    // Check for posts published in last 60 minutes (After-Glow)
+    const { data: recentPosts } = await supabase
+      .from('posts')
+      .select('id, published_at')
+      .eq('status', 'PUBLISHED')
+      .gte('published_at', before60Min.toISOString())
+      .lte('published_at', now.toISOString())
+      .limit(1);
+
+    if (recentPosts && recentPosts.length > 0) {
+      setSmartStrategy('afterglow');
+      return;
+    }
+
+    // Default: natural distribution
+    setSmartStrategy('natural');
   };
 
   const fetchComments = async () => {
@@ -142,7 +192,6 @@ export default function Community() {
       toast.success("✅ Kommentare geladen!");
       setLastFetch(new Date());
       
-      // Now analyze them
       setAnalyzing(true);
       toast.info("🧠 Analysiere Stimmung & generiere Antworten...");
 
@@ -185,6 +234,8 @@ export default function Community() {
       setBlacklistTopics([data, ...blacklistTopics]);
       setNewTopic("");
       toast.success(`"${data.topic}" zur Blacklist hinzugefügt`);
+      // Reload to filter out newly blacklisted comments
+      await loadData();
     }
   };
 
@@ -254,27 +305,52 @@ export default function Community() {
     ));
   };
 
-  const sendReplies = async (mode: 'warmup' | 'afterglow') => {
-    const selectedComments = comments.filter(c => c.selected && c.editedReply);
+  const approveComment = (id: string) => {
+    setComments(prev => prev.map(c => 
+      c.id === id ? { ...c, approved: true, selected: true } : c
+    ));
+    toast.success("✅ Antwort freigegeben");
+  };
+
+  const smartReply = async () => {
+    // Only send approved comments
+    const approvedComments = comments.filter(c => c.approved && c.editedReply);
     
-    if (selectedComments.length === 0) {
-      toast.error("Keine Kommentare ausgewählt");
+    if (approvedComments.length === 0) {
+      toast.error("Keine freigegebenen Antworten");
       return;
     }
 
     setSending(true);
-    
-    // For warmup: send 50% immediately
-    // For afterglow: queue the remaining 50%
-    const halfIndex = Math.ceil(selectedComments.length / 2);
-    const toSendNow = mode === 'warmup' 
-      ? selectedComments.slice(0, halfIndex)
-      : selectedComments.slice(halfIndex);
 
-    toast.info(`${mode === 'warmup' ? '🔥 Warm-Up' : '✨ After-Glow'}: Sende ${toSendNow.length} Antworten...`);
+    let toSend: CommentWithContext[];
+    let strategyName: string;
+
+    switch (smartStrategy) {
+      case 'warmup':
+        // Warm-Up: Send replies to oldest comments first (engagement before post)
+        toSend = [...approvedComments].sort(
+          (a, b) => new Date(a.comment_timestamp).getTime() - new Date(b.comment_timestamp).getTime()
+        );
+        strategyName = "🔥 Warm-Up";
+        break;
+      case 'afterglow':
+        // After-Glow: Send replies to newest comments first (push engagement after post)
+        toSend = [...approvedComments].sort(
+          (a, b) => new Date(b.comment_timestamp).getTime() - new Date(a.comment_timestamp).getTime()
+        );
+        strategyName = "✨ After-Glow";
+        break;
+      default:
+        // Natural: Random order with delays
+        toSend = [...approvedComments].sort(() => Math.random() - 0.5);
+        strategyName = "🌿 Natürlich";
+    }
+
+    toast.info(`${strategyName}: Sende ${toSend.length} Antworten...`);
 
     let sentCount = 0;
-    for (const comment of toSendNow) {
+    for (const comment of toSend) {
       try {
         const { error } = await supabase.functions.invoke('reply-to-comment', {
           body: { comment_id: comment.id, reply_text: comment.editedReply }
@@ -288,15 +364,32 @@ export default function Community() {
         console.error('Reply error:', err);
       }
 
-      // Small delay between replies
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Delay between replies - longer for natural mode
+      const delay = smartStrategy === 'natural' 
+        ? Math.random() * 2000 + 1000 // 1-3 seconds
+        : 500;
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
 
     toast.success(`✅ ${sentCount} Antworten gesendet!`);
     setSending(false);
   };
 
+  const approvedCount = comments.filter(c => c.approved).length;
   const selectedCount = comments.filter(c => c.selected).length;
+
+  const getStrategyInfo = () => {
+    switch (smartStrategy) {
+      case 'warmup':
+        return { icon: '🔥', label: 'Warm-Up Modus', desc: 'Post geplant in < 60 Min – Älteste Kommentare zuerst' };
+      case 'afterglow':
+        return { icon: '✨', label: 'After-Glow Modus', desc: 'Post veröffentlicht vor < 60 Min – Neueste zuerst' };
+      default:
+        return { icon: '🌿', label: 'Natürlicher Modus', desc: 'Kein Post in Sicht – Zufällige Verteilung' };
+    }
+  };
+
+  const strategyInfo = getStrategyInfo();
 
   return (
     <AppLayout 
@@ -311,7 +404,7 @@ export default function Community() {
               ⛔ Emoji-No-Gos (Begriffe)
             </CardTitle>
             <CardDescription>
-              Die KI vermeidet Emojis, die mit diesen Begriffen assoziiert sind (z.B. "Liebe" → keine ❤️😍💕)
+              Die KI vermeidet Emojis, die mit diesen Begriffen assoziiert sind
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -352,7 +445,7 @@ export default function Community() {
               Themen ausblenden
             </CardTitle>
             <CardDescription>
-              Kommentare mit diesen Wörtern werden automatisch ausgeblendet
+              Kommentare (und zugehörige Posts) mit diesen Wörtern werden komplett ausgeblendet
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -400,6 +493,19 @@ export default function Community() {
             {loading ? 'Lade...' : analyzing ? 'Analysiere...' : 'Kommentare laden'}
           </Button>
         </div>
+
+        {/* Smart Strategy Info */}
+        {smartStrategy && (
+          <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">{strategyInfo.icon}</span>
+              <div>
+                <p className="font-medium text-sm">{strategyInfo.label}</p>
+                <p className="text-xs text-muted-foreground">{strategyInfo.desc}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Critical Comments Section */}
         {criticalComments.length > 0 && (
@@ -462,59 +568,27 @@ export default function Community() {
           </Card>
         )}
 
-        {/* Normal Comments - Bulk Approval */}
+        {/* Normal Comments - with context cards */}
         {comments.length > 0 ? (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <MessageCircle className="h-4 w-4" />
-                Antworten genehmigen ({selectedCount} von {comments.length} ausgewählt)
+                Antworten vorbereiten ({approvedCount} freigegeben / {comments.length} gesamt)
               </CardTitle>
               <CardDescription>
-                KI-generierte Antworten prüfen und bei Bedarf anpassen
+                Prüfe die KI-Vorschläge und gib sie einzeln frei
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {comments.map(comment => (
-                <div key={comment.id} className="p-4 bg-muted/30 rounded-lg border">
-                  <div className="flex items-start gap-3">
-                    <Checkbox
-                      checked={comment.selected}
-                      onCheckedChange={() => toggleCommentSelection(comment.id)}
-                      className="mt-1"
-                    />
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">@{comment.commenter_username}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {format(new Date(comment.comment_timestamp), 'dd.MM.yyyy HH:mm', { locale: de })}
-                        </span>
-                        {comment.sentiment_score !== null && comment.sentiment_score > 0.5 && (
-                          <Badge variant="secondary" className="text-xs bg-green-500/10 text-green-600">
-                            Positiv
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-sm">{comment.comment_text}</p>
-                      
-                      <Separator className="my-2" />
-                      
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                          <Sparkles className="h-3 w-3" />
-                          Antwort-Vorschlag
-                        </label>
-                        <Textarea
-                          value={comment.editedReply || ''}
-                          onChange={(e) => updateReplyText(comment.id, e.target.value)}
-                          placeholder="Antwort eingeben..."
-                          rows={2}
-                          className="text-sm"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <CommentCard
+                  key={comment.id}
+                  comment={comment}
+                  onToggleSelect={toggleCommentSelection}
+                  onUpdateReply={updateReplyText}
+                  onApprove={approveComment}
+                />
               ))}
             </CardContent>
           </Card>
@@ -528,27 +602,21 @@ export default function Community() {
           </Card>
         )}
 
-        {/* Strategy Buttons */}
-        {comments.length > 0 && selectedCount > 0 && (
-          <div className="flex gap-3 justify-end">
+        {/* Smart Reply Button */}
+        {comments.length > 0 && approvedCount > 0 && (
+          <div className="flex justify-end">
             <Button
               size="lg"
-              variant="outline"
-              onClick={() => sendReplies('warmup')}
+              onClick={smartReply}
               disabled={sending}
               className="gap-2"
             >
-              <Flame className="h-4 w-4 text-orange-500" />
-              🔥 Warm-Up starten ({Math.ceil(selectedCount / 2)})
-            </Button>
-            <Button
-              size="lg"
-              onClick={() => sendReplies('afterglow')}
-              disabled={sending}
-              className="gap-2"
-            >
-              <Clock className="h-4 w-4" />
-              ✨ After-Glow starten ({Math.floor(selectedCount / 2)})
+              {sending ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Rocket className="h-4 w-4" />
+              )}
+              🚀 Smart Reply starten ({approvedCount})
             </Button>
           </div>
         )}
