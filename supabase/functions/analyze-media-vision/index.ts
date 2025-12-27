@@ -11,6 +11,7 @@ interface AnalysisResult {
   description: string;
   mood: string;
   is_good_reference: boolean;
+  dalle_persona_prompt: string | null;
 }
 
 // Use tool calling for reliable structured output
@@ -28,18 +29,37 @@ async function analyzeImage(imageUrl: string, lovableApiKey: string): Promise<An
       messages: [
         {
           role: "system",
-          content: `Du bist ein Bildanalyse-Experte. Analysiere das Foto und nutze das Tool um die Ergebnisse zurückzugeben.`
+          content: `Du bist ein Bildanalyse-Experte, spezialisiert auf die Erstellung von Prompts für KI-Bildgeneratoren. Analysiere das Foto und nutze das Tool um die Ergebnisse zurückzugeben.`
         },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: `Analysiere dieses Foto:
+              text: `Analysiere dieses Foto detailliert:
+
+1. STANDARD-ANALYSE:
 - Erstelle 5 relevante Tags (Stimmung, Kleidung, Setting, Gesichtsausdruck)
 - Schreibe eine kurze Beschreibung (1-2 Sätze)
 - Bestimme die dominante Stimmung (Mood)
-- Entscheide: Ist das Bild als Referenz für KI-Montagen geeignet? (Gesicht klar erkennbar, gute Qualität = true)`
+- Entscheide: Ist das Bild als Referenz für KI-Montagen geeignet? (Gesicht klar erkennbar, gute Qualität = true)
+
+2. VISUAL DNA (KRITISCH WICHTIG - nur wenn eine Person erkennbar ist):
+Erstelle eine DETAILLIERTE PHYSISCHE BESCHREIBUNG der Hauptperson, die als direkter Input für DALL-E dienen kann, um maximale Ähnlichkeit bei generierten Bildern zu erreichen.
+
+Beschreibe PRÄZISE (ohne den Namen der Person zu nennen):
+- Gesichtsform (oval, rund, eckig, herzförmig)
+- Augenpartie (Augenform, Augenfarbe, Augenbrauen-Form und -Dichte)
+- Nase (Größe, Form, markante Merkmale)
+- Mund und Lippen (Größe, Form)
+- Bartwuchs (Stil: Vollbart/Dreitagebart/Schnurrbart/rasiert, Farbe, Dichte, Grauanteil)
+- Haare (Farbe, Länge, Frisur, Dichte, eventuelle Glatze/Geheimratsecken)
+- Hautton und Falten/Charakterlinien
+- Geschätztes Alter
+- Markante Besonderheiten (z.B. markantes Kinn, hohe Stirn, Grübchen)
+
+Formuliere dies als EINEN ZUSAMMENHÄNGENDEN SATZ, der direkt in einem DALL-E Prompt verwendet werden kann, z.B.:
+"Ein Mann Mitte 50, europäischer Typ, mit ovalem Gesicht, grau-braunem Vollbart mittlerer Dichte, kurzen dunkelbraunen Haaren mit grauen Schläfen, leichten Geheimratsecken, ausdrucksvollen braunen Augen unter buschigen Augenbrauen, markanter Nase, leichten Lachfalten um die Augen und ein warm-selbstbewusstes Auftreten."`
             },
             {
               type: "image_url",
@@ -53,7 +73,7 @@ async function analyzeImage(imageUrl: string, lovableApiKey: string): Promise<An
           type: "function",
           function: {
             name: "save_image_analysis",
-            description: "Speichert die Bildanalyse-Ergebnisse",
+            description: "Speichert die Bildanalyse-Ergebnisse inklusive Visual DNA für DALL-E",
             parameters: {
               type: "object",
               properties: {
@@ -74,6 +94,10 @@ async function analyzeImage(imageUrl: string, lovableApiKey: string): Promise<An
                 is_good_reference: {
                   type: "boolean",
                   description: "Ist das Bild als KI-Referenz geeignet? (Gesicht klar erkennbar, gute Qualität)"
+                },
+                dalle_persona_prompt: {
+                  type: "string",
+                  description: "KRITISCH: Die detaillierte physische Beschreibung der Person für DALL-E (Visual DNA). Nur ausfüllen wenn eine Person erkennbar ist. Beispiel: 'Ein Mann Mitte 50, europäischer Typ, mit ovalem Gesicht, grau-braunem Vollbart mittlerer Dichte, kurzen dunkelbraunen Haaren mit grauen Schläfen...'"
                 }
               },
               required: ["tags", "description", "mood", "is_good_reference"],
@@ -112,12 +136,13 @@ async function analyzeImage(imageUrl: string, lovableApiKey: string): Promise<An
         const jsonEnd = cleanContent.lastIndexOf("}");
         if (jsonStart !== -1 && jsonEnd !== -1) {
           cleanContent = cleanContent.substring(jsonStart, jsonEnd + 1);
-          const parsed = JSON.parse(cleanContent);
+        const parsed = JSON.parse(cleanContent);
           return {
             tags: parsed.tags || ["portrait"],
             description: parsed.description || "Bild analysiert",
             mood: parsed.mood || "Professionell",
-            is_good_reference: parsed.is_good_reference ?? true
+            is_good_reference: parsed.is_good_reference ?? true,
+            dalle_persona_prompt: parsed.dalle_persona_prompt || null
           };
         }
       }
@@ -130,7 +155,8 @@ async function analyzeImage(imageUrl: string, lovableApiKey: string): Promise<An
       tags: ["portrait", "person"],
       description: "Automatisch analysiertes Bild",
       mood: "Professionell",
-      is_good_reference: true
+      is_good_reference: true,
+      dalle_persona_prompt: null
     };
   }
 
@@ -138,11 +164,13 @@ async function analyzeImage(imageUrl: string, lovableApiKey: string): Promise<An
   try {
     const args = JSON.parse(toolCall.function.arguments);
     console.log(`[analyze-media] Successfully parsed tool call:`, args);
+    console.log(`[analyze-media] Visual DNA extracted: ${args.dalle_persona_prompt ? 'YES' : 'NO'}`);
     return {
       tags: args.tags || ["portrait"],
       description: args.description || "Bild analysiert",
       mood: args.mood || "Professionell",
-      is_good_reference: args.is_good_reference ?? true
+      is_good_reference: args.is_good_reference ?? true,
+      dalle_persona_prompt: args.dalle_persona_prompt || null
     };
   } catch (parseError) {
     console.error(`[analyze-media] Tool call parse error:`, parseError, toolCall.function?.arguments);
@@ -227,6 +255,7 @@ serve(async (req) => {
             ai_description: analysis.description || null,
             mood: analysis.mood || null,
             is_good_reference: analysis.is_good_reference || false,
+            dalle_persona_prompt: analysis.dalle_persona_prompt || null,
             analyzed: true,
           })
           .eq("id", asset_id)
@@ -243,7 +272,7 @@ serve(async (req) => {
           );
         }
 
-        console.log(`[analyze-media] Successfully analyzed asset ${asset_id}`);
+        console.log(`[analyze-media] Successfully analyzed asset ${asset_id}, has Visual DNA: ${!!analysis.dalle_persona_prompt}`);
         return new Response(
           JSON.stringify({
             success: true,
@@ -252,6 +281,7 @@ serve(async (req) => {
             description: analysis.description,
             mood: analysis.mood,
             is_good_reference: analysis.is_good_reference,
+            has_visual_dna: !!analysis.dalle_persona_prompt,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -341,6 +371,7 @@ serve(async (req) => {
             ai_description: analysis.description || null,
             mood: analysis.mood || null,
             is_good_reference: analysis.is_good_reference || false,
+            dalle_persona_prompt: analysis.dalle_persona_prompt || null,
             analyzed: true,
           })
           .eq("id", asset.id);
