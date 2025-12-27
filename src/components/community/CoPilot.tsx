@@ -358,6 +358,26 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
     );
   };
 
+  // Helper function to detect and filter JSON content
+  const isJsonContent = (text: string): boolean => {
+    const trimmed = text.trim();
+    // Check for common JSON patterns that shouldn't be shown
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        JSON.parse(trimmed);
+        return true; // It's valid JSON, should be hidden
+      } catch {
+        return false; // Not valid JSON, show it
+      }
+    }
+    // Also filter out code blocks with JSON
+    if (trimmed.includes('```json') || trimmed.includes('```{')) {
+      return true;
+    }
+    return false;
+  };
+
   // Parse message content for images (markdown format: ![alt](url))
   const parseMessageContent = (content: string) => {
     const parts: Array<{ type: 'text' | 'image', content: string, alt?: string }> = [];
@@ -366,10 +386,10 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
     let match;
 
     while ((match = imageRegex.exec(content)) !== null) {
-      // Add text before the image
+      // Add text before the image (if not JSON)
       if (match.index > lastIndex) {
         const textBefore = content.slice(lastIndex, match.index).trim();
-        if (textBefore) {
+        if (textBefore && !isJsonContent(textBefore)) {
           parts.push({ type: 'text', content: textBefore });
         }
       }
@@ -378,17 +398,22 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
       lastIndex = match.index + match[0].length;
     }
 
-    // Add remaining text after last image
+    // Add remaining text after last image (if not JSON)
     if (lastIndex < content.length) {
       const remainingText = content.slice(lastIndex).trim();
-      if (remainingText) {
+      if (remainingText && !isJsonContent(remainingText)) {
         parts.push({ type: 'text', content: remainingText });
       }
     }
 
-    // If no images found, return whole content as text
+    // If no images found, check if entire content is JSON
     if (parts.length === 0) {
-      parts.push({ type: 'text', content });
+      if (isJsonContent(content)) {
+        // Return empty or a placeholder - don't show raw JSON
+        parts.push({ type: 'text', content: '' });
+      } else {
+        parts.push({ type: 'text', content });
+      }
     }
 
     return parts;
