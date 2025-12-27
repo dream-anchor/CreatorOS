@@ -2250,10 +2250,25 @@ async function executeGenerateParodyImage(supabase: any, userId: string, params:
     }
   }
 
-  // Fallback warning if no Visual DNA
+  // CRITICAL: NO FALLBACK! If no Visual DNA, abort with error
   if (!visualDna) {
-    console.log(`[copilot] ❌ WARNING: No Visual DNA found! Identity preservation will be compromised.`);
-    visualDna = "Middle-aged European man with distinctive, natural features. Maintain authentic appearance without idealization.";
+    console.log(`[copilot] ❌ CRITICAL ERROR: No Visual DNA found! Cannot proceed.`);
+    return {
+      error: 'Kein analysiertes Referenzbild gefunden. Bitte lade zuerst ein Foto hoch und analysiere es mit "Analysiere meine Fotos".',
+      missing: 'dalle_persona_prompt',
+      hint: 'Du musst zuerst ein Foto hochladen und mit dem Media-Analyzer analysieren lassen, bevor Bilder generiert werden können.',
+      engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE'
+    };
+  }
+
+  // Also verify we have a reference image URL
+  if (!referenceImageUrl) {
+    console.log(`[copilot] ❌ CRITICAL ERROR: No reference image URL!`);
+    return {
+      error: 'Kein Referenzbild-URL gefunden. Bitte stelle sicher, dass dein Foto eine öffentliche URL hat.',
+      missing: 'reference_image_url',
+      engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE'
+    };
   }
 
   // ==========================================
@@ -2391,18 +2406,75 @@ async function executeGenerateParodyImage(supabase: any, userId: string, params:
       attemptHistory[attemptHistory.length - 1].status = 'success';
       console.log(`[copilot] ✅ Success on attempt ${attempt}!`);
 
-      // Download and store the image
-      const imageResponse = await fetch(generatedImageUrl);
-      const imageBlob = await imageResponse.blob();
-      const imageBuffer = await imageBlob.arrayBuffer();
+      // Download and store the image with proper base64 handling
+      console.log(`[copilot] Downloading generated image from: ${generatedImageUrl.substring(0, 100)}...`);
+      
+      let imageBuffer: ArrayBuffer;
+      let contentType = 'image/png';
+      
+      // Check if it's a base64 data URL or a regular URL
+      if (generatedImageUrl.startsWith('data:')) {
+        // Extract base64 data from data URL
+        const matches = generatedImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!matches) {
+          console.error('[copilot] Invalid base64 data URL format');
+          return {
+            error: 'Ungültiges Bildformat von DALL-E erhalten',
+            engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE'
+          };
+        }
+        contentType = matches[1];
+        const base64Data = matches[2];
+        
+        // Decode base64 to Uint8Array
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        imageBuffer = bytes.buffer;
+        console.log(`[copilot] Decoded base64 image: ${bytes.length} bytes, type: ${contentType}`);
+      } else {
+        // Regular URL - download the image
+        const imageResponse = await fetch(generatedImageUrl);
+        if (!imageResponse.ok) {
+          console.error(`[copilot] Failed to download image: ${imageResponse.status}`);
+          return {
+            success: true,
+            image_url: generatedImageUrl,
+            storage_path: null,
+            engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE',
+            warning: 'Bild konnte nicht heruntergeladen werden - temporäre URL'
+          };
+        }
+        const imageBlob = await imageResponse.blob();
+        imageBuffer = await imageBlob.arrayBuffer();
+        contentType = imageBlob.type || 'image/png';
+        console.log(`[copilot] Downloaded image: ${imageBuffer.byteLength} bytes, type: ${contentType}`);
+      }
+      
+      // Verify we have valid image data
+      if (!imageBuffer || imageBuffer.byteLength === 0) {
+        console.error('[copilot] Empty image buffer!');
+        return {
+          success: true,
+          image_url: generatedImageUrl,
+          storage_path: null,
+          engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE',
+          warning: 'Bild-Daten waren leer - temporäre URL verwendet'
+        };
+      }
       
       const timestamp = Date.now();
-      const storagePath = `${userId}/parody-${timestamp}.png`;
+      const extension = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png';
+      const storagePath = `${userId}/parody-${timestamp}.${extension}`;
 
-      const { error: uploadError } = await storageSupabase.storage
+      console.log(`[copilot] Uploading to storage: ${storagePath} (${imageBuffer.byteLength} bytes)`);
+      
+      const { data: uploadData, error: uploadError } = await storageSupabase.storage
         .from('post-assets')
-        .upload(storagePath, imageBuffer, {
-          contentType: 'image/png',
+        .upload(storagePath, new Uint8Array(imageBuffer), {
+          contentType: contentType,
           upsert: true
         });
 
@@ -2642,10 +2714,18 @@ Wenn der User einen komplexen Wunsch äußert (z.B. "Mach mir den Film-Post fert
 🚀 AUTOMATISCHE BILDGENERIERUNG - KRITISCH WICHTIG:
 - Wenn der User ein generiertes Bild will (z.B. "Erstelle ein Bild", "Mach ein Pate-Bild", "Generiere..."):
   1. Suche SOFORT nach Referenzfotos mit get_user_photos(only_reference=true)
-  2. Sobald du ein Foto hast, rufe SOFORT generate_parody_image auf - FRAGE NICHT nach Bestätigung!
-  3. Der komplette Flow (Suche → Generierung) muss in EINEM Durchgang passieren
+  2. **KRITISCH**: Wenn du ein Foto gefunden hast, MERKE DIR dessen ID (das Feld "id" im Ergebnis)!
+  3. Rufe generate_parody_image auf UND ÜBERGEBE die gefundene ID als ref_image_id Parameter!
+  4. NIEMALS generate_parody_image ohne ref_image_id aufrufen - das führt zu Fehlern!
 - NIEMALS stoppen und fragen "Soll ich das Bild jetzt generieren?" - TU ES EINFACH!
 - Nach erfolgreicher Generierung: Zeige das Bild mit Markdown: ![Beschreibung](URL)
+
+⚠️ DATEN-ÜBERGABE (EXTREM WICHTIG):
+Wenn get_user_photos ein Ergebnis liefert wie:
+{ photos: [{ id: "abc-123", public_url: "https://...", dalle_persona_prompt: "..." }] }
+Dann MUSST du bei generate_parody_image aufrufen:
+generate_parody_image(ref_image_id="abc-123", ref_image_url="https://...", ...)
+Die ID ist ZWINGEND erforderlich - ohne sie kann das System die Visual DNA nicht laden!
 
 💡 PROAKTIVE VORSCHLÄGE:
 - "Ich sehe dass deine Humor-Posts 3x besser performen. Soll ich einen für Donnerstag 18:00 vorbereiten?"
