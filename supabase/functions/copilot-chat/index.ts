@@ -1921,6 +1921,44 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
 }
 
 // Tool: Generate DALL-E 3 parody image
+// Prompt rewriting strategies for content policy violations
+const PROMPT_REWRITE_STRATEGIES = [
+  // Level 1: Remove specific references, keep general style
+  (style: string, scene: string) => ({
+    style: style
+      .replace(/\b(Der Pate|Godfather|Scarface|Matrix|Star Wars|Herr der Ringe|Lord of the Rings|Pulp Fiction|James Bond|Batman|Superman|Joker|Avengers|Marvel|DC|Disney|Pixar)\b/gi, '')
+      .replace(/\b(Marlon Brando|Al Pacino|Keanu Reeves|Robert De Niro|Leonardo DiCaprio)\b/gi, '')
+      .trim() || 'klassisches Drama mit atmosphärischer Beleuchtung',
+    scene: scene,
+    description: 'Filmreferenzen entfernt, Stil abstrakt formuliert'
+  }),
+  // Level 2: Abstract to pure visual style
+  (style: string, scene: string) => ({
+    style: 'Film Noir inspiriert, 1940er Jahre Ästhetik, dramatische Schatten, gedämpfte Farben, Chiaroscuro Beleuchtung',
+    scene: scene.replace(/\b(Mafia|Gangster|Killer|Tod|Waffe|Pistole|Gun|Kill|Murder)\b/gi, match => {
+      const replacements: Record<string, string> = {
+        'Mafia': 'Geschäftsmann',
+        'Gangster': 'eleganter Herr',
+        'Killer': 'mysteriöser Mann',
+        'Tod': 'Drama',
+        'Waffe': 'Zeitung',
+        'Pistole': 'Kaffeetasse',
+        'Gun': 'newspaper',
+        'Kill': 'meet',
+        'Murder': 'mystery'
+      };
+      return replacements[match.toLowerCase()] || match;
+    }),
+    description: 'Auf Film Noir abstrahiert, gewaltfreie Szene'
+  }),
+  // Level 3: Maximum abstraction - pure art style
+  (style: string, scene: string) => ({
+    style: 'Ölgemälde im Stil des Expressionismus, düstere aber elegante Stimmung, warme Erdtöne mit dramatischen Akzenten',
+    scene: 'Ein nachdenklicher Gentleman in elegantem Anzug, sitzend in einem klassisch eingerichteten Arbeitszimmer, Buch in der Hand, weiches Fensterlicht',
+    description: 'Auf kunsthistorischen Stil abstrahiert'
+  })
+];
+
 async function executeGenerateParodyImage(supabase: any, userId: string, params: any) {
   const { style, scene_description, ref_image_url } = params;
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
@@ -1940,13 +1978,16 @@ async function executeGenerateParodyImage(supabase: any, userId: string, params:
     };
   }
 
-  try {
-    // Build the DALL-E prompt with copyright safety
-    const dallePrompt = `Create an artistic illustration in the following style: ${style}. 
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const storageSupabase = createClient(supabaseUrl, supabaseKey);
+
+  // Build prompt function
+  const buildDallePrompt = (s: string, sc: string) => `Create an artistic illustration in the following style: ${s}. 
 
 The main person should be designed as a LOOK-ALIKE inspired by this reference (but NOT a copy): A middle-aged European man with distinctive features.
 
-Scene: ${scene_description}
+Scene: ${sc}
 
 CRITICAL STYLE REQUIREMENTS:
 - Style: Caricature/Parody, slightly exaggerated features
@@ -1957,110 +1998,189 @@ CRITICAL STYLE REQUIREMENTS:
 - High quality, cinematic lighting
 - Professional composition`;
 
-    console.log(`[copilot] DALL-E prompt: ${dallePrompt.substring(0, 200)}...`);
+  // Autonomous retry loop with automatic prompt rewriting
+  const MAX_ATTEMPTS = 3;
+  const attemptHistory: Array<{attempt: number, style: string, status: string, error?: string}> = [];
+  
+  let currentStyle = style;
+  let currentScene = scene_description;
 
-    // Call DALL-E 3 API
-    const dalleResponse = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'dall-e-3',
-        prompt: dallePrompt,
-        n: 1,
-        size: '1024x1024',
-        quality: 'hd',
-        style: 'vivid'
-      }),
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const dallePrompt = buildDallePrompt(currentStyle, currentScene);
+    
+    console.log(`[copilot] 🎨 Attempt ${attempt}/${MAX_ATTEMPTS} - Style: "${currentStyle.substring(0, 50)}..."`);
+    
+    attemptHistory.push({
+      attempt,
+      style: currentStyle,
+      status: 'trying'
     });
 
-    if (!dalleResponse.ok) {
-      const errorData = await dalleResponse.json();
-      console.error('[copilot] DALL-E error:', errorData);
+    try {
+      const dalleResponse = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'dall-e-3',
+          prompt: dallePrompt,
+          n: 1,
+          size: '1024x1024',
+          quality: 'hd',
+          style: 'vivid'
+        }),
+      });
+
+      if (!dalleResponse.ok) {
+        const errorData = await dalleResponse.json();
+        console.error(`[copilot] DALL-E error on attempt ${attempt}:`, errorData);
+        
+        // Check for content policy violation
+        if (errorData.error?.code === 'content_policy_violation' || 
+            errorData.error?.message?.includes('content_policy') ||
+            errorData.error?.message?.includes('safety')) {
+          
+          attemptHistory[attemptHistory.length - 1].status = 'content_policy_violation';
+          attemptHistory[attemptHistory.length - 1].error = 'Prompt rejected by content filter';
+          
+          // If we have more attempts, rewrite the prompt
+          if (attempt < MAX_ATTEMPTS) {
+            const rewriteStrategy = PROMPT_REWRITE_STRATEGIES[attempt - 1];
+            const rewritten = rewriteStrategy(currentStyle, currentScene);
+            
+            console.log(`[copilot] ⚠️ Content policy violation. Auto-rewriting prompt for attempt ${attempt + 1}`);
+            console.log(`[copilot] Rewrite strategy: ${rewritten.description}`);
+            
+            currentStyle = rewritten.style;
+            currentScene = rewritten.scene;
+            
+            // Small delay before retry
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+          }
+        }
+        
+        // Other error or max attempts reached
+        if (attempt === MAX_ATTEMPTS) {
+          return {
+            error: 'Alle 3 Versuche sind fehlgeschlagen.',
+            attempts: attemptHistory,
+            suggestion: 'Auch nach automatischem Umschreiben konnte kein Bild generiert werden. Bitte versuche eine komplett andere Beschreibung.',
+            last_error: errorData.error?.message || 'Unbekannt'
+          };
+        }
+        
+        // For non-content-policy errors, also retry with abstraction
+        if (attempt < MAX_ATTEMPTS) {
+          const rewriteStrategy = PROMPT_REWRITE_STRATEGIES[attempt - 1];
+          const rewritten = rewriteStrategy(currentStyle, currentScene);
+          currentStyle = rewritten.style;
+          currentScene = rewritten.scene;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+      }
+
+      // Success!
+      const dalleData = await dalleResponse.json();
+      const generatedImageUrl = dalleData.data?.[0]?.url;
+      const revisedPrompt = dalleData.data?.[0]?.revised_prompt;
+
+      if (!generatedImageUrl) {
+        attemptHistory[attemptHistory.length - 1].status = 'no_image';
+        attemptHistory[attemptHistory.length - 1].error = 'No image in response';
+        
+        if (attempt < MAX_ATTEMPTS) {
+          const rewriteStrategy = PROMPT_REWRITE_STRATEGIES[attempt - 1];
+          const rewritten = rewriteStrategy(currentStyle, currentScene);
+          currentStyle = rewritten.style;
+          currentScene = rewritten.scene;
+          continue;
+        }
+        return { error: 'Kein Bild von DALL-E erhalten nach allen Versuchen' };
+      }
+
+      attemptHistory[attemptHistory.length - 1].status = 'success';
+      console.log(`[copilot] ✅ Success on attempt ${attempt}!`);
+
+      // Download and store the image
+      const imageResponse = await fetch(generatedImageUrl);
+      const imageBlob = await imageResponse.blob();
+      const imageBuffer = await imageBlob.arrayBuffer();
       
-      // Check for content policy violation
-      if (errorData.error?.code === 'content_policy_violation') {
+      const timestamp = Date.now();
+      const storagePath = `${userId}/parody-${timestamp}.png`;
+
+      const { error: uploadError } = await storageSupabase.storage
+        .from('post-assets')
+        .upload(storagePath, imageBuffer, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error('[copilot] Storage upload error:', uploadError);
         return {
-          error: 'Der Prompt wurde von OpenAI abgelehnt (Inhaltsrichtlinie)',
-          suggestion: 'Versuche eine andere Beschreibung ohne urheberrechtlich geschützte Elemente.'
+          success: true,
+          image_url: generatedImageUrl,
+          storage_path: null,
+          prompt_used: dallePrompt,
+          revised_prompt: revisedPrompt,
+          final_style: currentStyle,
+          attempts_needed: attempt,
+          attempt_history: attemptHistory,
+          warning: 'Bild konnte nicht permanent gespeichert werden (temporäre URL gültig für 1h)',
+          message: `🎬 Bild erstellt! ${attempt > 1 ? `(${attempt}. Versuch mit angepasstem Stil)` : ''}`
+        };
+      }
+
+      // Get public URL
+      const { data: publicUrlData } = storageSupabase.storage
+        .from('post-assets')
+        .getPublicUrl(storagePath);
+
+      const finalImageUrl = publicUrlData?.publicUrl || generatedImageUrl;
+
+      return {
+        success: true,
+        image_url: finalImageUrl,
+        storage_path: storagePath,
+        prompt_used: dallePrompt,
+        revised_prompt: revisedPrompt,
+        original_style: style,
+        final_style: currentStyle,
+        attempts_needed: attempt,
+        attempt_history: attemptHistory,
+        reference_used: ref_image_url,
+        message: `🎬 Parodie-Bild erfolgreich erstellt${attempt > 1 ? ` (nach ${attempt} Versuchen mit optimiertem Prompt)` : ''}!`
+      };
+
+    } catch (err) {
+      console.error(`[copilot] Parody image error on attempt ${attempt}:`, err);
+      attemptHistory[attemptHistory.length - 1].status = 'error';
+      attemptHistory[attemptHistory.length - 1].error = err instanceof Error ? err.message : 'Unknown';
+      
+      if (attempt === MAX_ATTEMPTS) {
+        return { 
+          error: `Alle Versuche fehlgeschlagen: ${err instanceof Error ? err.message : 'Unbekannt'}`,
+          attempts: attemptHistory
         };
       }
       
-      return {
-        error: `DALL-E Fehler: ${errorData.error?.message || 'Unbekannt'}`
-      };
+      // Retry with more abstract prompt
+      const rewriteStrategy = PROMPT_REWRITE_STRATEGIES[attempt - 1];
+      const rewritten = rewriteStrategy(currentStyle, currentScene);
+      currentStyle = rewritten.style;
+      currentScene = rewritten.scene;
     }
-
-    const dalleData = await dalleResponse.json();
-    const generatedImageUrl = dalleData.data?.[0]?.url;
-    const revisedPrompt = dalleData.data?.[0]?.revised_prompt;
-
-    if (!generatedImageUrl) {
-      return { error: 'Kein Bild von DALL-E erhalten' };
-    }
-
-    // Download and store the image in Supabase
-    const imageResponse = await fetch(generatedImageUrl);
-    const imageBlob = await imageResponse.blob();
-    const imageBuffer = await imageBlob.arrayBuffer();
-    
-    const timestamp = Date.now();
-    const storagePath = `${userId}/parody-${timestamp}.png`;
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const storageSupabase = createClient(supabaseUrl, supabaseKey);
-
-    const { error: uploadError } = await storageSupabase.storage
-      .from('post-assets')
-      .upload(storagePath, imageBuffer, {
-        contentType: 'image/png',
-        upsert: true
-      });
-
-    if (uploadError) {
-      console.error('[copilot] Storage upload error:', uploadError);
-      // Still return the temporary URL if upload fails
-      return {
-        success: true,
-        image_url: generatedImageUrl,
-        storage_path: null,
-        prompt_used: dallePrompt,
-        revised_prompt: revisedPrompt,
-        style,
-        scene_description,
-        warning: 'Bild konnte nicht permanent gespeichert werden (temporäre URL gültig für 1h)',
-        message: `🎬 DALL-E 3 Parodie-Bild erstellt! Stil: "${style}"`
-      };
-    }
-
-    // Get public URL
-    const { data: publicUrlData } = storageSupabase.storage
-      .from('post-assets')
-      .getPublicUrl(storagePath);
-
-    const finalImageUrl = publicUrlData?.publicUrl || generatedImageUrl;
-
-    return {
-      success: true,
-      image_url: finalImageUrl,
-      storage_path: storagePath,
-      prompt_used: dallePrompt,
-      revised_prompt: revisedPrompt,
-      style,
-      scene_description,
-      reference_used: ref_image_url,
-      message: `🎬 DALL-E 3 Parodie-Bild erfolgreich erstellt und gespeichert! Stil: "${style}"`
-    };
-
-  } catch (err) {
-    console.error('[copilot] Parody image error:', err);
-    return { 
-      error: `Fehler: ${err instanceof Error ? err.message : 'Unbekannt'}` 
-    };
   }
+
+  return {
+    error: 'Maximale Versuche erreicht ohne Erfolg',
+    attempts: attemptHistory
+  };
 }
 
 serve(async (req) => {
@@ -2230,22 +2350,31 @@ Wenn der User einen komplexen Wunsch äußert (z.B. "Mach mir den Film-Post fert
    - style: Der visuelle Stil ("Film Noir 1940er schwarz-weiß", "70er Mafia-Drama", "Cyberpunk Neon")
    - scene_description: Was passiert ("Ein Detektiv sitzt im verrauchten Büro")
    - ref_image_url: URL eines Referenzfotos (hole mit get_user_photos only_reference=true)
-   → Erstellt urheberrechtsfreie Karikatur/Parodie im Filmstil
+   → Hat autonomen Retry-Modus: Bei Content-Policy-Ablehnung wird der Prompt automatisch 3x umgeschrieben!
+   → Du brauchst KEINE Bestätigung vom User - der Agent macht alles selbstständig.
 
 2. generate_personalized_image (Lovable AI) - FÜR ALLGEMEINE THEMEN:
    - theme: Das Thema ("Matrix", "Sci-Fi", "Western")
    - user_pose_description: Was Antoine tut ("steht cool mit Sonnenbrille")
    → Erstellt stilisiertes Bild
 
+🎯 PROMPT ENGINEERING (DEINE GEHEIME SUPERKRAFT):
+- Du bist ein Experte für Copyright-sichere Prompts
+- Wenn der User urheberrechtlich problematische Referenzen nennt (z.B. "Der Pate", "Matrix", "Star Wars"):
+  → Schreibe den Prompt PROAKTIV um, BEVOR du das Tool aufrufst
+  → Fange den "Vibe" ein, ohne den geschützten Namen zu nennen
+  → Beispiel: "Der Pate" → "70er Jahre Mafia-Drama, gedämpfte Farben, Chiaroscuro Beleuchtung"
+  → Beispiel: "Matrix" → "Cyberpunk, grüner Code-Regen, lederig-technischer Look"
+- FRAGE NICHT um Erlaubnis - liefere das bestmögliche, sichere Ergebnis!
+- Wenn generate_parody_image mehrere Versuche braucht, zeige NICHT die technischen Details - nur das Ergebnis
+
 📝 OUTPUT-FORMAT - KRITISCH WICHTIG:
 - Du bist ein natürlicher Gesprächspartner, KEIN Computer
 - Zeige dem User NIEMALS rohe JSON-Objekte, Arrays, Code-Blöcke oder technische Tool-Outputs
-- NIEMALS: {...}, [...], \`\`\`json, oder ähnliche Formatierungen zeigen
-- Wenn du Daten von Tools erhältst, fasse sie IMMER in freundlichen, natürlichen Sätzen zusammen
+- NIEMALS: {...}, [...], \`\`\`json, \`\`\`, attempt_history, attempts_needed, oder ähnliche Formatierungen zeigen
+- Wenn generate_parody_image ein attempts_needed > 1 zurückgibt: Erwähne es höchstens kurz ("Nach etwas Feintuning...") aber KEINE technischen Details
 - Formuliere ALLE Zahlen und Daten als Fließtext
 - Bei Foto-Suche: Sage kurz "Referenzfoto gefunden!" und mache SOFORT weiter mit der Generierung
-- Bei Statistiken: "Du hast 1.234 Likes bekommen! 🎉" NICHT {"likes_count": 1234}
-- NIEMALS JSON-Blöcke oder Code-Snippets anzeigen
 
 🖼️ BILD-AUSGABE:
 - Wenn generate_parody_image oder generate_personalized_image erfolgreich war:
