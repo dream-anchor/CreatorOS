@@ -16,37 +16,45 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get user from auth header
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      throw new Error('No authorization header');
+    const body = await req.json();
+    const { comment_id, reply_text, user_id: bodyUserId, queue_id } = body;
+
+    // Support both authenticated calls and webhook calls (from cron/queue)
+    let userId = bodyUserId;
+    
+    // If no user_id in body, try to get from auth header
+    if (!userId) {
+      const authHeader = req.headers.get('Authorization');
+      if (authHeader) {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(
+          authHeader.replace('Bearer ', '')
+        );
+        if (!authError && user) {
+          userId = user.id;
+        }
+      }
     }
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    );
-
-    if (authError || !user) {
-      throw new Error('Unauthorized');
+    if (!userId) {
+      throw new Error('No user_id provided and no valid auth header');
     }
-
-    const { comment_id, reply_text } = await req.json();
 
     if (!comment_id || !reply_text) {
       throw new Error('Missing comment_id or reply_text');
     }
 
-    console.log(`[reply-to-comment] Replying to comment ${comment_id}`);
+    console.log(`[reply-to-comment] Replying to comment ${comment_id} for user ${userId}`);
 
     // Get the comment
     const { data: comment, error: commentError } = await supabase
       .from('instagram_comments')
       .select('*')
       .eq('id', comment_id)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single();
 
     if (commentError || !comment) {
+      console.error('[reply-to-comment] Comment not found:', commentError);
       throw new Error('Comment not found');
     }
 
@@ -54,10 +62,11 @@ serve(async (req) => {
     const { data: connection, error: connError } = await supabase
       .from('meta_connections')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .maybeSingle();
 
     if (connError || !connection?.token_encrypted) {
+      console.error('[reply-to-comment] No Instagram connection:', connError);
       throw new Error('Instagram nicht verbunden');
     }
 
@@ -80,7 +89,20 @@ serve(async (req) => {
     const responseData = await response.json();
 
     if (!response.ok) {
-      console.error('Instagram API error:', responseData);
+      console.error('[reply-to-comment] Instagram API error:', responseData);
+      
+      // Update queue item if provided
+      if (queue_id) {
+        await supabase
+          .from('comment_reply_queue')
+          .update({ 
+            status: 'failed', 
+            error_message: responseData.error?.message || 'Instagram API error',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', queue_id);
+      }
+      
       throw new Error(responseData.error?.message || 'Failed to post reply');
     }
 
@@ -92,15 +114,29 @@ serve(async (req) => {
       .update({ is_replied: true })
       .eq('id', comment_id);
 
+    // Update queue item if provided
+    if (queue_id) {
+      await supabase
+        .from('comment_reply_queue')
+        .update({ 
+          status: 'sent', 
+          sent_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', queue_id);
+    }
+
     // Log event
     await supabase.from('logs').insert({
-      user_id: user.id,
+      user_id: userId,
       event_type: 'comment_replied',
       level: 'info',
       details: {
         comment_id,
         ig_comment_id: comment.ig_comment_id,
-        reply_id: responseData.id
+        reply_id: responseData.id,
+        queue_id: queue_id || null,
+        source: queue_id ? 'queue' : 'direct'
       }
     });
 
