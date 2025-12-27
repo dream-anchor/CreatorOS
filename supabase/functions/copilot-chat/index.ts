@@ -355,7 +355,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "generate_parody_image",
-      description: "Erstellt ein DALL-E 3 Parodie-Bild im Stil eines Films/Themas. NUTZE DIES wenn der User 'Mach ein Bild im Stil von Der Pate/Matrix/Casablanca', 'Film-Noir Foto', 'Erstelle eine Parodie' sagt. Das Bild zeigt Antoine als Look-alike, KEINE echten Schauspieler, KEINE Copyright-Elemente.",
+      description: "Erstellt ein DALL-E 3 Parodie-Bild im Stil eines Films/Themas mit der 'Visual DNA' des Users für maximale Ähnlichkeit. NUTZE DIES wenn der User 'Mach ein Bild im Stil von Der Pate/Matrix/Casablanca', 'Film-Noir Foto', 'Erstelle eine Parodie' sagt. Das Bild zeigt den User als Look-alike basierend auf seiner gespeicherten Visual DNA, KEINE echten Schauspieler, KEINE Copyright-Elemente.",
       parameters: {
         type: "object",
         properties: {
@@ -367,12 +367,12 @@ const TOOLS = [
             type: "string",
             description: "Beschreibung der Szene (z.B. 'Ein Detektiv sitzt im verrauchten Büro', 'Ein Mann steht auf einem Balkon und schaut über die Stadt')"
           },
-          ref_image_url: {
+          ref_image_id: {
             type: "string",
-            description: "URL eines Referenzfotos von Antoine aus der media_assets Bibliothek"
+            description: "Die ID eines Fotos aus der media_assets Bibliothek (optional - wird automatisch das beste Bild mit Visual DNA gewählt wenn leer)"
           }
         },
-        required: ["style", "scene_description", "ref_image_url"]
+        required: ["style", "scene_description"]
       }
     }
   }
@@ -1960,10 +1960,10 @@ const PROMPT_REWRITE_STRATEGIES = [
 ];
 
 async function executeGenerateParodyImage(supabase: any, userId: string, params: any) {
-  const { style, scene_description, ref_image_url } = params;
+  const { style, scene_description, ref_image_id, ref_image_url } = params;
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
 
-  console.log(`[copilot] Generating DALL-E 3 parody image, style: ${style}`);
+  console.log(`[copilot] Generating DALL-E 3 parody image with Visual DNA, style: ${style}`);
 
   if (!openaiApiKey) {
     return {
@@ -1972,9 +1972,9 @@ async function executeGenerateParodyImage(supabase: any, userId: string, params:
     };
   }
 
-  if (!style || !scene_description || !ref_image_url) {
+  if (!style || !scene_description) {
     return {
-      error: 'Fehlende Parameter: style, scene_description und ref_image_url sind erforderlich'
+      error: 'Fehlende Parameter: style und scene_description sind erforderlich'
     };
   }
 
@@ -1982,21 +1982,91 @@ async function executeGenerateParodyImage(supabase: any, userId: string, params:
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const storageSupabase = createClient(supabaseUrl, supabaseKey);
 
-  // Build prompt function
-  const buildDallePrompt = (s: string, sc: string) => `Create an artistic illustration in the following style: ${s}. 
+  // CRITICAL: Load Visual DNA from the reference image
+  let visualDna: string | null = null;
+  let referenceImageUrl: string | null = ref_image_url || null;
 
-The main person should be designed as a LOOK-ALIKE inspired by this reference (but NOT a copy): A middle-aged European man with distinctive features.
+  // First priority: If ref_image_id is provided, load that specific image's Visual DNA
+  if (ref_image_id) {
+    const { data: asset } = await supabase
+      .from('media_assets')
+      .select('public_url, dalle_persona_prompt')
+      .eq('id', ref_image_id)
+      .eq('user_id', userId)
+      .single();
+    
+    if (asset) {
+      referenceImageUrl = asset.public_url;
+      visualDna = asset.dalle_persona_prompt;
+      console.log(`[copilot] Loaded Visual DNA from specified image: ${visualDna ? 'YES' : 'NO'}`);
+    }
+  }
+
+  // Second priority: Find best image with Visual DNA if not provided
+  if (!visualDna) {
+    const { data: assetsWithDna } = await supabase
+      .from('media_assets')
+      .select('id, public_url, dalle_persona_prompt, is_good_reference')
+      .eq('user_id', userId)
+      .eq('is_good_reference', true)
+      .not('dalle_persona_prompt', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
+    if (assetsWithDna && assetsWithDna.length > 0) {
+      const bestAsset = assetsWithDna[0];
+      visualDna = bestAsset.dalle_persona_prompt;
+      if (!referenceImageUrl) {
+        referenceImageUrl = bestAsset.public_url;
+      }
+      console.log(`[copilot] Found Visual DNA from best reference image: ${visualDna?.substring(0, 80)}...`);
+    }
+  }
+
+  // Third priority: Any analyzed image with Visual DNA
+  if (!visualDna) {
+    const { data: anyAssetWithDna } = await supabase
+      .from('media_assets')
+      .select('id, public_url, dalle_persona_prompt')
+      .eq('user_id', userId)
+      .not('dalle_persona_prompt', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    if (anyAssetWithDna && anyAssetWithDna.length > 0) {
+      visualDna = anyAssetWithDna[0].dalle_persona_prompt;
+      if (!referenceImageUrl) {
+        referenceImageUrl = anyAssetWithDna[0].public_url;
+      }
+      console.log(`[copilot] Using Visual DNA from any available image`);
+    }
+  }
+
+  // Fallback: No Visual DNA available
+  if (!visualDna) {
+    console.log(`[copilot] WARNING: No Visual DNA found. Using generic description.`);
+    visualDna = "A middle-aged European man with distinctive features";
+  }
+
+  // Build prompt function with Visual DNA
+  const buildDallePrompt = (s: string, sc: string, persona: string) => `Create an artistic illustration in the following style: ${s}. 
+
+CRITICAL - THE MAIN PERSON MUST LOOK EXACTLY LIKE THIS (Visual DNA):
+${persona}
 
 Scene: ${sc}
 
 CRITICAL STYLE REQUIREMENTS:
-- Style: Caricature/Parody, slightly exaggerated features
+- The person MUST match the Visual DNA description above as closely as possible
+- Style: High-quality photorealistic portrait with cinematic lighting
 - NO real actors or celebrities
 - NO copyrighted characters or logos
 - NO brand names or trademarked elements
 - Original artistic interpretation only
-- High quality, cinematic lighting
-- Professional composition`;
+- Professional composition
+- The face and physical features are the TOP PRIORITY for accuracy`;
+
+  // Autonomous retry loop with automatic prompt rewriting
 
   // Autonomous retry loop with automatic prompt rewriting
   const MAX_ATTEMPTS = 3;
@@ -2006,9 +2076,9 @@ CRITICAL STYLE REQUIREMENTS:
   let currentScene = scene_description;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const dallePrompt = buildDallePrompt(currentStyle, currentScene);
+    const dallePrompt = buildDallePrompt(currentStyle, currentScene, visualDna!);
     
-    console.log(`[copilot] 🎨 Attempt ${attempt}/${MAX_ATTEMPTS} - Style: "${currentStyle.substring(0, 50)}..."`);
+    console.log(`[copilot] 🎨 Attempt ${attempt}/${MAX_ATTEMPTS} - Style: "${currentStyle.substring(0, 50)}..." with Visual DNA`);
     
     attemptHistory.push({
       attempt,
@@ -2151,10 +2221,11 @@ CRITICAL STYLE REQUIREMENTS:
         revised_prompt: revisedPrompt,
         original_style: style,
         final_style: currentStyle,
+        visual_dna_used: visualDna,
         attempts_needed: attempt,
         attempt_history: attemptHistory,
-        reference_used: ref_image_url,
-        message: `🎬 Parodie-Bild erfolgreich erstellt${attempt > 1 ? ` (nach ${attempt} Versuchen mit optimiertem Prompt)` : ''}!`
+        reference_used: referenceImageUrl,
+        message: `🎬 Parodie-Bild erfolgreich erstellt${attempt > 1 ? ` (nach ${attempt} Versuchen mit optimiertem Prompt)` : ''}! Deine Visual DNA wurde verwendet.`
       };
 
     } catch (err) {

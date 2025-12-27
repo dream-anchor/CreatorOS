@@ -474,6 +474,7 @@ export type Database = {
           ai_usable: boolean | null
           analyzed: boolean | null
           created_at: string
+          dalle_persona_prompt: string | null
           description: string | null
           filename: string | null
           id: string
@@ -495,6 +496,7 @@ export type Database = {
           ai_usable?: boolean | null
           analyzed?: boolean | null
           created_at?: string
+          dalle_persona_prompt?: string | null
           description?: string | null
           filename?: string | null
           id?: string
@@ -516,6 +518,7 @@ export type Database = {
           ai_usable?: boolean | null
           analyzed?: boolean | null
           created_at?: string
+          dalle_persona_prompt?: string | null
           description?: string | null
           filename?: string | null
           id?: string
