@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ImageWithFallback } from "./ImageWithFallback";
-import { Sparkles, ExternalLink, CheckCircle2, User, RefreshCw } from "lucide-react";
+import { Sparkles, ExternalLink, CheckCircle2, User, RefreshCw, Clock, AlertCircle } from "lucide-react";
 import { getInstagramUrl } from "@/lib/instagram-utils";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -39,6 +39,8 @@ interface CommentCardProps {
   onUpdateReply: (id: string, text: string) => void;
   onApprove: (id: string) => void;
   isSanitizing?: boolean;
+  queueStatus?: "pending" | "waiting" | "failed" | null;
+  scheduledFor?: string | null;
 }
 
 export function CommentCard({
@@ -47,13 +49,15 @@ export function CommentCard({
   onUpdateReply,
   onApprove,
   isSanitizing = false,
+  queueStatus = null,
+  scheduledFor = null,
 }: CommentCardProps) {
   const truncatedCaption = comment.post_caption
     ? comment.post_caption.slice(0, 50) + (comment.post_caption.length > 50 ? '...' : '')
     : 'Kein Caption';
 
   return (
-    <div className={`p-4 bg-muted/30 rounded-lg border ${isSanitizing ? 'opacity-70' : ''}`}>
+    <div className={`p-4 bg-muted/30 rounded-lg border ${isSanitizing ? 'opacity-70' : ''} ${queueStatus ? 'border-primary/30 bg-primary/5' : ''}`}>
       <div className="flex gap-4">
         {/* Left: Checkbox + Comment */}
         <div className="flex items-start gap-3 flex-1">
@@ -89,6 +93,29 @@ export function CommentCard({
                 <Badge variant="outline" className="text-xs gap-1 animate-pulse">
                   <RefreshCw className="h-3 w-3 animate-spin" />
                   Korrigiere Emoji-Stil...
+                </Badge>
+              )}
+              {queueStatus === "pending" && (
+                <Badge variant="outline" className="text-xs gap-1 bg-amber-500/10 text-amber-600 border-amber-300">
+                  <Clock className="h-3 w-3" />
+                  In Warteschlange
+                  {scheduledFor && (
+                    <span className="ml-1">
+                      ({format(new Date(scheduledFor), "HH:mm", { locale: de })})
+                    </span>
+                  )}
+                </Badge>
+              )}
+              {queueStatus === "waiting" && (
+                <Badge variant="outline" className="text-xs gap-1 bg-blue-500/10 text-blue-600 border-blue-300">
+                  <Clock className="h-3 w-3" />
+                  Wartet auf Post
+                </Badge>
+              )}
+              {queueStatus === "failed" && (
+                <Badge variant="destructive" className="text-xs gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  Fehlgeschlagen
                 </Badge>
               )}
             </div>
