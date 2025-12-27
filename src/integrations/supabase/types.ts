@@ -151,6 +151,56 @@ export type Database = {
         }
         Relationships: []
       }
+      comment_reply_queue: {
+        Row: {
+          comment_id: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          ig_comment_id: string
+          reply_text: string
+          scheduled_for: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          comment_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          ig_comment_id: string
+          reply_text: string
+          scheduled_for?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          comment_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          ig_comment_id?: string
+          reply_text?: string
+          scheduled_for?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_reply_queue_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_comments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_plan: {
         Row: {
           ai_model_used: string | null

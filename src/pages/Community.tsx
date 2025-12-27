@@ -26,6 +26,7 @@ import { PostCard } from "@/components/community/PostCard";
 import { ActionBar } from "@/components/community/ActionBar";
 import { AiModelSelector } from "@/components/community/AiModelSelector";
 import { getInstagramUrl } from "@/lib/instagram-utils";
+import { NoScheduledPostDialog } from "@/components/community/NoScheduledPostDialog";
 
 // Check icon alias for consistency
 
@@ -64,6 +65,8 @@ export default function Community() {
   const [sanitizingComments, setSanitizingComments] = useState<Set<string>>(new Set());
   const [selectedAiModel, setSelectedAiModel] = useState("google/gemini-2.5-flash");
   const [modelLoaded, setModelLoaded] = useState(false);
+  const [noPostDialogOpen, setNoPostDialogOpen] = useState(false);
+  const [pendingQueueAction, setPendingQueueAction] = useState<CommentWithContext[] | null>(null);
   
   // Pagination state
   const POSTS_PER_PAGE = 10;
@@ -674,6 +677,54 @@ export default function Community() {
     toast.success("✅ Alle Antworten für diesen Post aktiviert");
   };
 
+  // Queue replies to database with intelligent scheduling
+  const queueReplies = async (
+    selectedComments: CommentWithContext[],
+    scheduledFor: Date | null,
+    status: 'pending' | 'waiting_for_post'
+  ) => {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      toast.error("Nicht eingeloggt");
+      return;
+    }
+
+    const queueItems = selectedComments.map((comment, index) => {
+      // Distribute replies over time window if scheduled
+      let replyTime = scheduledFor;
+      if (scheduledFor && status === 'pending') {
+        // Distribute over 40 minutes (-30 to +10 from post time)
+        const offsetMinutes = Math.random() * 40 - 30;
+        replyTime = addMinutes(scheduledFor, offsetMinutes + (index * 0.5));
+      }
+
+      return {
+        user_id: userData.user.id,
+        comment_id: comment.id,
+        ig_comment_id: comment.ig_comment_id,
+        reply_text: comment.editedReply,
+        status,
+        scheduled_for: replyTime?.toISOString() || null,
+      };
+    });
+
+    const { error } = await supabase
+      .from('comment_reply_queue')
+      .insert(queueItems);
+
+    if (error) {
+      console.error('Queue insert error:', error);
+      toast.error("Fehler beim Einreihen der Antworten");
+      return false;
+    }
+
+    // Remove from local state
+    const queuedIds = new Set(selectedComments.map(c => c.id));
+    setComments(prev => prev.filter(c => !queuedIds.has(c.id)));
+
+    return true;
+  };
+
   const smartReply = async () => {
     // Only send selected comments
     const selectedComments = comments.filter((c) => c.selected && c.editedReply);
@@ -685,58 +736,83 @@ export default function Community() {
 
     setSending(true);
 
-    let toSend: CommentWithContext[];
-    let strategyName: string;
+    try {
+      // Step A: Check for scheduled post
+      const now = new Date();
+      const { data: scheduledPosts } = await supabase
+        .from("posts")
+        .select("id, scheduled_at")
+        .eq("status", "SCHEDULED")
+        .gt("scheduled_at", now.toISOString())
+        .order("scheduled_at", { ascending: true })
+        .limit(1);
 
-    switch (smartStrategy) {
-      case "warmup":
-        // Warm-Up: Send replies to oldest comments first (engagement before post)
-        toSend = [...selectedComments].sort(
-          (a, b) =>
-            new Date(a.comment_timestamp).getTime() -
-            new Date(b.comment_timestamp).getTime()
-        );
-        strategyName = "🔥 Warm-Up";
-        break;
-      case "afterglow":
-        // After-Glow: Send replies to newest comments first (push engagement after post)
-        toSend = [...selectedComments].sort(
-          (a, b) =>
-            new Date(b.comment_timestamp).getTime() -
-            new Date(a.comment_timestamp).getTime()
-        );
-        strategyName = "✨ After-Glow";
-        break;
-      default:
-        // Natural: Random order with delays
-        toSend = [...selectedComments].sort(() => Math.random() - 0.5);
-        strategyName = "🌿 Natürlich";
-    }
+      const nextScheduledPost = scheduledPosts?.[0];
 
-    toast.info(`${strategyName}: Sende ${toSend.length} Antworten...`);
-
-    let sentCount = 0;
-    for (const comment of toSend) {
-      try {
-        const { error } = await supabase.functions.invoke("reply-to-comment", {
-          body: { comment_id: comment.id, reply_text: comment.editedReply },
-        });
-
-        if (!error) {
-          sentCount++;
-          setComments((prev) => prev.filter((c) => c.id !== comment.id));
+      if (nextScheduledPost?.scheduled_at) {
+        // Scenario 1: Post found - schedule for Golden Window
+        const postTime = new Date(nextScheduledPost.scheduled_at);
+        const success = await queueReplies(selectedComments, postTime, 'pending');
+        
+        if (success) {
+          const formattedDate = format(postTime, "dd.MM. 'um' HH:mm", { locale: de });
+          toast.success(`🚀 ${selectedComments.length} Antworten für Golden Window am ${formattedDate} eingeplant!`);
         }
-      } catch (err) {
-        console.error("Reply error:", err);
+      } else {
+        // Scenario 2: No post found - show decision dialog
+        setPendingQueueAction(selectedComments);
+        setNoPostDialogOpen(true);
       }
-
-      // Delay between replies - longer for natural mode
-      const delay = smartStrategy === "natural" ? Math.random() * 2000 + 1000 : 500;
-      await new Promise((resolve) => setTimeout(resolve, delay));
+    } catch (err) {
+      console.error("Smart reply error:", err);
+      toast.error("Fehler beim Verarbeiten");
+    } finally {
+      setSending(false);
     }
+  };
 
-    toast.success(`✅ ${sentCount} Antworten gesendet!`);
-    setSending(false);
+  // Handle "Send Now" from dialog
+  const handleSendNow = async () => {
+    if (!pendingQueueAction) return;
+    setSending(true);
+
+    try {
+      // Schedule with small random delays (1-5 minutes from now)
+      const now = new Date();
+      const success = await queueReplies(
+        pendingQueueAction,
+        addMinutes(now, 1 + Math.random() * 4),
+        'pending'
+      );
+
+      if (success) {
+        toast.success(`⚡ ${pendingQueueAction.length} Antworten werden in Kürze gesendet!`);
+      }
+    } finally {
+      setPendingQueueAction(null);
+      setSending(false);
+    }
+  };
+
+  // Handle "Wait for Post" from dialog
+  const handleWaitForPost = async () => {
+    if (!pendingQueueAction) return;
+    setSending(true);
+
+    try {
+      const success = await queueReplies(
+        pendingQueueAction,
+        null, // No scheduled time
+        'waiting_for_post'
+      );
+
+      if (success) {
+        toast.success(`💤 ${pendingQueueAction.length} Antworten warten auf deinen nächsten Post!`);
+      }
+    } finally {
+      setPendingQueueAction(null);
+      setSending(false);
+    }
   };
 
   // State for global regeneration
@@ -1083,6 +1159,15 @@ export default function Community() {
         totalCount={comments.length}
         sending={sending}
         onSmartReply={smartReply}
+      />
+
+      {/* No Scheduled Post Dialog */}
+      <NoScheduledPostDialog
+        open={noPostDialogOpen}
+        onOpenChange={setNoPostDialogOpen}
+        replyCount={pendingQueueAction?.length || 0}
+        onSendNow={handleSendNow}
+        onWaitForPost={handleWaitForPost}
       />
     </AppLayout>
   );
