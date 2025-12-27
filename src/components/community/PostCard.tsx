@@ -50,6 +50,8 @@ interface PostCardProps {
   onApproveAll: (igMediaId: string) => void;
   sanitizingComments: Set<string>;
   onMetadataRepaired?: () => void;
+  getQueueStatus?: (commentId: string) => "pending" | "waiting" | "failed" | null;
+  getScheduledTime?: (commentId: string) => string | null;
 }
 
 export function PostCard({
@@ -59,6 +61,8 @@ export function PostCard({
   onApproveAll,
   sanitizingComments,
   onMetadataRepaired,
+  getQueueStatus,
+  getScheduledTime,
 }: PostCardProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showFullCaption, setShowFullCaption] = useState(false);
@@ -294,6 +298,8 @@ export function PostCard({
           <div className="p-5 space-y-4 bg-white dark:bg-card">
             {group.comments.map((comment) => {
               const isSanitizing = sanitizingComments.has(comment.id);
+              const queueStatus = getQueueStatus?.(comment.id) || null;
+              const scheduledFor = getScheduledTime?.(comment.id) || null;
 
               return (
                 <CommentRow
@@ -302,6 +308,8 @@ export function PostCard({
                   isSanitizing={isSanitizing}
                   onToggleSelect={onToggleSelect}
                   onUpdateReply={onUpdateReply}
+                  queueStatus={queueStatus}
+                  scheduledFor={scheduledFor}
                 />
               );
             })}
@@ -317,6 +325,8 @@ interface CommentRowProps {
   isSanitizing: boolean;
   onToggleSelect: (id: string) => void;
   onUpdateReply: (id: string, text: string) => void;
+  queueStatus?: "pending" | "waiting" | "failed" | null;
+  scheduledFor?: string | null;
 }
 
 function CommentRow({
@@ -324,17 +334,24 @@ function CommentRow({
   isSanitizing,
   onToggleSelect,
   onUpdateReply,
+  queueStatus,
+  scheduledFor,
 }: CommentRowProps) {
   const [isEditing, setIsEditing] = useState(false);
+
+  // Determine if comment is in queue (show different styling)
+  const isInQueue = !!queueStatus;
 
   return (
     <div
       className={`rounded-lg p-4 transition-all ${
         isSanitizing 
           ? "opacity-60 bg-muted/30" 
-          : comment.selected 
-            ? "bg-secondary/80 dark:bg-secondary/60 ring-1 ring-primary/20" 
-            : "bg-muted/40 dark:bg-muted/20"
+          : isInQueue
+            ? "bg-primary/5 ring-1 ring-primary/20 border-l-2 border-l-primary"
+            : comment.selected 
+              ? "bg-secondary/80 dark:bg-secondary/60 ring-1 ring-primary/20" 
+              : "bg-muted/40 dark:bg-muted/20"
       }`}
     >
       <div className="flex items-start gap-4">
@@ -347,7 +364,7 @@ function CommentRow({
 
         {/* Middle: Content */}
         <div className="flex-1 min-w-0 space-y-3">
-          {/* User name + timestamp */}
+          {/* User name + timestamp + queue status */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-sm text-foreground">
               @{comment.commenter_username || "Unbekannt"}
@@ -355,6 +372,22 @@ function CommentRow({
             <span className="text-xs text-muted-foreground">
               {format(new Date(comment.comment_timestamp), "dd.MM. HH:mm", { locale: de })}
             </span>
+            {queueStatus === "pending" && (
+              <Badge variant="outline" className="text-xs gap-1 bg-amber-500/10 text-amber-600 border-amber-300">
+                ⏳ In Queue
+                {scheduledFor && ` (${format(new Date(scheduledFor), "HH:mm", { locale: de })})`}
+              </Badge>
+            )}
+            {queueStatus === "waiting" && (
+              <Badge variant="outline" className="text-xs gap-1 bg-blue-500/10 text-blue-600 border-blue-300">
+                💤 Wartet auf Post
+              </Badge>
+            )}
+            {queueStatus === "failed" && (
+              <Badge variant="destructive" className="text-xs gap-1">
+                ❌ Fehlgeschlagen
+              </Badge>
+            )}
           </div>
 
           {/* Fan comment text */}

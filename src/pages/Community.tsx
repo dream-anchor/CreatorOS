@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { subDays } from "date-fns";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,6 +27,8 @@ import { ActionBar } from "@/components/community/ActionBar";
 import { AiModelSelector } from "@/components/community/AiModelSelector";
 import { getInstagramUrl } from "@/lib/instagram-utils";
 import { NoScheduledPostDialog } from "@/components/community/NoScheduledPostDialog";
+import { ReplyQueueIndicator } from "@/components/community/ReplyQueueIndicator";
+import { useReplyQueue } from "@/hooks/useReplyQueue";
 
 // Check icon alias for consistency
 
@@ -67,6 +69,9 @@ export default function Community() {
   const [modelLoaded, setModelLoaded] = useState(false);
   const [noPostDialogOpen, setNoPostDialogOpen] = useState(false);
   const [pendingQueueAction, setPendingQueueAction] = useState<CommentWithContext[] | null>(null);
+  
+  // Reply queue hook for tracking queued comments
+  const { getQueueStatus, getScheduledTime, refreshQueue } = useReplyQueue();
   
   // Pagination state
   const POSTS_PER_PAGE = 10;
@@ -906,11 +911,14 @@ export default function Community() {
               onRemoveBlacklistTopic={removeBlacklistTopic}
             />
           </div>
-          <AiModelSelector
-            selectedModel={selectedAiModel}
-            onModelChange={handleModelChange}
-            isRegenerating={isGlobalRegenerating}
-          />
+          <div className="flex items-center gap-2">
+            <ReplyQueueIndicator onQueueChange={refreshQueue} />
+            <AiModelSelector
+              selectedModel={selectedAiModel}
+              onModelChange={handleModelChange}
+              isRegenerating={isGlobalRegenerating}
+            />
+          </div>
         </div>
 
         {/* Fetch Button & Stats */}
@@ -1107,6 +1115,8 @@ export default function Community() {
                 onApproveAll={approveAllForPost}
                 sanitizingComments={sanitizingComments}
                 onMetadataRepaired={loadData}
+                getQueueStatus={getQueueStatus}
+                getScheduledTime={getScheduledTime}
               />
             ))}
             
