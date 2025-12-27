@@ -355,24 +355,40 @@ const TOOLS = [
     type: "function",
     function: {
       name: "generate_parody_image",
-      description: "Erstellt ein DALL-E 3 Parodie-Bild im Stil eines Films/Themas mit der 'Visual DNA' des Users für maximale Ähnlichkeit. NUTZE DIES wenn der User 'Mach ein Bild im Stil von Der Pate/Matrix/Casablanca', 'Film-Noir Foto', 'Erstelle eine Parodie' sagt. Das Bild zeigt den User als Look-alike basierend auf seiner gespeicherten Visual DNA, KEINE echten Schauspieler, KEINE Copyright-Elemente.",
+      description: "Erstellt ein DALL-E 3 Bild mit der 'Universal Master Prompt Engine' für maximale Identitäts-Ähnlichkeit. NUTZE DIES wenn der User ein Bild von sich in einem bestimmten Stil/Szene will. Die Engine erzwingt fotorealistische Qualität und nutzt die gespeicherte Visual DNA. KEINE echten Schauspieler, KEINE Copyright-Elemente.",
       parameters: {
         type: "object",
         properties: {
-          style: {
+          transformation: {
             type: "string",
-            description: "Der visuelle Stil (z.B. 'Film Noir, 1940er, schwarz-weiß', 'Cyberpunk Neon', '70er Jahre Mafia-Drama')"
+            description: "Der visuelle Transformations-Stil (z.B. 'Film Noir 1940s aesthetic, dramatic shadows, chiaroscuro lighting', 'Cyberpunk Neon, high-tech urban', '1970s Italian cinema drama'). WICHTIG: Keine spezifischen Filmtitel oder Schauspieler nennen!"
           },
-          scene_description: {
+          scene: {
             type: "string",
-            description: "Beschreibung der Szene (z.B. 'Ein Detektiv sitzt im verrauchten Büro', 'Ein Mann steht auf einem Balkon und schaut über die Stadt')"
+            description: "Beschreibung der Szene und Umgebung (z.B. 'Dimly lit study with leather armchairs and a fireplace', 'Rain-soaked city street at night with neon reflections')"
+          },
+          wardrobe: {
+            type: "string",
+            description: "Beschreibung der Kleidung/Kostüm (z.B. 'Tailored three-piece suit, silk tie, pocket square', 'Leather trench coat, dark sunglasses')"
+          },
+          mood: {
+            type: "string",
+            description: "Stimmung und Ausdruck (z.B. 'Contemplative, quiet power', 'Mysterious, intense gaze', 'Confident business leader')"
           },
           ref_image_id: {
             type: "string",
             description: "Die ID eines Fotos aus der media_assets Bibliothek (optional - wird automatisch das beste Bild mit Visual DNA gewählt wenn leer)"
+          },
+          style: {
+            type: "string",
+            description: "LEGACY: Wird auf 'transformation' gemappt falls vorhanden"
+          },
+          scene_description: {
+            type: "string",
+            description: "LEGACY: Wird auf 'scene' gemappt falls vorhanden"
           }
         },
-        required: ["style", "scene_description"]
+        required: ["transformation", "scene"]
       }
     }
   }
@@ -1920,50 +1936,154 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
   return result;
 }
 
-// Tool: Generate DALL-E 3 parody image
-// Prompt rewriting strategies for content policy violations
-const PROMPT_REWRITE_STRATEGIES = [
+// ==========================================
+// UNIVERSAL MASTER PROMPT ENGINE
+// ==========================================
+
+// Master Prompt Constants (HARDCODED - Do not modify dynamically)
+const MASTER_SYSTEM_PROMPT = `You are an identity-preserving image transformation engine. Your highest priority is to preserve the exact identity of all referenced persons. Creative transformation, costumes, environment, and mood are always secondary to identity accuracy. Never reinterpret, beautify, or idealize faces. Never merge identities. Never introduce generic or stylized facial features. If multiple reference images are provided, each identity must remain distinct, stable, and recognizable.`;
+
+const MASTER_CORE_TEMPLATE = `Create a highly photorealistic image based strictly on the provided reference image(s).
+
+IDENTITY PRESERVATION (ABSOLUTE PRIORITY):
+For each referenced person:
+– The face must remain identical to the reference image
+– Identical facial proportions, eye distance, nose width, jawline
+– Identical hairline, facial hair shape, density, and structure
+– Preserve natural asymmetries, imperfections, and age markers
+– No beautification, no stylization, no reinterpretation
+
+{{VISUAL_DNA}}
+
+The identity of each person must be indistinguishable from the reference image at first glance.
+Any deviation from the original facial identity is unacceptable.
+
+MULTI-PERSON RULE (if applicable):
+– Each person retains their own facial identity
+– No facial blending, averaging, or morphing
+– Distinct identities must remain clearly separable
+
+TRANSFORMATION LAYER:
+{{TRANSFORMATION_DESCRIPTION}}
+
+SCENE & CONTEXT:
+{{SCENE_DESCRIPTION}}
+
+WARDROBE / COSTUME:
+{{WARDROBE_DESCRIPTION}}
+
+MOOD & ACTION:
+{{MOOD_ACTION_DESCRIPTION}}
+
+PHOTOGRAPHIC REALISM:
+– Real human skin texture with visible pores and micro-wrinkles
+– Natural facial asymmetry
+– Realistic fabric behavior and material response
+– Physically plausible lighting and shadows
+– Looks like a RAW photo from a professional camera
+– Editorial photography realism
+
+GLOBAL CONSTRAINTS:
+– This must look like a real photograph, not an illustration
+– No cartoon, no painting, no digital art
+– No movie still recreation
+– No reference to specific copyrighted characters or actors
+– No exaggerated costumes unless explicitly requested
+– Maintain contemporary photographic realism at all times`;
+
+const MASTER_NEGATIVE_PROMPT = `AVOID THE FOLLOWING AT ALL COSTS: generic face, AI face, beautified face, model face, symmetrical face, idealized face, face morphing, face blending, face swap look, celebrity likeness, actor likeness, cartoon, illustration, painting, digital art, stylized lighting, theatrical makeup, plastic skin, waxy skin, AI artifacts, unrealistic anatomy, distorted facial proportions.`;
+
+// Prompt Compiler Function
+interface PromptInputs {
+  transformation: string;
+  scene: string;
+  wardrobe: string;
+  mood: string;
+}
+
+function compilePrompt(inputs: PromptInputs, visualDna: string): string {
+  // Step A: Fill slots in the core template
+  let filledTemplate = MASTER_CORE_TEMPLATE
+    .replace('{{TRANSFORMATION_DESCRIPTION}}', inputs.transformation || 'Artistic photographic transformation')
+    .replace('{{SCENE_DESCRIPTION}}', inputs.scene || 'Professional studio setting')
+    .replace('{{WARDROBE_DESCRIPTION}}', inputs.wardrobe || 'Elegant, context-appropriate attire')
+    .replace('{{MOOD_ACTION_DESCRIPTION}}', inputs.mood || 'Confident, natural expression');
+  
+  // Step B: Inject Visual DNA under IDENTITY PRESERVATION section
+  const visualDnaBlock = visualDna 
+    ? `\nPHYSICAL IDENTITY DESCRIPTION (MUST MATCH EXACTLY):\n${visualDna}`
+    : '\nNote: No specific physical description available - use generic professional appearance.';
+  
+  filledTemplate = filledTemplate.replace('{{VISUAL_DNA}}', visualDnaBlock);
+  
+  // Step C: Concatenate final prompt
+  const finalPrompt = `${MASTER_SYSTEM_PROMPT}\n\n${filledTemplate}\n\n${MASTER_NEGATIVE_PROMPT}`;
+  
+  return finalPrompt;
+}
+
+// Safety rewrite strategies for content policy violations
+const SAFETY_REWRITE_STRATEGIES = [
   // Level 1: Remove specific references, keep general style
-  (style: string, scene: string) => ({
-    style: style
+  (inputs: PromptInputs) => ({
+    transformation: inputs.transformation
       .replace(/\b(Der Pate|Godfather|Scarface|Matrix|Star Wars|Herr der Ringe|Lord of the Rings|Pulp Fiction|James Bond|Batman|Superman|Joker|Avengers|Marvel|DC|Disney|Pixar)\b/gi, '')
       .replace(/\b(Marlon Brando|Al Pacino|Keanu Reeves|Robert De Niro|Leonardo DiCaprio)\b/gi, '')
-      .trim() || 'klassisches Drama mit atmosphärischer Beleuchtung',
-    scene: scene,
-    description: 'Filmreferenzen entfernt, Stil abstrakt formuliert'
+      .trim() || 'Classic drama with atmospheric lighting',
+    scene: inputs.scene,
+    wardrobe: inputs.wardrobe,
+    mood: inputs.mood,
+    description: 'Film references removed, style abstracted'
   }),
   // Level 2: Abstract to pure visual style
-  (style: string, scene: string) => ({
-    style: 'Film Noir inspiriert, 1940er Jahre Ästhetik, dramatische Schatten, gedämpfte Farben, Chiaroscuro Beleuchtung',
-    scene: scene.replace(/\b(Mafia|Gangster|Killer|Tod|Waffe|Pistole|Gun|Kill|Murder)\b/gi, match => {
+  (inputs: PromptInputs) => ({
+    transformation: 'Film Noir inspired, 1940s aesthetic, dramatic shadows, muted colors, chiaroscuro lighting',
+    scene: inputs.scene.replace(/\b(Mafia|Gangster|Killer|Tod|Waffe|Pistole|Gun|Kill|Murder)\b/gi, match => {
       const replacements: Record<string, string> = {
-        'Mafia': 'Geschäftsmann',
-        'Gangster': 'eleganter Herr',
-        'Killer': 'mysteriöser Mann',
-        'Tod': 'Drama',
-        'Waffe': 'Zeitung',
-        'Pistole': 'Kaffeetasse',
+        'Mafia': 'businessman',
+        'Gangster': 'elegant gentleman',
+        'Killer': 'mysterious man',
+        'Tod': 'drama',
+        'Waffe': 'newspaper',
+        'Pistole': 'coffee cup',
         'Gun': 'newspaper',
         'Kill': 'meet',
         'Murder': 'mystery'
       };
       return replacements[match.toLowerCase()] || match;
     }),
-    description: 'Auf Film Noir abstrahiert, gewaltfreie Szene'
+    wardrobe: 'Classic tailored suit, period-appropriate accessories',
+    mood: 'Contemplative, dignified presence',
+    description: 'Abstracted to Film Noir, violence-free scene'
   }),
   // Level 3: Maximum abstraction - pure art style
-  (style: string, scene: string) => ({
-    style: 'Ölgemälde im Stil des Expressionismus, düstere aber elegante Stimmung, warme Erdtöne mit dramatischen Akzenten',
-    scene: 'Ein nachdenklicher Gentleman in elegantem Anzug, sitzend in einem klassisch eingerichteten Arbeitszimmer, Buch in der Hand, weiches Fensterlicht',
-    description: 'Auf kunsthistorischen Stil abstrahiert'
+  (inputs: PromptInputs) => ({
+    transformation: 'Expressionist oil painting style, moody but elegant atmosphere, warm earth tones with dramatic accents',
+    scene: 'A thoughtful gentleman in elegant attire, seated in a classically furnished study, book in hand, soft window light',
+    wardrobe: 'Timeless formal attire, subtle luxury',
+    mood: 'Serene wisdom, quiet confidence',
+    description: 'Abstracted to art-historical style'
   })
 ];
 
+// Tool: Generate DALL-E 3 parody image with Universal Master Prompt Engine
 async function executeGenerateParodyImage(supabase: any, userId: string, params: any) {
-  const { style, scene_description, ref_image_id, ref_image_url } = params;
+  const { 
+    style, 
+    scene_description, 
+    ref_image_id, 
+    ref_image_url,
+    // New parameters for the Master Prompt Engine
+    transformation,
+    scene,
+    wardrobe,
+    mood
+  } = params;
+  
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
 
-  console.log(`[copilot] Generating DALL-E 3 parody image with Visual DNA, style: ${style}`);
+  console.log(`[copilot] 🚀 UNIVERSAL MASTER PROMPT ENGINE - Generating image`);
+  console.log(`[copilot] Style/Transformation: ${style || transformation}`);
 
   if (!openaiApiKey) {
     return {
@@ -1972,21 +2092,25 @@ async function executeGenerateParodyImage(supabase: any, userId: string, params:
     };
   }
 
-  if (!style || !scene_description) {
-    return {
-      error: 'Fehlende Parameter: style und scene_description sind erforderlich'
-    };
-  }
+  // Build inputs from either old or new parameter format
+  let promptInputs: PromptInputs = {
+    transformation: transformation || style || 'Cinematic portrait photography',
+    scene: scene || scene_description || 'Professional studio environment',
+    wardrobe: wardrobe || 'Context-appropriate elegant attire',
+    mood: mood || 'Confident, natural expression'
+  };
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const storageSupabase = createClient(supabaseUrl, supabaseKey);
 
-  // CRITICAL: Load Visual DNA from the reference image
+  // ==========================================
+  // VISUAL DNA LOADING (CRITICAL FOR IDENTITY)
+  // ==========================================
   let visualDna: string | null = null;
   let referenceImageUrl: string | null = ref_image_url || null;
 
-  // First priority: If ref_image_id is provided, load that specific image's Visual DNA
+  // Priority 1: Load Visual DNA from specified reference image
   if (ref_image_id) {
     const { data: asset } = await supabase
       .from('media_assets')
@@ -1998,11 +2122,11 @@ async function executeGenerateParodyImage(supabase: any, userId: string, params:
     if (asset) {
       referenceImageUrl = asset.public_url;
       visualDna = asset.dalle_persona_prompt;
-      console.log(`[copilot] Loaded Visual DNA from specified image: ${visualDna ? 'YES' : 'NO'}`);
+      console.log(`[copilot] ✅ Visual DNA loaded from specified image: ${visualDna ? 'YES (' + visualDna.length + ' chars)' : 'NO'}`);
     }
   }
 
-  // Second priority: Find best image with Visual DNA if not provided
+  // Priority 2: Find best image with Visual DNA
   if (!visualDna) {
     const { data: assetsWithDna } = await supabase
       .from('media_assets')
@@ -2019,11 +2143,11 @@ async function executeGenerateParodyImage(supabase: any, userId: string, params:
       if (!referenceImageUrl) {
         referenceImageUrl = bestAsset.public_url;
       }
-      console.log(`[copilot] Found Visual DNA from best reference image: ${visualDna?.substring(0, 80)}...`);
+      console.log(`[copilot] ✅ Visual DNA from best reference: ${visualDna?.substring(0, 100)}...`);
     }
   }
 
-  // Third priority: Any analyzed image with Visual DNA
+  // Priority 3: Any analyzed image with Visual DNA
   if (!visualDna) {
     const { data: anyAssetWithDna } = await supabase
       .from('media_assets')
@@ -2038,51 +2162,41 @@ async function executeGenerateParodyImage(supabase: any, userId: string, params:
       if (!referenceImageUrl) {
         referenceImageUrl = anyAssetWithDna[0].public_url;
       }
-      console.log(`[copilot] Using Visual DNA from any available image`);
+      console.log(`[copilot] ⚠️ Using Visual DNA from any available image`);
     }
   }
 
-  // Fallback: No Visual DNA available
+  // Fallback warning if no Visual DNA
   if (!visualDna) {
-    console.log(`[copilot] WARNING: No Visual DNA found. Using generic description.`);
-    visualDna = "A middle-aged European man with distinctive features";
+    console.log(`[copilot] ❌ WARNING: No Visual DNA found! Identity preservation will be compromised.`);
+    visualDna = "Middle-aged European man with distinctive, natural features. Maintain authentic appearance without idealization.";
   }
 
-  // Build prompt function with Visual DNA
-  const buildDallePrompt = (s: string, sc: string, persona: string) => `Create an artistic illustration in the following style: ${s}. 
-
-CRITICAL - THE MAIN PERSON MUST LOOK EXACTLY LIKE THIS (Visual DNA):
-${persona}
-
-Scene: ${sc}
-
-CRITICAL STYLE REQUIREMENTS:
-- The person MUST match the Visual DNA description above as closely as possible
-- Style: High-quality photorealistic portrait with cinematic lighting
-- NO real actors or celebrities
-- NO copyrighted characters or logos
-- NO brand names or trademarked elements
-- Original artistic interpretation only
-- Professional composition
-- The face and physical features are the TOP PRIORITY for accuracy`;
-
-  // Autonomous retry loop with automatic prompt rewriting
-
-  // Autonomous retry loop with automatic prompt rewriting
+  // ==========================================
+  // AUTONOMOUS RETRY LOOP WITH PROMPT COMPILER
+  // ==========================================
   const MAX_ATTEMPTS = 3;
-  const attemptHistory: Array<{attempt: number, style: string, status: string, error?: string}> = [];
+  const attemptHistory: Array<{
+    attempt: number; 
+    inputs: PromptInputs; 
+    status: string; 
+    error?: string;
+    rewrite_description?: string;
+  }> = [];
   
-  let currentStyle = style;
-  let currentScene = scene_description;
+  let currentInputs = { ...promptInputs };
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const dallePrompt = buildDallePrompt(currentStyle, currentScene, visualDna!);
+    // Compile the final prompt using the Master Prompt Engine
+    const finalPrompt = compilePrompt(currentInputs, visualDna!);
     
-    console.log(`[copilot] 🎨 Attempt ${attempt}/${MAX_ATTEMPTS} - Style: "${currentStyle.substring(0, 50)}..." with Visual DNA`);
+    console.log(`[copilot] 🎨 Attempt ${attempt}/${MAX_ATTEMPTS}`);
+    console.log(`[copilot] Transformation: "${currentInputs.transformation.substring(0, 60)}..."`);
+    console.log(`[copilot] Final prompt length: ${finalPrompt.length} characters`);
     
     attemptHistory.push({
       attempt,
-      style: currentStyle,
+      inputs: { ...currentInputs },
       status: 'trying'
     });
 
@@ -2095,11 +2209,11 @@ CRITICAL STYLE REQUIREMENTS:
         },
         body: JSON.stringify({
           model: 'dall-e-3',
-          prompt: dallePrompt,
+          prompt: finalPrompt,
           n: 1,
           size: '1024x1024',
           quality: 'hd',
-          style: 'vivid'
+          style: 'natural' // Using 'natural' for more photorealistic results
         }),
       });
 
@@ -2108,23 +2222,31 @@ CRITICAL STYLE REQUIREMENTS:
         console.error(`[copilot] DALL-E error on attempt ${attempt}:`, errorData);
         
         // Check for content policy violation
-        if (errorData.error?.code === 'content_policy_violation' || 
-            errorData.error?.message?.includes('content_policy') ||
-            errorData.error?.message?.includes('safety')) {
-          
+        const isContentPolicyViolation = 
+          errorData.error?.code === 'content_policy_violation' || 
+          errorData.error?.message?.includes('content_policy') ||
+          errorData.error?.message?.includes('safety');
+        
+        if (isContentPolicyViolation) {
           attemptHistory[attemptHistory.length - 1].status = 'content_policy_violation';
           attemptHistory[attemptHistory.length - 1].error = 'Prompt rejected by content filter';
           
-          // If we have more attempts, rewrite the prompt
+          // Apply safety rewrite if we have more attempts
           if (attempt < MAX_ATTEMPTS) {
-            const rewriteStrategy = PROMPT_REWRITE_STRATEGIES[attempt - 1];
-            const rewritten = rewriteStrategy(currentStyle, currentScene);
+            const rewriteStrategy = SAFETY_REWRITE_STRATEGIES[attempt - 1];
+            const rewritten = rewriteStrategy(currentInputs);
             
-            console.log(`[copilot] ⚠️ Content policy violation. Auto-rewriting prompt for attempt ${attempt + 1}`);
+            console.log(`[copilot] ⚠️ Content policy violation. Auto-rewriting for attempt ${attempt + 1}`);
             console.log(`[copilot] Rewrite strategy: ${rewritten.description}`);
             
-            currentStyle = rewritten.style;
-            currentScene = rewritten.scene;
+            currentInputs = {
+              transformation: rewritten.transformation,
+              scene: rewritten.scene,
+              wardrobe: rewritten.wardrobe,
+              mood: rewritten.mood
+            };
+            
+            attemptHistory[attemptHistory.length - 1].rewrite_description = rewritten.description;
             
             // Small delay before retry
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -2132,28 +2254,34 @@ CRITICAL STYLE REQUIREMENTS:
           }
         }
         
-        // Other error or max attempts reached
+        // Max attempts reached or other error
         if (attempt === MAX_ATTEMPTS) {
           return {
             error: 'Alle 3 Versuche sind fehlgeschlagen.',
             attempts: attemptHistory,
             suggestion: 'Auch nach automatischem Umschreiben konnte kein Bild generiert werden. Bitte versuche eine komplett andere Beschreibung.',
-            last_error: errorData.error?.message || 'Unbekannt'
+            last_error: errorData.error?.message || 'Unbekannt',
+            engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE'
           };
         }
         
         // For non-content-policy errors, also retry with abstraction
         if (attempt < MAX_ATTEMPTS) {
-          const rewriteStrategy = PROMPT_REWRITE_STRATEGIES[attempt - 1];
-          const rewritten = rewriteStrategy(currentStyle, currentScene);
-          currentStyle = rewritten.style;
-          currentScene = rewritten.scene;
+          const rewriteStrategy = SAFETY_REWRITE_STRATEGIES[attempt - 1];
+          const rewritten = rewriteStrategy(currentInputs);
+          currentInputs = {
+            transformation: rewritten.transformation,
+            scene: rewritten.scene,
+            wardrobe: rewritten.wardrobe,
+            mood: rewritten.mood
+          };
+          attemptHistory[attemptHistory.length - 1].rewrite_description = rewritten.description;
           await new Promise(resolve => setTimeout(resolve, 1000));
           continue;
         }
       }
 
-      // Success!
+      // SUCCESS!
       const dalleData = await dalleResponse.json();
       const generatedImageUrl = dalleData.data?.[0]?.url;
       const revisedPrompt = dalleData.data?.[0]?.revised_prompt;
@@ -2163,13 +2291,17 @@ CRITICAL STYLE REQUIREMENTS:
         attemptHistory[attemptHistory.length - 1].error = 'No image in response';
         
         if (attempt < MAX_ATTEMPTS) {
-          const rewriteStrategy = PROMPT_REWRITE_STRATEGIES[attempt - 1];
-          const rewritten = rewriteStrategy(currentStyle, currentScene);
-          currentStyle = rewritten.style;
-          currentScene = rewritten.scene;
+          const rewriteStrategy = SAFETY_REWRITE_STRATEGIES[attempt - 1];
+          const rewritten = rewriteStrategy(currentInputs);
+          currentInputs = {
+            transformation: rewritten.transformation,
+            scene: rewritten.scene,
+            wardrobe: rewritten.wardrobe,
+            mood: rewritten.mood
+          };
           continue;
         }
-        return { error: 'Kein Bild von DALL-E erhalten nach allen Versuchen' };
+        return { error: 'Kein Bild von DALL-E erhalten nach allen Versuchen', engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE' };
       }
 
       attemptHistory[attemptHistory.length - 1].status = 'success';
@@ -2196,13 +2328,13 @@ CRITICAL STYLE REQUIREMENTS:
           success: true,
           image_url: generatedImageUrl,
           storage_path: null,
-          prompt_used: dallePrompt,
-          revised_prompt: revisedPrompt,
-          final_style: currentStyle,
+          engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE',
+          visual_dna_used: visualDna,
+          final_inputs: currentInputs,
           attempts_needed: attempt,
           attempt_history: attemptHistory,
           warning: 'Bild konnte nicht permanent gespeichert werden (temporäre URL gültig für 1h)',
-          message: `🎬 Bild erstellt! ${attempt > 1 ? `(${attempt}. Versuch mit angepasstem Stil)` : ''}`
+          message: `🎬 Bild erstellt mit Master Prompt Engine! ${attempt > 1 ? `(${attempt}. Versuch mit angepasstem Prompt)` : ''}`
         };
       }
 
@@ -2217,15 +2349,19 @@ CRITICAL STYLE REQUIREMENTS:
         success: true,
         image_url: finalImageUrl,
         storage_path: storagePath,
-        prompt_used: dallePrompt,
-        revised_prompt: revisedPrompt,
-        original_style: style,
-        final_style: currentStyle,
+        engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE',
+        prompt_summary: {
+          transformation: currentInputs.transformation,
+          scene: currentInputs.scene,
+          wardrobe: currentInputs.wardrobe,
+          mood: currentInputs.mood
+        },
         visual_dna_used: visualDna,
+        reference_used: referenceImageUrl,
+        revised_prompt: revisedPrompt,
         attempts_needed: attempt,
         attempt_history: attemptHistory,
-        reference_used: referenceImageUrl,
-        message: `🎬 Parodie-Bild erfolgreich erstellt${attempt > 1 ? ` (nach ${attempt} Versuchen mit optimiertem Prompt)` : ''}! Deine Visual DNA wurde verwendet.`
+        message: `🎬 Bild erfolgreich erstellt mit Universal Master Prompt Engine!${attempt > 1 ? ` (${attempt} Versuche benötigt)` : ''} Deine Visual DNA wurde für maximale Ähnlichkeit verwendet.`
       };
 
     } catch (err) {
@@ -2236,21 +2372,27 @@ CRITICAL STYLE REQUIREMENTS:
       if (attempt === MAX_ATTEMPTS) {
         return { 
           error: `Alle Versuche fehlgeschlagen: ${err instanceof Error ? err.message : 'Unbekannt'}`,
-          attempts: attemptHistory
+          attempts: attemptHistory,
+          engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE'
         };
       }
       
       // Retry with more abstract prompt
-      const rewriteStrategy = PROMPT_REWRITE_STRATEGIES[attempt - 1];
-      const rewritten = rewriteStrategy(currentStyle, currentScene);
-      currentStyle = rewritten.style;
-      currentScene = rewritten.scene;
+      const rewriteStrategy = SAFETY_REWRITE_STRATEGIES[attempt - 1];
+      const rewritten = rewriteStrategy(currentInputs);
+      currentInputs = {
+        transformation: rewritten.transformation,
+        scene: rewritten.scene,
+        wardrobe: rewritten.wardrobe,
+        mood: rewritten.mood
+      };
     }
   }
 
   return {
     error: 'Maximale Versuche erreicht ohne Erfolg',
-    attempts: attemptHistory
+    attempts: attemptHistory,
+    engine: 'UNIVERSAL_MASTER_PROMPT_ENGINE'
   };
 }
 
