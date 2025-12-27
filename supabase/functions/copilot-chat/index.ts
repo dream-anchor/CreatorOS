@@ -1820,16 +1820,20 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
 
   console.log(`[copilot] Getting user photos, selfies_only: ${only_selfies}, reference_only: ${only_reference}, tags: ${JSON.stringify(tags)}, mood: ${mood_filter}`);
 
-  // Base query - include AI analysis fields
+  // Base query - include AI analysis fields AND dalle_persona_prompt (CRITICAL for image generation!)
   let query = supabase
     .from('media_assets')
-    .select('id, public_url, description, tags, mood, is_selfie, is_reference, ai_usable, created_at, ai_tags, ai_description, analyzed, is_good_reference')
+    .select('id, public_url, description, tags, mood, is_selfie, is_reference, ai_usable, created_at, ai_tags, ai_description, analyzed, is_good_reference, dalle_persona_prompt')
     .eq('user_id', userId)
     .eq('ai_usable', true)
     .order('created_at', { ascending: false });
 
+  // Track if we need selfie fallback
+  let selfieFilterApplied = false;
+  
   if (only_selfies) {
     query = query.eq('is_selfie', true);
+    selfieFilterApplied = true;
   }
 
   // Use is_good_reference from AI analysis instead of manual is_reference
@@ -1837,18 +1841,75 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
     query = query.eq('is_good_reference', true);
   }
 
-  const { data: photos, error } = await query.limit(limit * 2); // Get more to filter
+  let { data: photos, error } = await query.limit(limit * 3); // Get more to filter
 
   if (error) {
     console.error('[copilot] Get user photos error:', error);
     return { error: 'Fehler beim Laden der Fotos' };
   }
 
+  // SELFIE FALLBACK: If only_selfies was requested but returned 0, try alternative tags
+  if (selfieFilterApplied && (!photos || photos.length === 0)) {
+    console.log(`[copilot] No selfies found, trying fallback with person/portrait/profile tags`);
+    
+    // Remove the is_selfie filter and get all photos
+    const { data: allPhotos, error: allError } = await supabase
+      .from('media_assets')
+      .select('id, public_url, description, tags, mood, is_selfie, is_reference, ai_usable, created_at, ai_tags, ai_description, analyzed, is_good_reference, dalle_persona_prompt')
+      .eq('user_id', userId)
+      .eq('ai_usable', true)
+      .order('created_at', { ascending: false })
+      .limit(limit * 3);
+    
+    if (!allError && allPhotos && allPhotos.length > 0) {
+      // Try to find photos tagged as person, portrait, profile, face, headshot
+      const fallbackTags = ['person', 'portrait', 'profile', 'face', 'headshot', 'kopf', 'gesicht'];
+      const personPhotos = allPhotos.filter((p: any) => {
+        const allTags = [...(p.tags || []), ...(p.ai_tags || [])].map((t: string) => t.toLowerCase());
+        const desc = (p.ai_description || '').toLowerCase();
+        return fallbackTags.some(tag => 
+          allTags.some(t => t.includes(tag)) || desc.includes(tag)
+        );
+      });
+      
+      if (personPhotos.length > 0) {
+        photos = personPhotos;
+        console.log(`[copilot] Fallback found ${personPhotos.length} person/portrait photos`);
+      } else {
+        // ULTIMATE FALLBACK: Just take the newest 3 photos with dalle_persona_prompt
+        const photosWithDNA = allPhotos.filter((p: any) => p.dalle_persona_prompt);
+        if (photosWithDNA.length > 0) {
+          photos = photosWithDNA.slice(0, 3);
+          console.log(`[copilot] Ultimate fallback: using ${photos.length} photos with Visual DNA`);
+        } else {
+          // Absolute last resort: take newest 3 photos
+          photos = allPhotos.slice(0, 3);
+          console.log(`[copilot] Absolute fallback: using newest ${photos.length} photos`);
+        }
+      }
+    }
+  }
+
+  // NEVER return 0 if there are ANY photos in media_assets
   if (!photos || photos.length === 0) {
-    return {
-      error: only_reference ? 'Keine Referenz-Fotos gefunden' : 'Keine Fotos gefunden',
-      suggestion: 'Lade Fotos unter "Meine Bilder" hoch und starte die KI-Analyse.'
-    };
+    // Check if there are ANY photos at all
+    const { data: anyPhotos } = await supabase
+      .from('media_assets')
+      .select('id, public_url, description, tags, mood, is_selfie, is_reference, ai_usable, created_at, ai_tags, ai_description, analyzed, is_good_reference, dalle_persona_prompt')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(3);
+    
+    if (anyPhotos && anyPhotos.length > 0) {
+      photos = anyPhotos;
+      console.log(`[copilot] Found ${photos.length} photos as absolute fallback (ignoring filters)`);
+    } else {
+      return {
+        error: 'Keine Fotos gefunden',
+        suggestion: 'Lade Fotos unter "Meine Bilder" hoch und starte die KI-Analyse.',
+        has_persona_data: false
+      };
+    }
   }
 
   // Filter by tags (check both manual tags and AI tags)
@@ -1874,21 +1935,30 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
       );
     });
 
-    // FALLBACK LOGIC: If tag filter returns 0 results, use AI-analyzed good references
+    // FALLBACK LOGIC: If tag filter returns 0 results, prioritize photos with dalle_persona_prompt
     if (filteredPhotos.length === 0) {
-      console.log(`[copilot] No photos found with tags [${tags.join(', ')}], falling back to good references`);
+      console.log(`[copilot] No photos found with tags [${tags.join(', ')}], falling back`);
       
-      // Get all AI-analyzed good references as fallback
-      const goodRefs = photos.filter((p: any) => p.is_good_reference === true);
+      // Priority 1: Photos with Visual DNA (dalle_persona_prompt)
+      const photosWithDNA = photos.filter((p: any) => p.dalle_persona_prompt);
       
-      if (goodRefs.length > 0) {
-        filteredPhotos = goodRefs;
+      if (photosWithDNA.length > 0) {
+        filteredPhotos = photosWithDNA;
         usedFallback = true;
+        console.log(`[copilot] Fallback to ${photosWithDNA.length} photos with Visual DNA`);
       } else {
-        // Last resort: just use any analyzed photos
-        const analyzedPhotos = photos.filter((p: any) => p.analyzed === true);
-        filteredPhotos = analyzedPhotos.length > 0 ? analyzedPhotos : photos;
-        usedFallback = true;
+        // Priority 2: AI-analyzed good references
+        const goodRefs = photos.filter((p: any) => p.is_good_reference === true);
+        
+        if (goodRefs.length > 0) {
+          filteredPhotos = goodRefs;
+          usedFallback = true;
+        } else {
+          // Priority 3: Any analyzed photos
+          const analyzedPhotos = photos.filter((p: any) => p.analyzed === true);
+          filteredPhotos = analyzedPhotos.length > 0 ? analyzedPhotos : photos;
+          usedFallback = true;
+        }
       }
     }
   }
@@ -1910,8 +1980,14 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
   // Limit results
   filteredPhotos = filteredPhotos.slice(0, limit);
 
+  // Check if any photo has Visual DNA (dalle_persona_prompt)
+  const photosWithPersonaData = filteredPhotos.filter((p: any) => p.dalle_persona_prompt);
+  const hasPersonaData = photosWithPersonaData.length > 0;
+
   const result: any = {
     total: filteredPhotos.length,
+    has_persona_data: hasPersonaData, // CRITICAL: Frontend can check if Visual DNA is available
+    persona_data_count: photosWithPersonaData.length,
     photos: filteredPhotos.map((p: any) => ({
       id: p.id,
       url: p.public_url,
@@ -1920,19 +1996,27 @@ async function executeGetUserPhotos(supabase: any, userId: string, params: any) 
       mood: p.mood,
       is_selfie: p.is_selfie,
       is_good_reference: p.is_good_reference,
-      analyzed: p.analyzed
+      analyzed: p.analyzed,
+      has_persona_prompt: !!p.dalle_persona_prompt, // Per-photo indicator
+      dalle_persona_prompt: p.dalle_persona_prompt // Include the actual prompt for the generator!
     })),
     selfie_count: filteredPhotos.filter((p: any) => p.is_selfie).length,
     reference_count: filteredPhotos.filter((p: any) => p.is_good_reference).length,
     analyzed_count: filteredPhotos.filter((p: any) => p.analyzed).length
   };
 
+  // Add warning if no Visual DNA is available
+  if (!hasPersonaData) {
+    result.warning_no_dna = 'Keines der Fotos hat Visual DNA (dalle_persona_prompt). Die Bildgenerierung wird weniger genau sein. Bitte analysiere die Fotos erneut.';
+  }
+
   // Add warning if fallback was used
   if (usedFallback && searchedTags.length > 0) {
-    result.warning = `Keine Fotos mit den Tags [${searchedTags.join(', ')}] gefunden. Zeige stattdessen ${result.reference_count > 0 ? 'beste Referenz-Bilder (von KI analysiert)' : 'alle verfügbaren Bilder'}.`;
+    result.warning = `Keine Fotos mit den Tags [${searchedTags.join(', ')}] gefunden. Zeige stattdessen ${hasPersonaData ? 'Bilder mit Visual DNA' : result.reference_count > 0 ? 'beste Referenz-Bilder' : 'alle verfügbaren Bilder'}.`;
     result.fallback_used = true;
   }
 
+  console.log(`[copilot] Returning ${result.total} photos, ${result.persona_data_count} with Visual DNA`);
   return result;
 }
 
