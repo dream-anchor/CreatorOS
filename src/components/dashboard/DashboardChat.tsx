@@ -8,11 +8,9 @@ import {
   Sparkles, 
   Send, 
   Loader2, 
-  User, 
-  AlertTriangle,
   Copy,
   Check,
-  ExternalLink
+  MessageCircle
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -33,9 +31,10 @@ interface ToolResult {
 
 interface DashboardChatProps {
   className?: string;
+  expanded?: boolean;
 }
 
-export function DashboardChat({ className }: DashboardChatProps) {
+export function DashboardChat({ className, expanded = false }: DashboardChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -152,22 +151,33 @@ export function DashboardChat({ className }: DashboardChatProps) {
   };
 
   const quickActions = [
-    { label: "Offene Kommentare", prompt: "Zeig mir offene Kommentare" },
-    { label: "Post-Idee", prompt: "Generiere eine Post-Idee für heute" },
-    { label: "Performance", prompt: "Wie laufen meine letzten Posts?" },
+    { label: "📬 Offene Kommentare", prompt: "Zeig mir offene Kommentare" },
+    { label: "✨ Post-Idee", prompt: "Generiere eine Post-Idee für heute" },
+    { label: "📊 Performance", prompt: "Wie laufen meine letzten Posts?" },
   ];
 
   return (
-    <Card className={cn("glass-card flex flex-col h-full", className)}>
-      <CardHeader className="pb-3 border-b border-border/50">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-cyan-500 flex items-center justify-center">
-            <Sparkles className="h-4 w-4 text-white" />
+    <Card className={cn(
+      "flex flex-col border-primary/20 bg-gradient-to-b from-card to-card/50",
+      className
+    )}>
+      <CardHeader className="pb-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-cyan-500/5">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-cyan-500 flex items-center justify-center shadow-lg shadow-primary/20">
+              <Sparkles className="h-5 w-5 text-white" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-card flex items-center justify-center">
+              <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            </div>
           </div>
-          <div>
-            <h3 className="font-semibold text-sm">Co-Pilot Chat</h3>
+          <div className="flex-1">
+            <h3 className="font-bold text-foreground">Co-Pilot</h3>
             <p className="text-xs text-muted-foreground">Deine Steuerzentrale</p>
           </div>
+          <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
+            Online
+          </Badge>
         </div>
       </CardHeader>
 
@@ -185,16 +195,16 @@ export function DashboardChat({ className }: DashboardChatProps) {
               >
                 <div
                   className={cn(
-                    "max-w-[85%] rounded-2xl px-4 py-2 relative group",
+                    "max-w-[85%] rounded-2xl px-4 py-3 relative group",
                     message.role === "user"
                       ? "bg-primary text-primary-foreground rounded-br-md"
-                      : "bg-muted rounded-bl-md"
+                      : "bg-muted/80 rounded-bl-md"
                   )}
                 >
-                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
                   
                   {/* Copy button for assistant messages */}
-                  {message.role === "assistant" && message.content && (
+                  {message.role === "assistant" && message.content && message.id !== "welcome" && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -215,7 +225,7 @@ export function DashboardChat({ className }: DashboardChatProps) {
             {/* Loading indicator */}
             {isLoading && (
               <div className="flex justify-start">
-                <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
+                <div className="bg-muted/80 rounded-2xl rounded-bl-md px-4 py-3">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     {loadingHint}
@@ -230,14 +240,15 @@ export function DashboardChat({ className }: DashboardChatProps) {
 
         {/* Quick actions */}
         {messages.length <= 2 && (
-          <div className="px-4 pb-2">
+          <div className="px-4 pb-3">
+            <p className="text-xs text-muted-foreground mb-2">Schnellaktionen:</p>
             <div className="flex flex-wrap gap-2">
               {quickActions.map((action) => (
                 <Button
                   key={action.label}
                   variant="outline"
                   size="sm"
-                  className="text-xs h-7 rounded-full"
+                  className="text-xs h-8 rounded-full hover:bg-primary/10 hover:text-primary hover:border-primary/30"
                   onClick={() => {
                     setInputValue(action.prompt);
                     inputRef.current?.focus();
@@ -250,9 +261,9 @@ export function DashboardChat({ className }: DashboardChatProps) {
           </div>
         )}
 
-        {/* Input */}
-        <form onSubmit={sendMessage} className="p-4 pt-2 border-t border-border/50">
-          <div className="flex gap-2">
+        {/* Input with prominent styling */}
+        <form onSubmit={sendMessage} className="p-4 pt-2 border-t border-border/50 bg-muted/30">
+          <div className="relative">
             <Input
               ref={inputRef}
               value={inputValue}
@@ -260,13 +271,22 @@ export function DashboardChat({ className }: DashboardChatProps) {
               onKeyDown={handleKeyDown}
               placeholder="Frag mich etwas..."
               disabled={isLoading}
-              className="flex-1 rounded-full bg-muted/50 border-muted"
+              className={cn(
+                "pr-12 rounded-xl bg-background border-border/50",
+                "focus:ring-2 focus:ring-primary/20 focus:border-primary",
+                "placeholder:text-muted-foreground/70"
+              )}
             />
             <Button
               type="submit"
               size="icon"
               disabled={isLoading || !inputValue.trim()}
-              className="rounded-full h-10 w-10 bg-primary hover:bg-primary/90"
+              className={cn(
+                "absolute right-1 top-1/2 -translate-y-1/2",
+                "rounded-lg h-8 w-8",
+                "bg-primary hover:bg-primary/90",
+                "disabled:opacity-50"
+              )}
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
