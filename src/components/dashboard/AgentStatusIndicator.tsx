@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +21,7 @@ export function AgentStatusIndicator({ className }: AgentStatusIndicatorProps) {
     // Update countdown every second
     const countdownInterval = setInterval(() => {
       setNextCheckIn(prev => {
-        if (prev <= 1) {
+        if (prev <= 1/60) {
           // Simulate next check
           checkStatus();
           return 5; // Reset to 5 minutes
@@ -71,47 +72,65 @@ export function AgentStatusIndicator({ className }: AgentStatusIndicatorProps) {
     const minutes = Math.floor(nextCheckIn);
     const seconds = Math.floor((nextCheckIn % 1) * 60);
     if (minutes > 0) {
-      return `${minutes} Min`;
+      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
     return `${seconds}s`;
   };
 
   return (
-    <div className={cn(
-      "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs",
-      "bg-muted/50 border border-border/50",
-      className
-    )}>
-      {/* Status indicator */}
-      <div className="flex items-center gap-1.5">
-        <div className={cn(
-          "w-2 h-2 rounded-full",
-          isActive ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground"
-        )} />
-        <span className={cn(
-          "font-medium",
-          isActive ? "text-emerald-500" : "text-muted-foreground"
-        )}>
-          {isActive ? "Agent aktiv" : "Agent inaktiv"}
-        </span>
-      </div>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={cn(
+            "flex items-center gap-3 px-4 py-2 rounded-full",
+            "bg-background/80 backdrop-blur-sm border border-border/50",
+            "shadow-sm",
+            className
+          )}>
+            {/* Animated pulse dot */}
+            <div className="relative flex items-center justify-center">
+              <div className={cn(
+                "w-2.5 h-2.5 rounded-full",
+                isActive ? "bg-emerald-500" : "bg-muted-foreground"
+              )} />
+              {isActive && (
+                <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping opacity-50" />
+              )}
+            </div>
+            
+            <span className={cn(
+              "text-sm font-medium",
+              isActive ? "text-emerald-500" : "text-muted-foreground"
+            )}>
+              Auto-Pilot {isActive ? "aktiv" : "pausiert"}
+            </span>
 
-      <span className="text-muted-foreground">|</span>
+            <div className="w-px h-4 bg-border" />
 
-      {/* Queue count if any */}
-      {queueCount > 0 && (
-        <>
-          <span className="text-muted-foreground">
-            📤 {queueCount} in Queue
-          </span>
-          <span className="text-muted-foreground">|</span>
-        </>
-      )}
-
-      {/* Next check countdown */}
-      <span className="text-muted-foreground">
-        ⏳ Nächster Check in {formatNextCheck()}
-      </span>
-    </div>
+            <span className="text-sm text-muted-foreground">
+              ⏳ {formatNextCheck()}
+            </span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs">
+          <div className="space-y-1">
+            <p className="font-medium">Auto-Pilot Status</p>
+            <p className="text-xs text-muted-foreground">
+              Der Agent prüft alle 5 Minuten auf neue Kommentare und sendet geplante Antworten.
+            </p>
+            {queueCount > 0 && (
+              <p className="text-xs text-primary">
+                📤 {queueCount} Antwort{queueCount !== 1 ? "en" : ""} in der Warteschlange
+              </p>
+            )}
+            {lastCheck && (
+              <p className="text-xs text-muted-foreground">
+                Letzter Check: {lastCheck.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
