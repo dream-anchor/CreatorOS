@@ -5,7 +5,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Brain, ChevronDown, Check } from "lucide-react";
+import { Brain, ChevronDown, Check, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface AiModel {
   id: string;
@@ -32,38 +33,66 @@ const AI_MODELS: AiModel[] = [
 ];
 
 interface AiModelSelectorProps {
-  selectedModel: string;
+  selectedModel: string | null;
   onModelChange: (modelId: string) => void;
   disabled?: boolean;
+  isGenerating?: boolean;
+  generationProgress?: { current: number; total: number } | null;
 }
 
 export function AiModelSelector({
   selectedModel,
   onModelChange,
   disabled = false,
+  isGenerating = false,
+  generationProgress = null,
 }: AiModelSelectorProps) {
-  const currentModel = AI_MODELS.find((m) => m.id === selectedModel) || AI_MODELS[0];
+  const currentModel = selectedModel ? AI_MODELS.find((m) => m.id === selectedModel) : null;
+  const noModelSelected = !selectedModel;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
+          variant={noModelSelected ? "default" : "outline"}
           size="sm"
-          className="h-9 gap-2 bg-card hover:bg-muted/50"
-          disabled={disabled}
+          className={cn(
+            "h-10 gap-2 rounded-xl transition-all",
+            noModelSelected && "animate-pulse bg-primary hover:bg-primary/90",
+            isGenerating && "pointer-events-none"
+          )}
+          disabled={disabled || isGenerating}
         >
-          <Brain className="h-4 w-4 text-primary" />
-          <span className="hidden sm:inline">{currentModel.name}</span>
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          {isGenerating ? (
+            <>
+              <Sparkles className="h-4 w-4 animate-spin" />
+              <span className="hidden sm:inline">
+                {generationProgress 
+                  ? `${generationProgress.current}/${generationProgress.total}` 
+                  : "Generiere..."}
+              </span>
+            </>
+          ) : noModelSelected ? (
+            <>
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline">Modell wählen</span>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </>
+          ) : (
+            <>
+              <Brain className="h-4 w-4 text-primary" />
+              <span className="hidden sm:inline">{currentModel?.name}</span>
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </>
+          )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56 bg-popover z-50">
+      <DropdownMenuContent align="end" className="w-56 bg-popover z-50 rounded-xl">
         {AI_MODELS.map((model) => (
           <DropdownMenuItem
             key={model.id}
             onClick={() => onModelChange(model.id)}
-            className="flex items-center justify-between cursor-pointer"
+            className="flex items-center justify-between cursor-pointer rounded-lg"
           >
             <div className="flex flex-col">
               <span className="font-medium text-sm">{model.name}</span>
