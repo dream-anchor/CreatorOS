@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { CoPilotLayout } from "@/components/CoPilotLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -262,19 +262,16 @@ export default function GeneratorPage() {
 
   if (loading) {
     return (
-      <AppLayout title="Draft Generator">
+      <CoPilotLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </AppLayout>
+      </CoPilotLayout>
     );
   }
 
   return (
-    <AppLayout
-      title="Draft Generator"
-      description="Generiere KI-gestützte Instagram-Posts basierend auf deinen Themen"
-    >
+    <CoPilotLayout>
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Wizard Section */}
         <div className="space-y-6">
@@ -929,6 +926,6 @@ export default function GeneratorPage() {
           )}
         </div>
       </div>
-    </AppLayout>
+    </CoPilotLayout>
   );
 }
