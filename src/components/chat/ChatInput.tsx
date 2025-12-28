@@ -102,6 +102,7 @@ export function ChatInput({ onSend, isLoading, placeholder = "Nachricht an Co-Pi
       {/* Floating Capsule - ChatGPT Style */}
       <div className={cn(
         "fixed bottom-6 left-1/2 -translate-x-1/2",
+        "lg:left-[calc(50%+7.5rem)]", // Offset by half sidebar width (15rem/2) on desktop
         "w-[95%] max-w-3xl",
         "bg-background rounded-[26px]",
         "shadow-2xl border border-border",
