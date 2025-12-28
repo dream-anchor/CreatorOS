@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { CoPilotLayout } from "@/components/CoPilotLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -260,16 +260,16 @@ export default function ReviewPage() {
 
   if (loading) {
     return (
-      <AppLayout title="Review">
+      <CoPilotLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </AppLayout>
+      </CoPilotLayout>
     );
   }
 
   return (
-    <AppLayout title="Review" description="Prüfe deine Entwürfe">
+    <CoPilotLayout>
       {posts.length === 0 ? (
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary/20 to-cyan-500/20 flex items-center justify-center mb-6">
@@ -623,6 +623,6 @@ export default function ReviewPage() {
           )}
         </DialogContent>
       </Dialog>
-    </AppLayout>
+    </CoPilotLayout>
   );
 }

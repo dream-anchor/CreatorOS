@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { CoPilotLayout } from "@/components/CoPilotLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -178,19 +178,22 @@ export default function ContentLibraryPage() {
 
   if (loading) {
     return (
-      <AppLayout title="Post-Historie">
+      <CoPilotLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </AppLayout>
+      </CoPilotLayout>
     );
   }
 
   return (
-    <AppLayout
-      title="Post-Historie"
-      description="Deine importierten Instagram-Posts mit Erfolgsanalyse"
-      actions={
+    <CoPilotLayout>
+      {/* Header with actions */}
+      <div className="flex items-center justify-between p-6 border-b border-border">
+        <div>
+          <h1 className="text-xl font-bold">Post-Historie</h1>
+          <p className="text-sm text-muted-foreground">Deine importierten Instagram-Posts mit Erfolgsanalyse</p>
+        </div>
         <div className="flex items-center gap-2">
           {/* Sort Dropdown */}
           <DropdownMenu>
@@ -232,8 +235,7 @@ export default function ContentLibraryPage() {
             Aktualisieren
           </Button>
         </div>
-      }
-    >
+      </div>
       {/* Sync Cockpit */}
       {user && <SyncCockpit userId={user.id} />}
 
@@ -327,6 +329,6 @@ export default function ContentLibraryPage() {
           </div>
         </div>
       )}
-    </AppLayout>
+    </CoPilotLayout>
   );
 }
