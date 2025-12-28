@@ -1,10 +1,10 @@
-import { CoPilotLayout } from "@/components/CoPilotLayout";
+import { GlobalLayout } from "@/components/GlobalLayout";
 import { WelcomeStage } from "@/components/copilot/WelcomeStage";
 
 export default function DashboardPage() {
   return (
-    <CoPilotLayout>
+    <GlobalLayout>
       <WelcomeStage />
-    </CoPilotLayout>
+    </GlobalLayout>
   );
 }

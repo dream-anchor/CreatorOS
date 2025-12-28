@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { CoPilotLayout } from "@/components/CoPilotLayout";
+import { GlobalLayout } from "@/components/GlobalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -410,16 +410,16 @@ export default function MediaArchivePage() {
 
   if (loading) {
     return (
-      <CoPilotLayout>
+      <GlobalLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </CoPilotLayout>
+      </GlobalLayout>
     );
   }
 
   return (
-    <CoPilotLayout>
+    <GlobalLayout>
       <div className="p-6">
       <input
         id="media-upload"
@@ -898,6 +898,6 @@ export default function MediaArchivePage() {
         </DialogContent>
       </Dialog>
       </div>
-    </CoPilotLayout>
+    </GlobalLayout>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CoPilotLayout } from "@/components/CoPilotLayout";
+import { GlobalLayout } from "@/components/GlobalLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -91,11 +91,11 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <CoPilotLayout>
+      <GlobalLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </CoPilotLayout>
+      </GlobalLayout>
     );
   }
 
@@ -131,7 +131,7 @@ export default function AnalyticsPage() {
   ];
 
   return (
-    <CoPilotLayout>
+    <GlobalLayout>
       <div className="p-6 space-y-6">
       <div className="space-y-6">
         {/* Stats Grid */}
@@ -209,6 +209,6 @@ export default function AnalyticsPage() {
         </Card>
       </div>
       </div>
-    </CoPilotLayout>
+    </GlobalLayout>
   );
 }
