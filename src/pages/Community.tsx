@@ -383,6 +383,117 @@ export default function Community() {
     }
   };
 
+  // Count how many comments have replies ready
+  const commentsWithReplies = useMemo(() => {
+    return comments.filter(c => replyTexts[c.id]?.trim());
+  }, [comments, replyTexts]);
+
+  // State for batch sending
+  const [isSendingAll, setIsSendingAll] = useState(false);
+  const [sendProgress, setSendProgress] = useState<{ current: number; total: number } | null>(null);
+
+  // Send all replies at once
+  const handleSendAllReplies = async () => {
+    const toSend = commentsWithReplies;
+    if (toSend.length === 0) {
+      toast.error("Keine Antworten zum Senden vorhanden!");
+      return;
+    }
+
+    setIsSendingAll(true);
+    setSendProgress({ current: 0, total: toSend.length });
+
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Nicht eingeloggt");
+
+      // Get next scheduled post for Golden Window
+      const { data: nextPost } = await supabase
+        .from("posts")
+        .select("scheduled_at")
+        .gt("scheduled_at", new Date().toISOString())
+        .order("scheduled_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      // Get existing pending count for alternating
+      const { count: existingCount } = await supabase
+        .from("comment_reply_queue")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.user.id)
+        .eq("status", "pending");
+
+      let sentCount = 0;
+      let errorCount = 0;
+
+      for (let i = 0; i < toSend.length; i++) {
+        const comment = toSend[i];
+        const replyText = replyTexts[comment.id]?.trim();
+        
+        if (!replyText) continue;
+
+        setSendProgress({ current: i + 1, total: toSend.length });
+
+        try {
+          let scheduledFor: string | null = null;
+
+          if (nextPost?.scheduled_at) {
+            const postTime = new Date(nextPost.scheduled_at);
+            const currentIndex = (existingCount || 0) + i;
+            const isEven = currentIndex % 2 === 0;
+            const targetTime = isEven 
+              ? subMinutes(postTime, 15 + Math.floor(i / 2) * 5) 
+              : addMinutes(postTime, 15 + Math.floor(i / 2) * 5);
+            scheduledFor = targetTime.toISOString();
+          }
+
+          // Add to reply queue
+          const { error: queueError } = await supabase
+            .from("comment_reply_queue")
+            .insert({
+              user_id: user.user.id,
+              ig_comment_id: comment.ig_comment_id,
+              comment_id: comment.id,
+              reply_text: replyText,
+              status: "pending",
+              scheduled_for: scheduledFor,
+            });
+
+          if (queueError) throw queueError;
+
+          // Mark comment as replied
+          await supabase
+            .from("instagram_comments")
+            .update({ is_replied: true, ai_reply_suggestion: replyText })
+            .eq("id", comment.id);
+
+          sentCount++;
+        } catch (err) {
+          console.error(`Error sending reply for ${comment.id}:`, err);
+          errorCount++;
+        }
+      }
+
+      // Clear local state
+      setGeneratedReplies({});
+      setReplyTexts({});
+      
+      if (errorCount === 0) {
+        toast.success(`✅ ${sentCount} Antworten in die Queue eingereiht!`);
+      } else {
+        toast.warning(`${sentCount} gesendet, ${errorCount} Fehler`);
+      }
+      
+      refetch();
+    } catch (err) {
+      console.error("Send all error:", err);
+      toast.error("Fehler beim Senden");
+    } finally {
+      setIsSendingAll(false);
+      setSendProgress(null);
+    }
+  };
+
   // Send reply with Golden Window scheduling
   const handleSendReply = async (comment: Comment) => {
     const replyText = replyTexts[comment.id]?.trim();
@@ -593,6 +704,47 @@ export default function Community() {
             </Button>
           </div>
         </div>
+
+        {/* Send All Button - Shows when there are replies ready */}
+        {commentsWithReplies.length > 0 && (
+          <Card className="mb-4 sm:mb-6 border-primary/50 bg-gradient-to-r from-primary/10 to-accent/10 rounded-2xl">
+            <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 sm:py-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
+                  <Send className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground text-sm sm:text-base">
+                    {commentsWithReplies.length} Antwort{commentsWithReplies.length !== 1 ? "en" : ""} bereit
+                  </h3>
+                  <p className="text-xs sm:text-sm text-muted-foreground">
+                    {isSendingAll && sendProgress 
+                      ? `Sende ${sendProgress.current}/${sendProgress.total}...`
+                      : "Alle Antworten werden optimal getimed"}
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={handleSendAllReplies}
+                disabled={isSendingAll}
+                size="lg"
+                className="gap-2 rounded-xl w-full sm:w-auto"
+              >
+                {isSendingAll ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Sende...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Alle {commentsWithReplies.length} senden
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* No Model Selected Prompt */}
         {noModelSelected && comments.length > 0 && (
