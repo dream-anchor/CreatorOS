@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { CoPilotLayout } from "@/components/CoPilotLayout";
+import { GlobalLayout } from "@/components/GlobalLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -178,16 +178,16 @@ export default function ContentLibraryPage() {
 
   if (loading) {
     return (
-      <CoPilotLayout>
+      <GlobalLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </CoPilotLayout>
+      </GlobalLayout>
     );
   }
 
   return (
-    <CoPilotLayout>
+    <GlobalLayout>
       {/* Header with actions */}
       <div className="flex items-center justify-between p-6 border-b border-border">
         <div>
@@ -329,6 +329,6 @@ export default function ContentLibraryPage() {
           </div>
         </div>
       )}
-    </CoPilotLayout>
+    </GlobalLayout>
   );
 }

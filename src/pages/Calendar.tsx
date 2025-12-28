@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CoPilotLayout } from "@/components/CoPilotLayout";
+import { GlobalLayout } from "@/components/GlobalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -137,16 +137,16 @@ export default function CalendarPage() {
 
   if (loading) {
     return (
-      <CoPilotLayout>
+      <GlobalLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </CoPilotLayout>
+      </GlobalLayout>
     );
   }
 
   return (
-    <CoPilotLayout>
+    <GlobalLayout>
       <div className="p-6">
       <div className="grid gap-6 lg:grid-cols-4">
         {/* Unscheduled Posts */}
@@ -312,6 +312,6 @@ export default function CalendarPage() {
         </DialogContent>
       </Dialog>
       </div>
-    </CoPilotLayout>
+    </GlobalLayout>
   );
 }

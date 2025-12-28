@@ -1,1183 +1,324 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { subDays } from "date-fns";
-import { CoPilotLayout } from "@/components/CoPilotLayout";
+import { useState, useEffect, useCallback } from "react";
+import { GlobalLayout } from "@/components/GlobalLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MessageCircle,
   RefreshCw,
-  AlertTriangle,
-  EyeOff,
-  Ban,
+  Loader2,
+  Sparkles,
   Trash2,
   Check,
-  ExternalLink,
   User,
-  Wrench,
-  Loader2,
-  Zap,
+  Clock,
 } from "lucide-react";
-import { format, formatDistanceToNow, addMinutes, subMinutes } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import { de } from "date-fns/locale";
-import { CommentWithContext } from "@/components/community/CommentCard";
-import { RulesConfigPanel } from "@/components/community/RulesConfigPanel";
-import { PostCard } from "@/components/community/PostCard";
-import { ActionBar } from "@/components/community/ActionBar";
-import { AiModelSelector } from "@/components/community/AiModelSelector";
-import { getInstagramUrl } from "@/lib/instagram-utils";
-import { NoScheduledPostDialog } from "@/components/community/NoScheduledPostDialog";
-import { ReplyQueueIndicator } from "@/components/community/ReplyQueueIndicator";
-import { useReplyQueue } from "@/hooks/useReplyQueue";
+import { cn } from "@/lib/utils";
 
-// Check icon alias for consistency
-
-interface BlacklistTopic {
+interface Comment {
   id: string;
-  topic: string;
+  comment_text: string;
+  commenter_username: string | null;
+  comment_timestamp: string;
+  ai_reply_suggestion: string | null;
+  ig_comment_id: string;
+  ig_media_id: string;
 }
-
-interface EmojiNogoTerm {
-  id: string;
-  term: string;
-}
-
-interface PostGroup {
-  igMediaId: string;
-  postCaption: string | null;
-  postPermalink: string | null;
-  postId: string | null;
-  publishedAt: string | null;
-  comments: CommentWithContext[];
-}
-
-type SmartStrategy = "warmup" | "afterglow" | "natural" | null;
 
 export default function Community() {
-  const [loading, setLoading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [forceResyncing, setForceResyncing] = useState(false);
-  const [comments, setComments] = useState<CommentWithContext[]>([]);
-  const [criticalComments, setCriticalComments] = useState<CommentWithContext[]>([]);
-  const [blacklistTopics, setBlacklistTopics] = useState<BlacklistTopic[]>([]);
-  const [lastFetch, setLastFetch] = useState<Date | null>(null);
-  const [emojiNogoTerms, setEmojiNogoTerms] = useState<EmojiNogoTerm[]>([]);
-  const [smartStrategy, setSmartStrategy] = useState<SmartStrategy>(null);
-  const [sanitizingComments, setSanitizingComments] = useState<Set<string>>(new Set());
-  const [selectedAiModel, setSelectedAiModel] = useState("google/gemini-2.5-flash");
-  const [modelLoaded, setModelLoaded] = useState(false);
-  const [noPostDialogOpen, setNoPostDialogOpen] = useState(false);
-  const [pendingQueueAction, setPendingQueueAction] = useState<CommentWithContext[] | null>(null);
-  
-  // Reply queue hook for tracking queued comments
-  const { getQueueStatus, getScheduledTime, refreshQueue } = useReplyQueue();
-  
-  // Pagination state
-  const POSTS_PER_PAGE = 10;
-  const [visiblePostCount, setVisiblePostCount] = useState(POSTS_PER_PAGE);
+  const queryClient = useQueryClient();
+  const [generatingReply, setGeneratingReply] = useState<string | null>(null);
+  const [approvingComment, setApprovingComment] = useState<string | null>(null);
+  const [deletingComment, setDeletingComment] = useState<string | null>(null);
 
-  // Group comments by their parent post
-  const postGroups = useMemo((): PostGroup[] => {
-    const groupMap = new Map<string, PostGroup>();
+  // Fetch comments with useQuery for automatic loading
+  const { data: comments = [], isLoading, refetch, isRefetching } = useQuery({
+    queryKey: ['community-comments'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("instagram_comments")
+        .select("id, comment_text, commenter_username, comment_timestamp, ai_reply_suggestion, ig_comment_id, ig_media_id")
+        .eq("is_replied", false)
+        .eq("is_hidden", false)
+        .order("comment_timestamp", { ascending: false })
+        .limit(50);
+      
+      if (error) throw error;
+      return data as Comment[];
+    },
+    staleTime: 30000, // 30 seconds
+  });
 
-    comments.forEach((comment) => {
-      const key = comment.ig_media_id;
-
-      if (!groupMap.has(key)) {
-        groupMap.set(key, {
-          igMediaId: key,
-          postCaption: comment.post_caption || null,
-          postPermalink: comment.post_permalink || null,
-          postId: comment.post_id || null,
-          publishedAt: comment.post_published_at || null,
-          comments: [],
-        });
-      }
-
-      groupMap.get(key)!.comments.push(comment);
-    });
-
-    // Sort groups by most recent comment timestamp (newest first)
-    return Array.from(groupMap.values()).sort((a, b) => {
-      const aLatest = Math.max(
-        ...a.comments.map((c) => new Date(c.comment_timestamp).getTime())
-      );
-      const bLatest = Math.max(
-        ...b.comments.map((c) => new Date(c.comment_timestamp).getTime())
-      );
-      return bLatest - aLatest;
-    });
-  }, [comments]);
-
-  // Paginated post groups - only show first N posts
-  const visiblePostGroups = useMemo(() => {
-    return postGroups.slice(0, visiblePostCount);
-  }, [postGroups, visiblePostCount]);
-
-  const hasMorePosts = postGroups.length > visiblePostCount;
-
-  const loadMorePosts = () => {
-    setVisiblePostCount((prev) => prev + POSTS_PER_PAGE);
-  };
-
+  // Listen for refresh events from the chat
   useEffect(() => {
-    loadData();
-    loadPreferredModel();
-  }, []);
-
-  const loadPreferredModel = async () => {
-    const { data: settings } = await supabase
-      .from("settings")
-      .select("preferred_ai_model")
-      .maybeSingle();
+    const handleRefresh = () => {
+      queryClient.invalidateQueries({ queryKey: ['community-comments'] });
+    };
     
-    if (settings?.preferred_ai_model) {
-      setSelectedAiModel(settings.preferred_ai_model);
-    }
-    setModelLoaded(true);
-  };
+    window.addEventListener('refresh-comments', handleRefresh);
+    return () => window.removeEventListener('refresh-comments', handleRefresh);
+  }, [queryClient]);
 
-  const saveModelPreference = async (modelId: string) => {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) return;
+  // Fetch new comments from Instagram
+  const handleFetchComments = async () => {
+    toast.info("🔄 Lade Kommentare von Instagram...");
     
-    const { error } = await supabase
-      .from("settings")
-      .update({ preferred_ai_model: modelId })
-      .eq("user_id", userData.user.id);
-    
-    if (error) {
-      console.error("Error saving model preference:", error);
-    }
-  };
-
-  const loadData = async () => {
-    // Load blacklist topics
-    const { data: topics } = await supabase
-      .from("blacklist_topics")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (topics && topics.length > 0) {
-      setBlacklistTopics(topics);
-    } else {
-      // Create default topic if none exists
-      const { data: userRes } = await supabase.auth.getUser();
-      const userId = userRes.user?.id;
-
-      if (userId) {
-        const { data: created } = await supabase
-          .from("blacklist_topics")
-          .insert({ topic: "Pater Brown", user_id: userId })
-          .select()
-          .maybeSingle();
-
-        if (created) {
-          setBlacklistTopics([created]);
-        }
-      }
-    }
-
-    // Load emoji nogo terms
-    const { data: emojiTerms } = await supabase
-      .from("emoji_nogo_terms")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (emojiTerms) {
-      setEmojiNogoTerms(emojiTerms);
-    }
-
-    // Get blacklist for filtering
-    const blacklistLower = (topics || []).map((t) => t.topic.toLowerCase());
-
-    // Load comments from last 90 days only
-    const ninetyDaysAgo = subDays(new Date(), 90).toISOString();
-    
-    const { data: allComments } = await supabase
-      .from("instagram_comments")
-      .select("*")
-      .eq("is_replied", false)
-      .eq("is_hidden", false)
-      .gte("comment_timestamp", ninetyDaysAgo)
-      .order("comment_timestamp", { ascending: false });
-
-    // Load all posts to join by ig_media_id
-    const { data: allPosts } = await supabase
-      .from("posts")
-      .select("id, caption, original_media_url, original_ig_permalink, ig_media_id, published_at");
-
-    // Create a map of ig_media_id -> post data for quick lookup
-    const postMap = new Map<string, {
-      id: string;
-      caption: string | null;
-      original_media_url: string | null;
-      original_ig_permalink: string | null;
-      published_at: string | null;
-    }>();
-
-    if (allPosts) {
-      allPosts.forEach((post) => {
-        if (post.ig_media_id) {
-          postMap.set(post.ig_media_id, {
-            id: post.id,
-            caption: post.caption,
-            original_media_url: post.original_media_url,
-            original_ig_permalink: post.original_ig_permalink,
-            published_at: post.published_at,
-          });
-        }
-      });
-    }
-
-    if (allComments) {
-      // Filter out comments containing blacklisted topics in comment OR caption
-      const filteredComments = allComments.filter((c) => {
-        const commentLower = c.comment_text.toLowerCase();
-        const postData = postMap.get(c.ig_media_id);
-        const captionLower = (postData?.caption || "").toLowerCase();
-
-        // Check if any blacklist topic is in comment or caption
-        const isBlacklisted = blacklistLower.some(
-          (topic) => commentLower.includes(topic) || captionLower.includes(topic)
-        );
-
-        return !isBlacklisted;
-      });
-
-      // Map to our interface with post context - default selected to TRUE (toggle on)
-      const mappedComments: CommentWithContext[] = filteredComments.map((c) => {
-        const postData = postMap.get(c.ig_media_id);
-        return {
-          ...c,
-          post_caption: postData?.caption || null,
-          post_image_url: postData?.original_media_url || null,
-          post_permalink: postData?.original_ig_permalink || null,
-          post_published_at: postData?.published_at || null,
-          selected: !c.is_critical && !!c.ai_reply_suggestion, // Default ON if has reply
-          editedReply: c.ai_reply_suggestion || "",
-          approved: false,
-        };
-      });
-
-      const critical = mappedComments.filter((c) => c.is_critical);
-      const normal = mappedComments.filter((c) => !c.is_critical);
-
-      setCriticalComments(critical);
-      setComments(normal);
-    }
-
-    // Determine smart strategy based on calendar
-    await determineSmartStrategy();
-  };
-
-  const determineSmartStrategy = async () => {
-    const now = new Date();
-    const in60Min = addMinutes(now, 60);
-    const before60Min = subMinutes(now, 60);
-
-    // Check for scheduled posts in next 60 minutes (Warm-Up)
-    const { data: upcomingPosts } = await supabase
-      .from("posts")
-      .select("id, scheduled_at")
-      .eq("status", "SCHEDULED")
-      .gte("scheduled_at", now.toISOString())
-      .lte("scheduled_at", in60Min.toISOString())
-      .limit(1);
-
-    if (upcomingPosts && upcomingPosts.length > 0) {
-      setSmartStrategy("warmup");
-      return;
-    }
-
-    // Check for posts published in last 60 minutes (After-Glow)
-    const { data: recentPosts } = await supabase
-      .from("posts")
-      .select("id, published_at")
-      .eq("status", "PUBLISHED")
-      .gte("published_at", before60Min.toISOString())
-      .lte("published_at", now.toISOString())
-      .limit(1);
-
-    if (recentPosts && recentPosts.length > 0) {
-      setSmartStrategy("afterglow");
-      return;
-    }
-
-    // Default: natural distribution
-    setSmartStrategy("natural");
-  };
-
-  const fetchComments = async () => {
-    setLoading(true);
-    toast.info("🔄 Lade Kommentare der letzten 90 Tage...");
-
     try {
       const { error } = await supabase.functions.invoke("fetch-comments");
-
       if (error) throw error;
-
+      
       toast.success("✅ Kommentare geladen!");
-      setLastFetch(new Date());
-
-      setAnalyzing(true);
-      toast.info("🧠 Analysiere Stimmung & generiere Antworten...");
-
-      const { error: analyzeError } = await supabase.functions.invoke(
-        "analyze-comments"
-      );
-
-      if (analyzeError) {
-        console.error("Analyze error:", analyzeError);
-      }
-
-      toast.success("✨ Analyse abgeschlossen!");
-      await loadData();
+      refetch();
     } catch (err) {
       console.error("Fetch error:", err);
       toast.error("Fehler beim Laden der Kommentare");
-    } finally {
-      setLoading(false);
-      setAnalyzing(false);
     }
   };
 
-  // Force Resync - fetches fresh data from Instagram and overwrites DB
-  const forceResyncFeed = async () => {
-    setForceResyncing(true);
-    toast.info("🔧 Lade letzte 20 Posts direkt von Instagram...");
-
-    try {
-      const { data, error } = await supabase.functions.invoke("fetch-instagram-history", {
-        body: { mode: "force_resync" },
-      });
-
-      if (error) {
-        // Extract detailed error from response if available
-        const errorMessage = error.message || "Unbekannter Fehler";
-        toast.error(`❌ Feed-Reparatur fehlgeschlagen: ${errorMessage}`);
-        console.error("Force resync error:", error);
-        return;
-      }
-
-      if (!data?.success) {
-        // Show detailed error from API response
-        const errorCode = data?.error_code || "Unbekannt";
-        const errorMsg = data?.message || data?.error || "Unbekannter API-Fehler";
-        toast.error(`❌ API-Fehler (${errorCode}): ${errorMsg}`, { duration: 8000 });
-        console.error("Force resync API error:", data);
-        return;
-      }
-
-      toast.success(`✅ ${data.synced} Posts repariert & aktualisiert!`);
-      
-      // Reload data to show fresh posts
-      await loadData();
-    } catch (err) {
-      console.error("Force resync exception:", err);
-      const message = err instanceof Error ? err.message : "Netzwerkfehler";
-      toast.error(`❌ Verbindungsfehler: ${message}`);
-    } finally {
-      setForceResyncing(false);
-    }
-  };
-
-  // Add multiple blacklist topics at once
-  const addBlacklistTopics = async (topics: string[]) => {
-    const { data: user } = await supabase.auth.getUser();
-    if (!user.user) return;
-
-    const existingTopics = blacklistTopics.map((t) => t.topic.toLowerCase());
-    const newTopics = topics.filter(
-      (topic) => !existingTopics.includes(topic.toLowerCase())
-    );
-
-    if (newTopics.length === 0) {
-      toast.info("Alle Begriffe sind bereits auf der Blacklist");
-      return;
-    }
-
-    const insertData = newTopics.map((topic) => ({
-      topic,
-      user_id: user.user.id,
-    }));
-
-    const { data, error } = await supabase
-      .from("blacklist_topics")
-      .insert(insertData)
-      .select();
-
-    if (error) {
-      toast.error("Fehler beim Hinzufügen");
-      return;
-    }
-
-    if (data) {
-      setBlacklistTopics([...data, ...blacklistTopics]);
-      toast.success(
-        newTopics.length === 1
-          ? `"${newTopics[0]}" zur Blacklist hinzugefügt`
-          : `${newTopics.length} Begriffe zur Blacklist hinzugefügt`
-      );
-      // Reload to filter out newly blacklisted comments
-      await loadData();
-    }
-  };
-
-  const removeBlacklistTopic = async (id: string) => {
-    await supabase.from("blacklist_topics").delete().eq("id", id);
-    setBlacklistTopics(blacklistTopics.filter((t) => t.id !== id));
-  };
-
-  // Emoji mapping for retroactive sanitization
-  const emojiMappings: Record<string, string[]> = {
-    liebe: ["❤️", "💕", "💖", "💗", "💝", "😍", "🥰", "😘", "💋", "😻", "💘", "💓", "💞", "💟", "♥️", "💑", "💏"],
-    herzen: ["❤️", "💕", "💖", "💗", "💝", "💘", "💓", "💞", "💟", "♥️", "🖤", "🤍", "💜", "💙", "💚", "🧡", "💛"],
-    trauer: ["😢", "😭", "😿", "💔", "🥺", "😥", "😪", "😞", "😔", "🥀"],
-    weinen: ["😢", "😭", "😿", "🥺", "😥", "😪"],
-    kitsch: ["🥹", "🤗", "😊", "🥰", "💖", "✨", "🌸", "🦋", "🌈", "💫", "🌟", "💝"],
-    süß: ["🥹", "🤗", "😊", "🥰", "💖", "🍭", "🧁", "🍬", "🎀"],
-    wut: ["😡", "🤬", "💢", "👊", "😤", "🔥"],
-    aggression: ["😡", "🤬", "💢", "👊", "🥊", "💥"],
-    religion: ["🙏", "✝️", "☪️", "✡️", "🕉️", "☯️", "⛪", "🕌", "🕍"],
-    tod: ["💀", "☠️", "⚰️", "🪦", "👻", "🥀"],
-  };
-
-  const findViolatingEmojis = (text: string, newTerm: string): boolean => {
-    const termLower = newTerm.toLowerCase();
+  // Generate smart reply for a single comment
+  const handleSmartReply = async (commentId: string) => {
+    setGeneratingReply(commentId);
     
-    // Collect all emojis to check - use a new array to avoid mutation
-    const emojisToCheck: string[] = [];
-    
-    // Get direct match
-    if (emojiMappings[termLower]) {
-      emojisToCheck.push(...emojiMappings[termLower]);
-    }
-
-    // Also check if the term itself appears as part of any emoji mapping key
-    for (const [key, emojis] of Object.entries(emojiMappings)) {
-      if (key !== termLower && (key.includes(termLower) || termLower.includes(key))) {
-        emojisToCheck.push(...emojis);
-      }
-    }
-
-    // Check if any of the forbidden emojis are in the text
-    return emojisToCheck.some((emoji) => text.includes(emoji));
-  };
-
-  const sanitizeExistingReplies = async (newTerms: string[]) => {
-    // Find comments that have replies containing forbidden emojis for ANY of the new terms
-    const violatingComments = comments.filter(
-      (c) => c.editedReply && newTerms.some((term) => findViolatingEmojis(c.editedReply!, term))
-    );
-
-    if (violatingComments.length === 0) {
-      return;
-    }
-
-    toast.info(`🔄 Korrigiere Emoji-Stil in ${violatingComments.length} Antworten...`);
-
-    // Mark comments as being sanitized IMMEDIATELY for UI feedback
-    const sanitizingIds = new Set(violatingComments.map((c) => c.id));
-    setSanitizingComments(sanitizingIds);
-
-    // Regenerate ALL violating replies in PARALLEL
-    const regeneratePromises = violatingComments.map(async (comment) => {
-      try {
-        const { data, error } = await supabase.functions.invoke("regenerate-reply", {
-          body: { comment_id: comment.id, model: selectedAiModel },
-        });
-
-        if (!error && data?.new_reply) {
-          // Update local state with new reply immediately when this one completes
-          setComments((prev) =>
-            prev.map((c) =>
-              c.id === comment.id
-                ? { ...c, editedReply: data.new_reply, approved: false }
-                : c
-            )
-          );
-          // Remove this comment from sanitizing set
-          setSanitizingComments((prev) => {
-            const next = new Set(prev);
-            next.delete(comment.id);
-            return next;
-          });
-          return { success: true, id: comment.id };
-        }
-        return { success: false, id: comment.id };
-      } catch (err) {
-        console.error("Regenerate error:", err);
-        return { success: false, id: comment.id };
-      }
-    });
-
-    // Wait for all to complete
-    const results = await Promise.all(regeneratePromises);
-    const successCount = results.filter((r) => r.success).length;
-
-    // Clear any remaining sanitizing state
-    setSanitizingComments(new Set());
-    
-    if (successCount > 0) {
-      toast.success(`✨ ${successCount} Antworten bereinigt!`);
-    }
-  };
-
-  // Add multiple emoji nogo terms at once
-  const addEmojiNogoTerms = async (terms: string[]) => {
-    const { data: user } = await supabase.auth.getUser();
-    if (!user.user) return;
-
-    const existingTerms = emojiNogoTerms.map((t) => t.term.toLowerCase());
-    const newTerms = terms.filter(
-      (term) => !existingTerms.includes(term.toLowerCase())
-    );
-
-    if (newTerms.length === 0) {
-      toast.info("Alle Begriffe sind bereits in der Liste");
-      return;
-    }
-
-    const insertData = newTerms.map((term) => ({
-      term,
-      user_id: user.user.id,
-    }));
-
-    const { data, error } = await supabase
-      .from("emoji_nogo_terms")
-      .insert(insertData)
-      .select();
-
-    if (error) {
-      toast.error("Fehler beim Hinzufügen");
-      return;
-    }
-
-    if (data) {
-      setEmojiNogoTerms([...data, ...emojiNogoTerms]);
-      toast.success(
-        newTerms.length === 1
-          ? `"${newTerms[0]}" zu Emoji-No-Gos hinzugefügt`
-          : `${newTerms.length} Begriffe zu Emoji-No-Gos hinzugefügt`
-      );
-
-      // Retroactive sanitization for ALL new terms at once (parallel)
-      await sanitizeExistingReplies(newTerms);
-    }
-  };
-
-  const removeEmojiNogoTerm = async (id: string) => {
-    await supabase.from("emoji_nogo_terms").delete().eq("id", id);
-    setEmojiNogoTerms(emojiNogoTerms.filter((t) => t.id !== id));
-  };
-
-  const moderateComment = async (
-    commentId: string,
-    action: "hide" | "delete" | "block"
-  ) => {
-    const { error } = await supabase.functions.invoke("moderate-comment", {
-      body: { comment_id: commentId, action },
-    });
-
-    if (error) {
-      toast.error(`Fehler: ${action}`);
-      return;
-    }
-
-    toast.success(
-      action === "hide"
-        ? "Kommentar verborgen"
-        : action === "delete"
-        ? "Kommentar gelöscht"
-        : "User blockiert"
-    );
-
-    setCriticalComments((prev) => prev.filter((c) => c.id !== commentId));
-    setComments((prev) => prev.filter((c) => c.id !== commentId));
-  };
-
-  // Rehabilitate a critical comment - move it back to normal workflow
-  const rehabilitateComment = async (comment: CommentWithContext) => {
-    toast.info("🔄 Kommentar wird freigegeben...");
-
-    // Update database: remove critical flag
-    const { error: updateError } = await supabase
-      .from("instagram_comments")
-      .update({ is_critical: false })
-      .eq("id", comment.id);
-
-    if (updateError) {
-      toast.error("Fehler beim Freigeben");
-      return;
-    }
-
-    // Remove from critical list
-    setCriticalComments((prev) => prev.filter((c) => c.id !== comment.id));
-
-    // Add to normal comments with loading state
-    const rehabilitatedComment: CommentWithContext = {
-      ...comment,
-      is_critical: false,
-      selected: false,
-      editedReply: "",
-      approved: false,
-    };
-    setComments((prev) => [rehabilitatedComment, ...prev]);
-
-    // Mark as generating
-    setSanitizingComments((prev) => new Set(prev).add(comment.id));
-
-    // Generate AI reply
     try {
       const { data, error } = await supabase.functions.invoke("regenerate-reply", {
-        body: { comment_id: comment.id, model: selectedAiModel },
+        body: { comment_id: commentId },
       });
-
-      if (!error && data?.new_reply) {
-        setComments((prev) =>
-          prev.map((c) =>
-            c.id === comment.id
-              ? { ...c, editedReply: data.new_reply, selected: true }
-              : c
-          )
-        );
-        toast.success("✅ Kommentar freigegeben & Antwort generiert!");
-      } else {
-        toast.warning("Freigegeben, aber Antwort konnte nicht generiert werden");
-      }
+      
+      if (error) throw error;
+      
+      toast.success("✨ Antwort generiert!");
+      refetch();
     } catch (err) {
-      console.error("Regenerate error:", err);
-      toast.warning("Freigegeben, aber Antwort-Generierung fehlgeschlagen");
+      console.error("Generate error:", err);
+      toast.error("Fehler bei der Generierung");
     } finally {
-      setSanitizingComments((prev) => {
-        const next = new Set(prev);
-        next.delete(comment.id);
-        return next;
-      });
+      setGeneratingReply(null);
     }
   };
 
-  const toggleCommentSelection = (id: string) => {
-    setComments((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c))
-    );
-  };
-
-  const updateReplyText = (id: string, text: string) => {
-    setComments((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, editedReply: text } : c))
-    );
-  };
-
-  const approveAllForPost = (igMediaId: string) => {
-    setComments((prev) =>
-      prev.map((c) =>
-        c.ig_media_id === igMediaId && c.editedReply
-          ? { ...c, selected: true }
-          : c
-      )
-    );
-    toast.success("✅ Alle Antworten für diesen Post aktiviert");
-  };
-
-  // Queue replies to database with intelligent scheduling
-  const queueReplies = async (
-    selectedComments: CommentWithContext[],
-    scheduledFor: Date | null,
-    status: 'pending' | 'waiting_for_post'
-  ) => {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
-      toast.error("Nicht eingeloggt");
+  // Approve and queue a reply
+  const handleApprove = async (comment: Comment) => {
+    if (!comment.ai_reply_suggestion) {
+      toast.error("Keine Antwort vorhanden - generiere zuerst eine!");
       return;
     }
-
-    const queueItems = selectedComments.map((comment, index) => {
-      // Distribute replies over time window if scheduled
-      let replyTime = scheduledFor;
-      if (scheduledFor && status === 'pending') {
-        // Distribute over 40 minutes (-30 to +10 from post time)
-        const offsetMinutes = Math.random() * 40 - 30;
-        replyTime = addMinutes(scheduledFor, offsetMinutes + (index * 0.5));
-      }
-
-      return {
-        user_id: userData.user.id,
-        comment_id: comment.id,
-        ig_comment_id: comment.ig_comment_id,
-        reply_text: comment.editedReply,
-        status,
-        scheduled_for: replyTime?.toISOString() || null,
-      };
-    });
-
-    const { error } = await supabase
-      .from('comment_reply_queue')
-      .insert(queueItems);
-
-    if (error) {
-      console.error('Queue insert error:', error);
-      toast.error("Fehler beim Einreihen der Antworten");
-      return false;
-    }
-
-    // Remove from local state
-    const queuedIds = new Set(selectedComments.map(c => c.id));
-    setComments(prev => prev.filter(c => !queuedIds.has(c.id)));
-
-    return true;
-  };
-
-  const smartReply = async () => {
-    // Only send selected comments
-    const selectedComments = comments.filter((c) => c.selected && c.editedReply);
-
-    if (selectedComments.length === 0) {
-      toast.error("Keine Antworten ausgewählt");
-      return;
-    }
-
-    setSending(true);
-
+    
+    setApprovingComment(comment.id);
+    
     try {
-      // Step A: Check for scheduled post
-      const now = new Date();
-      const { data: scheduledPosts } = await supabase
-        .from("posts")
-        .select("id, scheduled_at")
-        .eq("status", "SCHEDULED")
-        .gt("scheduled_at", now.toISOString())
-        .order("scheduled_at", { ascending: true })
-        .limit(1);
-
-      const nextScheduledPost = scheduledPosts?.[0];
-
-      if (nextScheduledPost?.scheduled_at) {
-        // Scenario 1: Post found - schedule for Golden Window
-        const postTime = new Date(nextScheduledPost.scheduled_at);
-        const success = await queueReplies(selectedComments, postTime, 'pending');
-        
-        if (success) {
-          const formattedDate = format(postTime, "dd.MM. 'um' HH:mm", { locale: de });
-          toast.success(`🚀 ${selectedComments.length} Antworten für Golden Window am ${formattedDate} eingeplant!`);
-        }
-      } else {
-        // Scenario 2: No post found - show decision dialog
-        setPendingQueueAction(selectedComments);
-        setNoPostDialogOpen(true);
-      }
-    } catch (err) {
-      console.error("Smart reply error:", err);
-      toast.error("Fehler beim Verarbeiten");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  // Handle "Send Now" from dialog
-  const handleSendNow = async () => {
-    if (!pendingQueueAction) return;
-    setSending(true);
-
-    try {
-      // Schedule with small random delays (1-5 minutes from now)
-      const now = new Date();
-      const success = await queueReplies(
-        pendingQueueAction,
-        addMinutes(now, 1 + Math.random() * 4),
-        'pending'
-      );
-
-      if (success) {
-        toast.success(`⚡ ${pendingQueueAction.length} Antworten werden in Kürze gesendet!`);
-      }
-    } finally {
-      setPendingQueueAction(null);
-      setSending(false);
-    }
-  };
-
-  // Handle "Wait for Post" from dialog
-  const handleWaitForPost = async () => {
-    if (!pendingQueueAction) return;
-    setSending(true);
-
-    try {
-      const success = await queueReplies(
-        pendingQueueAction,
-        null, // No scheduled time
-        'waiting_for_post'
-      );
-
-      if (success) {
-        toast.success(`💤 ${pendingQueueAction.length} Antworten warten auf deinen nächsten Post!`);
-      }
-    } finally {
-      setPendingQueueAction(null);
-      setSending(false);
-    }
-  };
-
-  // State for global regeneration
-  const [isGlobalRegenerating, setIsGlobalRegenerating] = useState(false);
-
-  // Handle model change with global regeneration
-  const handleModelChange = async (newModelId: string) => {
-    const oldModel = selectedAiModel;
-    setSelectedAiModel(newModelId);
-    
-    // Save preference to database
-    await saveModelPreference(newModelId);
-    
-    // Find model name for toast
-    const modelName = newModelId.includes("gemini") 
-      ? newModelId.includes("pro") ? "Gemini Pro" : "Gemini Flash"
-      : newModelId.includes("gpt-5-mini") ? "GPT-5 Mini" : "GPT-5";
-
-    // Get all comments with existing replies
-    const commentsToRegenerate = comments.filter((c) => c.editedReply);
-    
-    if (commentsToRegenerate.length === 0) {
-      toast.success(`🧠 Standard-Modell auf ${modelName} aktualisiert`);
-      return;
-    }
-
-    toast.info(`🔄 Schreibe alle ${commentsToRegenerate.length} Antworten um auf ${modelName}...`, {
-      duration: 10000,
-    });
-
-    setIsGlobalRegenerating(true);
-    
-    // Mark all comments as sanitizing for visual feedback
-    setSanitizingComments(new Set(commentsToRegenerate.map((c) => c.id)));
-
-    // Regenerate all in parallel
-    const regeneratePromises = commentsToRegenerate.map(async (comment) => {
-      try {
-        const { data, error } = await supabase.functions.invoke("regenerate-reply", {
-          body: { comment_id: comment.id, model: newModelId },
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Nicht eingeloggt");
+      
+      // Add to reply queue
+      const { error: queueError } = await supabase
+        .from("comment_reply_queue")
+        .insert({
+          user_id: user.user.id,
+          ig_comment_id: comment.ig_comment_id,
+          comment_id: comment.id,
+          reply_text: comment.ai_reply_suggestion,
+          status: "pending",
         });
-
-        if (!error && data?.new_reply) {
-          setComments((prev) =>
-            prev.map((c) =>
-              c.id === comment.id
-                ? { ...c, editedReply: data.new_reply, approved: false }
-                : c
-            )
-          );
-          setSanitizingComments((prev) => {
-            const next = new Set(prev);
-            next.delete(comment.id);
-            return next;
-          });
-          return { success: true, id: comment.id };
-        }
-        return { success: false, id: comment.id };
-      } catch (err) {
-        console.error("Regenerate error:", err);
-        return { success: false, id: comment.id };
-      }
-    });
-
-    const results = await Promise.all(regeneratePromises);
-    const successCount = results.filter((r) => r.success).length;
-
-    setSanitizingComments(new Set());
-    setIsGlobalRegenerating(false);
-
-    toast.success(`✨ ${successCount} Antworten mit ${modelName} neu geschrieben!`);
+      
+      if (queueError) throw queueError;
+      
+      // Mark comment as replied
+      const { error: updateError } = await supabase
+        .from("instagram_comments")
+        .update({ is_replied: true })
+        .eq("id", comment.id);
+      
+      if (updateError) throw updateError;
+      
+      toast.success("✅ In Warteschlange! Wird beim nächsten Golden Window gesendet.");
+      refetch();
+    } catch (err) {
+      console.error("Approve error:", err);
+      toast.error("Fehler beim Genehmigen");
+    } finally {
+      setApprovingComment(null);
+    }
   };
 
-  const selectedCount = comments.filter((c) => c.selected && c.editedReply).length;
+  // Delete/ignore a comment
+  const handleDelete = async (commentId: string) => {
+    setDeletingComment(commentId);
+    
+    try {
+      const { error } = await supabase
+        .from("instagram_comments")
+        .update({ is_hidden: true })
+        .eq("id", commentId);
+      
+      if (error) throw error;
+      
+      toast.success("Kommentar ignoriert");
+      refetch();
+    } catch (err) {
+      console.error("Delete error:", err);
+      toast.error("Fehler beim Löschen");
+    } finally {
+      setDeletingComment(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <GlobalLayout>
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </GlobalLayout>
+    );
+  }
 
   return (
-    <CoPilotLayout>
-      <div className="space-y-8 pb-28">
-        {/* Header Controls */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex-1">
-            <RulesConfigPanel
-              emojiNogoTerms={emojiNogoTerms}
-              blacklistTopics={blacklistTopics}
-              onAddEmojiNogoTerms={addEmojiNogoTerms}
-              onRemoveEmojiNogoTerm={removeEmojiNogoTerm}
-              onAddBlacklistTopics={addBlacklistTopics}
-              onRemoveBlacklistTopic={removeBlacklistTopic}
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <ReplyQueueIndicator onQueueChange={refreshQueue} />
-            <AiModelSelector
-              selectedModel={selectedAiModel}
-              onModelChange={handleModelChange}
-              isRegenerating={isGlobalRegenerating}
-            />
-          </div>
-        </div>
-
-        {/* Fetch Button & Stats */}
-        <div className="flex items-center justify-between gap-4 p-5 rounded-2xl bg-white dark:bg-card border border-gray-200 dark:border-border shadow-sm">
-          <div className="flex-1">
-            <h3 className="font-medium text-sm">Kommentare synchronisieren</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {lastFetch
-                ? `Letzter Sync: ${formatDistanceToNow(lastFetch, {
-                    locale: de,
-                    addSuffix: true,
-                  })}`
-                : "Noch nicht synchronisiert"}
+    <GlobalLayout>
+      <div className="p-6 max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              <MessageCircle className="h-6 w-6 text-primary" />
+              Community
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {comments.length} offene Kommentare
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={forceResyncFeed}
-              disabled={forceResyncing || loading || analyzing}
-              className="gap-2 text-amber-600 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-600 dark:hover:bg-amber-950"
-              title="Lädt die letzten 20 Posts direkt von Instagram und überschreibt fehlerhafte Daten"
-            >
-              <Wrench
-                className={`h-4 w-4 ${forceResyncing ? "animate-spin" : ""}`}
-              />
-              {forceResyncing ? "Repariere..." : "Feed reparieren"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={fetchComments}
-              disabled={loading || analyzing || forceResyncing}
-              className="gap-2"
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-              />
-              {loading ? "Lade..." : analyzing ? "Analysiere..." : "Sync"}
-            </Button>
-          </div>
+          
+          <Button
+            onClick={handleFetchComments}
+            disabled={isRefetching}
+            variant="outline"
+            className="gap-2"
+          >
+            <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
+            Kommentare abrufen
+          </Button>
         </div>
 
-        {/* Critical Comments Section */}
-        {criticalComments.length > 0 && (
-          <div className="rounded-2xl bg-white dark:bg-card border border-red-200 dark:border-destructive/50 shadow-sm overflow-hidden">
-            <div className="p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <AlertTriangle className="h-4 w-4 text-destructive" />
-                <h3 className="font-medium text-sm text-destructive">
-                  Zur Prüfung ({criticalComments.length})
-                </h3>
+        {/* Empty State */}
+        {comments.length === 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-16">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                <MessageCircle className="h-8 w-8 text-primary" />
               </div>
-              <div className="space-y-4">
-                {criticalComments.map((comment) => (
-                  <div
-                    key={comment.id}
-                    className="rounded-xl bg-background border border-destructive/20 overflow-hidden"
-                  >
-                    {/* Post Context Header */}
-                    <div className="p-4 bg-muted/30 border-b border-border/50 flex items-center gap-3">
-                      {/* Small thumbnail */}
-                      <div className="w-12 h-12 rounded-lg bg-muted flex-shrink-0 overflow-hidden border border-border/30">
-                        {comment.post_image_url ? (
-                          <img
-                            src={comment.post_image_url}
-                            alt="Post"
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <MessageCircle className="h-5 w-5 text-muted-foreground/40" />
-                          </div>
-                        )}
+              <h2 className="text-lg font-semibold mb-2">Keine offenen Kommentare</h2>
+              <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
+                Alle Kommentare bearbeitet oder noch keine geladen.
+              </p>
+              <Button onClick={handleFetchComments} className="gap-2">
+                <RefreshCw className="h-4 w-4" />
+                🔄 Kommentare jetzt abrufen
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          /* Comments List */
+          <div className="space-y-3">
+            {comments.map((comment) => (
+              <Card key={comment.id} className="overflow-hidden hover:border-primary/30 transition-colors">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-4">
+                    {/* Avatar */}
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                      <User className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-foreground">
+                          @{comment.commenter_username || "Unbekannt"}
+                        </span>
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {formatDistanceToNow(new Date(comment.comment_timestamp), { 
+                            addSuffix: true, 
+                            locale: de 
+                          })}
+                        </span>
                       </div>
                       
-                      {/* Post caption context */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-muted-foreground mb-0.5">Bezieht sich auf:</p>
-                        <p className="text-sm text-foreground/80 line-clamp-1">
-                          {comment.post_caption || <span className="italic text-muted-foreground">Kein Caption</span>}
-                        </p>
-                      </div>
-
-                      {/* Original post link - always use /p/ format */}
-                      {(() => {
-                        const safeUrl = getInstagramUrl(comment.post_permalink);
-                        if (!safeUrl) return null;
-                        return (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground flex-shrink-0"
-                            onClick={() => window.open(safeUrl, "_blank", "noopener,noreferrer")}
-                            title={`Öffnen: ${safeUrl}`}
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                            Original
-                          </Button>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Critical Comment Content */}
-                    <div className="p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2 flex-wrap">
-                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
-                              <User className="h-3.5 w-3.5 text-muted-foreground" />
-                            </div>
-                            <span className="font-medium text-sm">
-                              @{comment.commenter_username || "Unbekannt"}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {format(
-                                new Date(comment.comment_timestamp),
-                                "dd.MM. HH:mm",
-                                { locale: de }
-                              )}
-                            </span>
-                            {comment.sentiment_score !== null && (
-                              <Badge variant="destructive" className="text-xs">
-                                Score: {comment.sentiment_score.toFixed(2)}
-                              </Badge>
-                            )}
+                      <p className="text-sm text-foreground mb-3">
+                        {comment.comment_text}
+                      </p>
+                      
+                      {/* AI Reply Preview */}
+                      {comment.ai_reply_suggestion && (
+                        <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Sparkles className="h-3 w-3 text-primary" />
+                            <span className="text-xs font-medium text-primary">KI-Antwort</span>
                           </div>
-                          <p className="text-sm text-foreground leading-relaxed pl-9">
-                            {comment.comment_text}
+                          <p className="text-sm text-muted-foreground">
+                            {comment.ai_reply_suggestion}
                           </p>
                         </div>
-                        
-                        <div className="flex gap-1.5 flex-shrink-0">
-                          {/* Rehabilitate - move to normal workflow */}
+                      )}
+                      
+                      {/* Actions */}
+                      <div className="flex items-center gap-2">
+                        {comment.ai_reply_suggestion ? (
+                          <Button
+                            size="sm"
+                            onClick={() => handleApprove(comment)}
+                            disabled={approvingComment === comment.id}
+                            className="gap-2"
+                          >
+                            {approvingComment === comment.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Check className="h-4 w-4" />
+                            )}
+                            Genehmigen
+                          </Button>
+                        ) : (
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-8 px-3 gap-1.5 text-xs border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/60"
-                            onClick={() => rehabilitateComment(comment)}
+                            onClick={() => handleSmartReply(comment.id)}
+                            disabled={generatingReply === comment.id}
+                            className="gap-2"
                           >
-                            <Check className="h-3.5 w-3.5" />
-                            Zulassen & Antworten
+                            {generatingReply === comment.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Sparkles className="h-4 w-4" />
+                            )}
+                            Smart Reply
                           </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8"
-                            onClick={() => moderateComment(comment.id, "hide")}
-                            title="Verbergen"
-                          >
-                            <EyeOff className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8"
-                            onClick={() => moderateComment(comment.id, "block")}
-                            title="Blockieren"
-                          >
-                            <Ban className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => moderateComment(comment.id, "delete")}
-                            title="Löschen"
-                          >
+                        )}
+                        
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDelete(comment.id)}
+                          disabled={deletingComment === comment.id}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          {deletingComment === comment.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
                             <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                          )}
+                        </Button>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Post-Grouped Comments */}
-        {visiblePostGroups.length > 0 ? (
-          <div className="space-y-8">
-            {visiblePostGroups.map((group) => (
-              <PostCard
-                key={group.igMediaId}
-                group={group}
-                onToggleSelect={toggleCommentSelection}
-                onUpdateReply={updateReplyText}
-                onApproveAll={approveAllForPost}
-                sanitizingComments={sanitizingComments}
-                onMetadataRepaired={loadData}
-                getQueueStatus={getQueueStatus}
-                getScheduledTime={getScheduledTime}
-              />
+                </CardContent>
+              </Card>
             ))}
-            
-            {/* Load More Button */}
-            {hasMorePosts && (
-              <Button
-                variant="outline"
-                size="lg"
-                className="w-full gap-2 h-14 text-base bg-white dark:bg-card border-gray-200 dark:border-border hover:bg-gray-50 dark:hover:bg-muted"
-                onClick={loadMorePosts}
-              >
-                ⬇️ Ältere Beiträge laden
-                <span className="text-muted-foreground text-sm">
-                  ({visiblePostCount} von {postGroups.length} Posts)
-                </span>
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="rounded-2xl bg-white dark:bg-card border border-gray-200 dark:border-border shadow-sm">
-            <div className="py-20 px-8 text-center">
-              <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-500/10 mx-auto mb-6 flex items-center justify-center">
-                <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
-              </div>
-              <h3 className="text-xl font-semibold text-foreground mb-2">
-                Alles erledigt!
-              </h3>
-              <p className="text-muted-foreground max-w-md mx-auto">
-                Du bist auf dem Laufenden – keine offenen Kommentare in diesem Zeitraum. 
-                Synchronisiere neue Kommentare oder erweitere den Zeitraum.
-              </p>
-              <Button
-                variant="outline"
-                size="lg"
-                className="mt-6 gap-2"
-                onClick={fetchComments}
-                disabled={loading || analyzing}
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                Kommentare synchronisieren
-              </Button>
-            </div>
           </div>
         )}
       </div>
-
-      {/* Fixed Action Bar */}
-      <ActionBar
-        selectedCount={selectedCount}
-        totalCount={comments.length}
-        sending={sending}
-        onSmartReply={smartReply}
-      />
-
-      {/* No Scheduled Post Dialog */}
-      <NoScheduledPostDialog
-        open={noPostDialogOpen}
-        onOpenChange={setNoPostDialogOpen}
-        replyCount={pendingQueueAction?.length || 0}
-        onSendNow={handleSendNow}
-        onWaitForPost={handleWaitForPost}
-      />
-    </CoPilotLayout>
+    </GlobalLayout>
   );
 }
