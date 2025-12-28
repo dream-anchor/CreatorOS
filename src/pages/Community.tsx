@@ -228,14 +228,24 @@ export default function Community() {
     }
   };
 
-  // Sync replyTexts with generatedReplies
+  // Sync replyTexts with generatedReplies AND ai_reply_suggestion from DB
   useEffect(() => {
     const newTexts: Record<string, string> = {};
+    
+    // First, populate from database ai_reply_suggestion
+    comments.forEach(comment => {
+      if (comment.ai_reply_suggestion) {
+        newTexts[comment.id] = comment.ai_reply_suggestion;
+      }
+    });
+    
+    // Then override with any locally generated replies
     Object.entries(generatedReplies).forEach(([id, reply]) => {
       newTexts[id] = reply.text;
     });
+    
     setReplyTexts(newTexts);
-  }, [generatedReplies]);
+  }, [generatedReplies, comments]);
 
   // Listen for refresh events from the chat
   useEffect(() => {
@@ -247,7 +257,7 @@ export default function Community() {
     return () => window.removeEventListener('refresh-comments', handleRefresh);
   }, [queryClient]);
 
-  // Auto-generate replies when model is selected
+  // Auto-generate replies using batch processing - saves each reply immediately to DB
   const handleGenerateAllReplies = useCallback(async (model: string) => {
     if (comments.length === 0) {
       toast.info("Keine Kommentare zum Generieren");
@@ -256,43 +266,35 @@ export default function Community() {
 
     setIsAutoGenerating(true);
     setGenerationProgress({ current: 0, total: comments.length });
-    const newReplies: Record<string, GeneratedReply> = {};
     const modelName = AI_MODELS.find(m => m.id === model)?.name || model;
 
-    toast.info(`🧠 Generiere Antworten mit ${modelName}...`);
+    toast.info(`🧠 Generiere Antworten mit ${modelName}... Die Verarbeitung läuft im Hintergrund.`);
 
-    for (let i = 0; i < comments.length; i++) {
-      const comment = comments[i];
-      setGenerationProgress({ current: i + 1, total: comments.length });
+    try {
+      // Call batch generate function - it processes all comments and saves each immediately
+      const commentIds = comments.map(c => c.id);
+      
+      const { data, error } = await supabase.functions.invoke("batch-generate-replies", {
+        body: { comment_ids: commentIds, model },
+      });
 
-      try {
-        const { data, error } = await supabase.functions.invoke("regenerate-reply", {
-          body: { comment_id: comment.id, model },
-        });
+      if (error) throw error;
 
-        if (error) throw error;
-
-        if (data?.new_reply) {
-          newReplies[comment.id] = { text: data.new_reply, model };
-        }
-      } catch (err) {
-        console.error(`Error generating for ${comment.id}:`, err);
-      }
-
-      // Small delay between requests to avoid rate limiting
-      if (i < comments.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-      }
+      console.log("[Community] Batch generation completed:", data);
+      
+      // Refresh to show the saved replies from DB
+      await refetch();
+      
+      const successCount = data?.successCount || 0;
+      toast.success(`✨ ${successCount} von ${comments.length} Antworten generiert und gespeichert!`);
+    } catch (err) {
+      console.error("Batch generation error:", err);
+      toast.error("Fehler bei der Generierung");
+    } finally {
+      setIsAutoGenerating(false);
+      setGenerationProgress(null);
+      setModelForReplies(model);
     }
-
-    setGeneratedReplies(newReplies);
-    setModelForReplies(model);
-    setIsAutoGenerating(false);
-    setGenerationProgress(null);
-
-    const successCount = Object.keys(newReplies).length;
-    toast.success(`✨ ${successCount} von ${comments.length} Antworten generiert!`);
-    refetch();
   }, [comments, refetch]);
 
   // Handle model change - triggers auto-generation
