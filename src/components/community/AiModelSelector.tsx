@@ -58,7 +58,7 @@ export function AiModelSelector({
           size="sm"
           className={cn(
             "h-10 gap-2 rounded-xl transition-all",
-            noModelSelected && "animate-pulse bg-primary hover:bg-primary/90",
+            noModelSelected && "bg-primary hover:bg-primary/90",
             isGenerating && "pointer-events-none"
           )}
           disabled={disabled || isGenerating}
