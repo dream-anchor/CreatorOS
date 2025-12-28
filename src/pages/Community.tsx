@@ -19,7 +19,15 @@ import {
   Image as ImageIcon,
   Brain,
   AlertCircle,
+  EyeOff,
+  Ban,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatDistanceToNow, format, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -54,6 +62,8 @@ export default function Community() {
   const [generationProgress, setGenerationProgress] = useState<{ current: number; total: number } | null>(null);
   const [sendingReply, setSendingReply] = useState<string | null>(null);
   const [deletingComment, setDeletingComment] = useState<string | null>(null);
+  const [hidingComment, setHidingComment] = useState<string | null>(null);
+  const [blockingUser, setBlockingUser] = useState<string | null>(null);
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
 
   // Fetch comments with post context
@@ -271,15 +281,14 @@ export default function Community() {
     }
   };
 
-  // Delete/ignore a comment
-  const handleDelete = async (commentId: string) => {
-    setDeletingComment(commentId);
+  // Hide a comment (locally + on Instagram)
+  const handleHideComment = async (commentId: string) => {
+    setHidingComment(commentId);
     
     try {
-      const { error } = await supabase
-        .from("instagram_comments")
-        .update({ is_hidden: true })
-        .eq("id", commentId);
+      const { data, error } = await supabase.functions.invoke("moderate-comment", {
+        body: { comment_id: commentId, action: "hide" },
+      });
       
       if (error) throw error;
       
@@ -290,13 +299,41 @@ export default function Community() {
         return next;
       });
       
-      toast.success("Kommentar ignoriert");
+      toast.success("Kommentar ausgeblendet");
       refetch();
     } catch (err) {
-      console.error("Delete error:", err);
-      toast.error("Fehler beim Löschen");
+      console.error("Hide error:", err);
+      toast.error("Fehler beim Ausblenden");
     } finally {
-      setDeletingComment(null);
+      setHidingComment(null);
+    }
+  };
+
+  // Block a user (hides all their comments)
+  const handleBlockUser = async (commentId: string, username: string | null) => {
+    setBlockingUser(commentId);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("moderate-comment", {
+        body: { comment_id: commentId, action: "block" },
+      });
+      
+      if (error) throw error;
+      
+      // Remove from local state
+      setGeneratedReplies(prev => {
+        const next = { ...prev };
+        delete next[commentId];
+        return next;
+      });
+      
+      toast.success(`@${username || "User"} blockiert`);
+      refetch();
+    } catch (err) {
+      console.error("Block error:", err);
+      toast.error("Fehler beim Blockieren");
+    } finally {
+      setBlockingUser(null);
     }
   };
 
@@ -499,19 +536,54 @@ export default function Community() {
                                 Senden
                               </Button>
                               
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleDelete(comment.id)}
-                                disabled={deletingComment === comment.id}
-                                className="text-muted-foreground hover:text-destructive ml-auto rounded-xl h-9"
-                              >
-                                {deletingComment === comment.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-4 w-4" />
-                                )}
-                              </Button>
+                              {/* Moderation Icons */}
+                              <div className="flex items-center gap-1 ml-auto">
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => handleHideComment(comment.id)}
+                                        disabled={hidingComment === comment.id}
+                                        className="text-muted-foreground hover:text-amber-500 rounded-xl h-9 w-9 p-0"
+                                      >
+                                        {hidingComment === comment.id ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <EyeOff className="h-4 w-4" />
+                                        )}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Kommentar ausblenden</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => handleBlockUser(comment.id, comment.commenter_username)}
+                                        disabled={blockingUser === comment.id}
+                                        className="text-muted-foreground hover:text-destructive rounded-xl h-9 w-9 p-0"
+                                      >
+                                        {blockingUser === comment.id ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <Ban className="h-4 w-4" />
+                                        )}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Absender blockieren</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </div>
                             </div>
                           </div>
                         </div>
