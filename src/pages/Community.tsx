@@ -34,6 +34,9 @@ import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { AiModelSelector, AI_MODELS } from "@/components/community/AiModelSelector";
 import { RulesConfigPanel } from "@/components/community/RulesConfigPanel";
+import { ReplyQueueIndicator } from "@/components/community/ReplyQueueIndicator";
+import { FilteredCommentsDialog } from "@/components/community/FilteredCommentsDialog";
+import { useGenerationContext } from "@/contexts/GenerationContext";
 
 interface Comment {
   id: string;
@@ -69,11 +72,11 @@ interface BlacklistTopic {
 
 export default function Community() {
   const queryClient = useQueryClient();
+  const { isGenerating, progress, startGeneration, cancelGeneration } = useGenerationContext();
+  
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [modelForReplies, setModelForReplies] = useState<string | null>(null);
   const [generatedReplies, setGeneratedReplies] = useState<Record<string, GeneratedReply>>({});
-  const [isAutoGenerating, setIsAutoGenerating] = useState(false);
-  const [generationProgress, setGenerationProgress] = useState<{ current: number; total: number } | null>(null);
   const [sendingReply, setSendingReply] = useState<string | null>(null);
   const [deletingComment, setDeletingComment] = useState<string | null>(null);
   const [hidingComment, setHidingComment] = useState<string | null>(null);
@@ -168,17 +171,27 @@ export default function Community() {
   });
 
   // Filter comments based on blacklist topics (check post caption)
-  const allComments = useMemo(() => {
-    if (blacklistTopics.length === 0) return rawComments;
+  const { filteredComments, allComments } = useMemo(() => {
+    if (blacklistTopics.length === 0) {
+      return { filteredComments: [], allComments: rawComments };
+    }
     
-    return rawComments.filter(comment => {
+    const filtered: Comment[] = [];
+    const visible: Comment[] = [];
+    
+    rawComments.forEach(comment => {
       const caption = comment.post?.caption?.toLowerCase() || "";
-      // Check if caption contains any blacklisted topic
       const isBlacklisted = blacklistTopics.some(topic => 
         caption.includes(topic.topic.toLowerCase())
       );
-      return !isBlacklisted;
+      if (isBlacklisted) {
+        filtered.push(comment);
+      } else {
+        visible.push(comment);
+      }
     });
+    
+    return { filteredComments: filtered, allComments: visible };
   }, [rawComments, blacklistTopics]);
 
   // Display only up to displayLimit comments
@@ -330,21 +343,9 @@ export default function Community() {
     return () => window.removeEventListener('refresh-comments', handleRefresh);
   }, [queryClient]);
 
-  // State for cancellation
-  const [isGenerationCancelled, setIsGenerationCancelled] = useState(false);
-
-  // Helper function to chunk array
-  const chunkArray = <T,>(array: T[], size: number): T[][] => {
-    const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += size) {
-      chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
-  };
-
-  // Auto-generate replies using batch processing with chunking - processes ALL comments without replies
-  const handleGenerateAllReplies = useCallback(async (model: string) => {
-    // Get all comments WITHOUT ai_reply_suggestion from allComments (not just displayed ones)
+  // Auto-generate replies using the global context (runs in background)
+  const handleGenerateAllReplies = useCallback((model: string) => {
+    // Get all comments WITHOUT ai_reply_suggestion from allComments
     const commentsToGenerate = allComments.filter(c => !c.ai_reply_suggestion);
     
     if (commentsToGenerate.length === 0) {
@@ -352,89 +353,16 @@ export default function Community() {
       return;
     }
 
-    setIsAutoGenerating(true);
-    setIsGenerationCancelled(false);
-    setGenerationProgress({ current: 0, total: commentsToGenerate.length });
-    const modelName = AI_MODELS.find(m => m.id === model)?.name || model;
-
-    const BATCH_SIZE = 10; // Process 10 comments at a time to avoid timeout
-    const batches = chunkArray(commentsToGenerate, BATCH_SIZE);
+    const commentIds = commentsToGenerate.map(c => c.id);
     
-    toast.info(`🧠 Starte Generierung von ${commentsToGenerate.length} Antworten in ${batches.length} Batches...`);
-
-    let totalSuccess = 0;
-    let totalErrors = 0;
-
-    try {
-      for (let i = 0; i < batches.length; i++) {
-        // Check for cancellation
-        if (isGenerationCancelled) {
-          toast.info(`Generierung abgebrochen nach ${totalSuccess} Antworten`);
-          break;
-        }
-
-        const batch = batches[i];
-        const commentIds = batch.map(c => c.id);
-        const currentProgress = i * BATCH_SIZE;
-        
-        setGenerationProgress({ 
-          current: currentProgress, 
-          total: commentsToGenerate.length 
-        });
-
-        console.log(`[Community] Processing batch ${i + 1}/${batches.length} (${batch.length} comments)`);
-
-        try {
-          const { data, error } = await supabase.functions.invoke("batch-generate-replies", {
-            body: { comment_ids: commentIds, model },
-          });
-
-          if (error) {
-            console.error(`[Community] Batch ${i + 1} error:`, error);
-            totalErrors += batch.length;
-          } else {
-            const successCount = data?.successCount || 0;
-            totalSuccess += successCount;
-            totalErrors += (batch.length - successCount);
-            console.log(`[Community] Batch ${i + 1} completed: ${successCount} successes`);
-          }
-        } catch (err) {
-          console.error(`[Community] Batch ${i + 1} failed:`, err);
-          totalErrors += batch.length;
-        }
-
-        // Refresh after each batch to show progress in UI
-        await refetch();
-        
-        // Small delay between batches to avoid rate limits
-        if (i < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-
-      // Final progress update
-      setGenerationProgress({ current: commentsToGenerate.length, total: commentsToGenerate.length });
-      
-      if (totalErrors === 0) {
-        toast.success(`✨ Alle ${totalSuccess} Antworten erfolgreich generiert!`);
-      } else {
-        toast.success(`✨ ${totalSuccess} Antworten generiert, ${totalErrors} Fehler`);
-      }
-    } catch (err) {
-      console.error("Batch generation error:", err);
-      toast.error("Fehler bei der Generierung");
-    } finally {
-      setIsAutoGenerating(false);
-      setGenerationProgress(null);
-      setModelForReplies(model);
-    }
-  }, [allComments, refetch, isGenerationCancelled]);
-
-  // Cancel generation
-  const handleCancelGeneration = useCallback(() => {
-    setIsGenerationCancelled(true);
-    toast.info("Generierung wird abgebrochen...");
-  }, []);
+    // Start generation in global context (will continue if user navigates away)
+    startGeneration(commentIds, model, () => {
+      // This callback is called after each batch completes
+      refetch();
+    });
+    
+    setModelForReplies(model);
+  }, [allComments, startGeneration, refetch]);
 
   // Handle model change - triggers auto-generation
   const handleModelChange = useCallback((model: string) => {
@@ -755,15 +683,16 @@ export default function Community() {
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3">
+            <ReplyQueueIndicator onQueueChange={() => refetch()} />
             <AiModelSelector
               selectedModel={selectedModel}
               onModelChange={handleModelChange}
-              disabled={isAutoGenerating}
-              isGenerating={isAutoGenerating}
-              generationProgress={generationProgress}
+              disabled={isGenerating}
+              isGenerating={isGenerating}
+              generationProgress={progress}
             />
             {/* Generate button - shows when model selected but no replies generated yet */}
-            {selectedModel && Object.keys(generatedReplies).length === 0 && comments.length > 0 && !isAutoGenerating && (
+            {selectedModel && Object.keys(generatedReplies).length === 0 && comments.length > 0 && !isGenerating && (
               <Button
                 onClick={() => handleGenerateAllReplies(selectedModel)}
                 size="sm"
@@ -787,7 +716,7 @@ export default function Community() {
         </div>
 
         {/* Generation Progress Bar - Shows during generation */}
-        {isAutoGenerating && generationProgress && (
+        {isGenerating && progress && (
           <Card className="mb-4 sm:mb-6 border-primary/50 bg-gradient-to-r from-primary/5 to-accent/5 rounded-2xl overflow-hidden">
             <CardContent className="py-4 sm:py-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
@@ -800,12 +729,12 @@ export default function Community() {
                       Generiere Antworten...
                     </h3>
                     <p className="text-xs sm:text-sm text-muted-foreground">
-                      {generationProgress.current} von {generationProgress.total} verarbeitet
+                      {progress.current} von {progress.total} verarbeitet
                     </p>
                   </div>
                 </div>
                 <Button
-                  onClick={handleCancelGeneration}
+                  onClick={cancelGeneration}
                   variant="outline"
                   size="sm"
                   className="gap-2 rounded-xl"
@@ -819,20 +748,20 @@ export default function Community() {
                 <div 
                   className="bg-gradient-to-r from-primary to-accent h-full rounded-full transition-all duration-300"
                   style={{ 
-                    width: `${(generationProgress.current / generationProgress.total) * 100}%` 
+                    width: `${(progress.current / progress.total) * 100}%` 
                   }}
                 />
               </div>
               <p className="text-xs text-muted-foreground mt-2 text-center">
-                {Math.round((generationProgress.current / generationProgress.total) * 100)}% — 
-                Batch {Math.ceil(generationProgress.current / 10)} von {Math.ceil(generationProgress.total / 10)}
+                {Math.round((progress.current / progress.total) * 100)}% — 
+                Batch {Math.ceil(progress.current / 10)} von {Math.ceil(progress.total / 10)}
               </p>
             </CardContent>
           </Card>
         )}
 
         {/* Send All Button - Shows when there are replies ready */}
-        {commentsWithReplies.length > 0 && !isAutoGenerating && (
+        {commentsWithReplies.length > 0 && !isGenerating && (
           <Card className="mb-4 sm:mb-6 border-primary/50 bg-gradient-to-r from-primary/10 to-accent/10 rounded-2xl">
             <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 sm:py-5">
               <div className="flex items-center gap-3">
@@ -930,11 +859,15 @@ export default function Community() {
           </CardContent>
         </Card>
 
-        {/* Filtered count info */}
-        {rawComments.length !== allComments.length && (
-          <div className="mb-4 text-xs text-muted-foreground flex items-center gap-2">
-            <EyeOff className="h-3 w-3" />
-            {rawComments.length - allComments.length} Kommentar(e) durch Themen-Filter ausgeblendet
+        {/* Filtered count info - clickable dialog */}
+        {filteredComments.length > 0 && (
+          <div className="mb-4">
+            <FilteredCommentsDialog
+              filteredComments={filteredComments}
+              blacklistTopics={blacklistTopics}
+              onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
+              triggerText={`${filteredComments.length} Kommentar(e) durch Themen-Filter ausgeblendet`}
+            />
           </div>
         )}
 
@@ -1088,7 +1021,7 @@ export default function Community() {
                                     placeholder="Antwort eingeben oder per KI generieren lassen..."
                                     value={replyTexts[comment.id] || ""}
                                     onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
-                                    disabled={isAutoGenerating}
+                                    disabled={isGenerating}
                                     className={cn(
                                       "min-h-[100px] resize-none rounded-xl text-sm",
                                       hasReply 
