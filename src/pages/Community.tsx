@@ -330,7 +330,19 @@ export default function Community() {
     return () => window.removeEventListener('refresh-comments', handleRefresh);
   }, [queryClient]);
 
-  // Auto-generate replies using batch processing - processes ALL comments without replies
+  // State for cancellation
+  const [isGenerationCancelled, setIsGenerationCancelled] = useState(false);
+
+  // Helper function to chunk array
+  const chunkArray = <T,>(array: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  };
+
+  // Auto-generate replies using batch processing with chunking - processes ALL comments without replies
   const handleGenerateAllReplies = useCallback(async (model: string) => {
     // Get all comments WITHOUT ai_reply_suggestion from allComments (not just displayed ones)
     const commentsToGenerate = allComments.filter(c => !c.ai_reply_suggestion);
@@ -341,28 +353,73 @@ export default function Community() {
     }
 
     setIsAutoGenerating(true);
+    setIsGenerationCancelled(false);
     setGenerationProgress({ current: 0, total: commentsToGenerate.length });
     const modelName = AI_MODELS.find(m => m.id === model)?.name || model;
 
-    toast.info(`🧠 Generiere ${commentsToGenerate.length} Antworten mit ${modelName}... Die Verarbeitung läuft im Hintergrund.`);
+    const BATCH_SIZE = 10; // Process 10 comments at a time to avoid timeout
+    const batches = chunkArray(commentsToGenerate, BATCH_SIZE);
+    
+    toast.info(`🧠 Starte Generierung von ${commentsToGenerate.length} Antworten in ${batches.length} Batches...`);
+
+    let totalSuccess = 0;
+    let totalErrors = 0;
 
     try {
-      // Call batch generate function with ALL comments that need replies
-      const commentIds = commentsToGenerate.map(c => c.id);
-      
-      const { data, error } = await supabase.functions.invoke("batch-generate-replies", {
-        body: { comment_ids: commentIds, model },
-      });
+      for (let i = 0; i < batches.length; i++) {
+        // Check for cancellation
+        if (isGenerationCancelled) {
+          toast.info(`Generierung abgebrochen nach ${totalSuccess} Antworten`);
+          break;
+        }
 
-      if (error) throw error;
+        const batch = batches[i];
+        const commentIds = batch.map(c => c.id);
+        const currentProgress = i * BATCH_SIZE;
+        
+        setGenerationProgress({ 
+          current: currentProgress, 
+          total: commentsToGenerate.length 
+        });
 
-      console.log("[Community] Batch generation completed:", data);
+        console.log(`[Community] Processing batch ${i + 1}/${batches.length} (${batch.length} comments)`);
+
+        try {
+          const { data, error } = await supabase.functions.invoke("batch-generate-replies", {
+            body: { comment_ids: commentIds, model },
+          });
+
+          if (error) {
+            console.error(`[Community] Batch ${i + 1} error:`, error);
+            totalErrors += batch.length;
+          } else {
+            const successCount = data?.successCount || 0;
+            totalSuccess += successCount;
+            totalErrors += (batch.length - successCount);
+            console.log(`[Community] Batch ${i + 1} completed: ${successCount} successes`);
+          }
+        } catch (err) {
+          console.error(`[Community] Batch ${i + 1} failed:`, err);
+          totalErrors += batch.length;
+        }
+
+        // Refresh after each batch to show progress in UI
+        await refetch();
+        
+        // Small delay between batches to avoid rate limits
+        if (i < batches.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      // Final progress update
+      setGenerationProgress({ current: commentsToGenerate.length, total: commentsToGenerate.length });
       
-      // Refresh to show the saved replies from DB
-      await refetch();
-      
-      const successCount = data?.successCount || 0;
-      toast.success(`✨ ${successCount} von ${commentsToGenerate.length} Antworten generiert und gespeichert!`);
+      if (totalErrors === 0) {
+        toast.success(`✨ Alle ${totalSuccess} Antworten erfolgreich generiert!`);
+      } else {
+        toast.success(`✨ ${totalSuccess} Antworten generiert, ${totalErrors} Fehler`);
+      }
     } catch (err) {
       console.error("Batch generation error:", err);
       toast.error("Fehler bei der Generierung");
@@ -371,7 +428,13 @@ export default function Community() {
       setGenerationProgress(null);
       setModelForReplies(model);
     }
-  }, [allComments, refetch]);
+  }, [allComments, refetch, isGenerationCancelled]);
+
+  // Cancel generation
+  const handleCancelGeneration = useCallback(() => {
+    setIsGenerationCancelled(true);
+    toast.info("Generierung wird abgebrochen...");
+  }, []);
 
   // Handle model change - triggers auto-generation
   const handleModelChange = useCallback((model: string) => {
@@ -723,8 +786,53 @@ export default function Community() {
           </div>
         </div>
 
+        {/* Generation Progress Bar - Shows during generation */}
+        {isAutoGenerating && generationProgress && (
+          <Card className="mb-4 sm:mb-6 border-primary/50 bg-gradient-to-r from-primary/5 to-accent/5 rounded-2xl overflow-hidden">
+            <CardContent className="py-4 sm:py-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <Brain className="h-5 w-5 sm:h-6 sm:w-6 text-primary animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-foreground text-sm sm:text-base">
+                      Generiere Antworten...
+                    </h3>
+                    <p className="text-xs sm:text-sm text-muted-foreground">
+                      {generationProgress.current} von {generationProgress.total} verarbeitet
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={handleCancelGeneration}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 rounded-xl"
+                >
+                  <Ban className="h-4 w-4" />
+                  Abbrechen
+                </Button>
+              </div>
+              {/* Progress bar */}
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-gradient-to-r from-primary to-accent h-full rounded-full transition-all duration-300"
+                  style={{ 
+                    width: `${(generationProgress.current / generationProgress.total) * 100}%` 
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 text-center">
+                {Math.round((generationProgress.current / generationProgress.total) * 100)}% — 
+                Batch {Math.ceil(generationProgress.current / 10)} von {Math.ceil(generationProgress.total / 10)}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Send All Button - Shows when there are replies ready */}
-        {commentsWithReplies.length > 0 && (
+        {commentsWithReplies.length > 0 && !isAutoGenerating && (
           <Card className="mb-4 sm:mb-6 border-primary/50 bg-gradient-to-r from-primary/10 to-accent/10 rounded-2xl">
             <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 sm:py-5">
               <div className="flex items-center gap-3">
