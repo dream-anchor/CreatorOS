@@ -15,6 +15,7 @@ import {
   Send,
   User,
   Clock,
+  Image as ImageIcon,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { de } from "date-fns/locale";
@@ -29,6 +30,11 @@ interface Comment {
   ai_reply_suggestion: string | null;
   ig_comment_id: string;
   ig_media_id: string;
+  post?: {
+    id: string;
+    caption: string | null;
+    original_media_url: string | null;
+  } | null;
 }
 
 export default function Community() {
@@ -39,13 +45,26 @@ export default function Community() {
   const [deletingComment, setDeletingComment] = useState<string | null>(null);
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
 
-  // Fetch comments with useQuery for automatic loading
+  // Fetch comments with post context
   const { data: comments = [], isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['community-comments'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("instagram_comments")
-        .select("id, comment_text, commenter_username, comment_timestamp, ai_reply_suggestion, ig_comment_id, ig_media_id")
+        .select(`
+          id, 
+          comment_text, 
+          commenter_username, 
+          comment_timestamp, 
+          ai_reply_suggestion, 
+          ig_comment_id, 
+          ig_media_id,
+          post:posts!instagram_comments_post_id_fkey (
+            id,
+            caption,
+            original_media_url
+          )
+        `)
         .eq("is_replied", false)
         .eq("is_hidden", false)
         .order("comment_timestamp", { ascending: false })
@@ -209,20 +228,22 @@ export default function Community() {
 
   return (
     <GlobalLayout>
-      <div className="p-6 max-w-4xl mx-auto pb-32">
+      <div className="p-6 max-w-5xl mx-auto pb-32">
         {/* Header with Model Selector */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <MessageCircle className="h-6 w-6 text-primary" />
+            <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                <MessageCircle className="h-5 w-5 text-white" />
+              </div>
               Community
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {comments.length} offene Kommentare
+            <p className="text-sm text-muted-foreground mt-2 ml-[52px]">
+              {comments.length} offene Kommentare warten auf deine Antwort
             </p>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <AiModelSelector
               selectedModel={selectedModel}
               onModelChange={setSelectedModel}
@@ -232,29 +253,28 @@ export default function Community() {
               onClick={handleFetchComments}
               disabled={isRefetching}
               variant="outline"
-              size="sm"
-              className="gap-2"
+              className="gap-2 rounded-xl h-10"
             >
               <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
-              <span className="hidden sm:inline">Abrufen</span>
+              <span className="hidden sm:inline">Sync</span>
             </Button>
           </div>
         </div>
 
         {/* Empty State */}
         {comments.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-                <MessageCircle className="h-8 w-8 text-primary" />
+          <Card className="border-dashed border-2 rounded-2xl">
+            <CardContent className="flex flex-col items-center justify-center py-20">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-6">
+                <MessageCircle className="h-10 w-10 text-primary" />
               </div>
-              <h2 className="text-lg font-semibold mb-2">Keine offenen Kommentare</h2>
-              <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
-                Alle Kommentare bearbeitet oder noch keine geladen.
+              <h2 className="text-xl font-semibold mb-2">Keine offenen Kommentare</h2>
+              <p className="text-muted-foreground text-center max-w-md mb-6">
+                Alle Kommentare bearbeitet oder noch keine von Instagram geladen.
               </p>
-              <Button onClick={handleFetchComments} className="gap-2">
+              <Button onClick={handleFetchComments} size="lg" className="gap-2 rounded-xl">
                 <RefreshCw className="h-4 w-4" />
-                🔄 Kommentare jetzt abrufen
+                Kommentare jetzt abrufen
               </Button>
             </CardContent>
           </Card>
@@ -262,88 +282,114 @@ export default function Community() {
           /* Comments List */
           <div className="space-y-4">
             {comments.map((comment) => (
-              <Card key={comment.id} className="overflow-hidden hover:border-primary/30 transition-colors">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-4">
-                    {/* Avatar */}
-                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                      <User className="h-5 w-5 text-muted-foreground" />
+              <Card key={comment.id} className="overflow-hidden rounded-2xl border-border/50 hover:border-primary/30 transition-all hover:shadow-lg">
+                <CardContent className="p-0">
+                  {/* Post Context Header */}
+                  {comment.post && (
+                    <div className="flex items-center gap-3 px-5 py-3 bg-muted/30 border-b border-border/30">
+                      {comment.post.original_media_url ? (
+                        <img 
+                          src={comment.post.original_media_url} 
+                          alt="Post" 
+                          className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                          <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground line-clamp-2 flex-1">
+                        {comment.post.caption?.slice(0, 100) || "Kein Caption"}
+                        {(comment.post.caption?.length || 0) > 100 && "..."}
+                      </p>
                     </div>
-                    
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      {/* Header */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="font-medium text-foreground">
-                          @{comment.commenter_username || "Unbekannt"}
-                        </span>
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {formatDistanceToNow(new Date(comment.comment_timestamp), { 
-                            addSuffix: true, 
-                            locale: de 
-                          })}
-                        </span>
+                  )}
+                  
+                  <div className="p-5">
+                    <div className="flex items-start gap-4">
+                      {/* Avatar */}
+                      <div className="flex-shrink-0 w-11 h-11 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                        <User className="h-5 w-5 text-primary" />
                       </div>
                       
-                      {/* Fan Comment */}
-                      <p className="text-sm text-foreground bg-muted/50 rounded-lg p-3 mb-3">
-                        {comment.comment_text}
-                      </p>
-                      
-                      {/* Reply Textarea */}
-                      <div className="space-y-2">
-                        <Textarea
-                          placeholder="Deine Antwort..."
-                          value={replyTexts[comment.id] || ""}
-                          onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
-                          className="min-h-[80px] resize-none"
-                        />
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Header */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-semibold text-foreground">
+                            @{comment.commenter_username || "Unbekannt"}
+                          </span>
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {formatDistanceToNow(new Date(comment.comment_timestamp), { 
+                              addSuffix: true, 
+                              locale: de 
+                            })}
+                          </span>
+                        </div>
                         
-                        {/* Actions */}
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleSmartReply(comment.id)}
-                            disabled={generatingReply === comment.id}
-                            className="gap-2"
-                          >
-                            {generatingReply === comment.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Sparkles className="h-4 w-4" />
-                            )}
-                            Smart Reply
-                          </Button>
+                        {/* Fan Comment */}
+                        <div className="text-sm text-foreground bg-muted/40 rounded-xl p-4 mb-4 border border-border/30">
+                          "{comment.comment_text}"
+                        </div>
+                        
+                        {/* Reply Textarea */}
+                        <div className="space-y-3">
+                          <Textarea
+                            placeholder="Deine Antwort..."
+                            value={replyTexts[comment.id] || ""}
+                            onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
+                            className="min-h-[90px] resize-none rounded-xl border-border/50 focus:border-primary/50"
+                          />
                           
-                          <Button
-                            size="sm"
-                            onClick={() => handleSendReply(comment)}
-                            disabled={sendingReply === comment.id || !replyTexts[comment.id]?.trim()}
-                            className="gap-2"
-                          >
-                            {sendingReply === comment.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Send className="h-4 w-4" />
-                            )}
-                            Senden
-                          </Button>
-                          
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDelete(comment.id)}
-                            disabled={deletingComment === comment.id}
-                            className="text-muted-foreground hover:text-destructive ml-auto"
-                          >
-                            {deletingComment === comment.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                          </Button>
+                          {/* Actions */}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSmartReply(comment.id)}
+                              disabled={generatingReply === comment.id}
+                              className="gap-2 rounded-xl h-9"
+                            >
+                              {generatingReply === comment.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Sparkles className="h-4 w-4" />
+                              )}
+                              Smart Reply
+                            </Button>
+                            
+                            <Button
+                              size="sm"
+                              onClick={() => handleSendReply(comment)}
+                              disabled={sendingReply === comment.id || !replyTexts[comment.id]?.trim()}
+                              className="gap-2 rounded-xl h-9"
+                            >
+                              {sendingReply === comment.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Send className="h-4 w-4" />
+                              )}
+                              Senden
+                            </Button>
+                            
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDelete(comment.id)}
+                              disabled={deletingComment === comment.id}
+                              className="text-muted-foreground hover:text-destructive ml-auto rounded-xl h-9"
+                            >
+                              {deletingComment === comment.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>

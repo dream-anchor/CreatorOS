@@ -11,7 +11,9 @@ import {
   ChevronUp,
   ChevronDown,
   Zap,
-  X
+  X,
+  MessageCircle,
+  CalendarClock
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -183,77 +185,83 @@ export function BottomChat() {
 
   return (
     <div className={cn(
-      "fixed bottom-0 left-56 right-0 z-50 bg-card/95 backdrop-blur-xl border-t border-border transition-all duration-300",
-      isExpanded ? "h-96" : "h-16"
+      "fixed bottom-0 left-60 right-0 z-50 bg-card/98 backdrop-blur-2xl border-t border-border/50 transition-all duration-300 shadow-2xl",
+      isExpanded ? "h-[50vh]" : "h-20"
     )}>
+      {/* Gradient top border */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-primary/50 via-accent/50 to-primary/50" />
+      
       {/* Expanded Chat History */}
       {isExpanded && (
-        <div className="h-[calc(100%-4rem)] flex flex-col">
-          <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-primary to-cyan-500 flex items-center justify-center">
-                <Bot className="h-3 w-3 text-white" />
+        <div className="h-[calc(100%-5rem)] flex flex-col">
+          <div className="flex items-center justify-between px-6 py-3 border-b border-border/30">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center shadow-lg animate-pulse-slow">
+                <Bot className="h-4 w-4 text-white" />
               </div>
-              <span className="text-sm font-medium">Co-Pilot Chat</span>
+              <div>
+                <span className="text-sm font-semibold">Co-Pilot</span>
+                <p className="text-[10px] text-muted-foreground">Dein KI-Assistent</p>
+              </div>
             </div>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setIsExpanded(false)}
-              className="h-7 w-7"
+              className="h-8 w-8 rounded-lg hover:bg-muted"
             >
               <X className="h-4 w-4" />
             </Button>
           </div>
           
-          <ScrollArea className="flex-1 px-4 py-3">
-            <div className="space-y-3 max-w-4xl mx-auto">
+          <ScrollArea className="flex-1 px-6 py-4">
+            <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((message) => (
                 <div
                   key={message.id}
                   className={cn(
-                    "flex gap-2",
+                    "flex gap-3",
                     message.role === "user" ? "justify-end" : "justify-start"
                   )}
                 >
                   {message.role === "assistant" && (
-                    <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-gradient-to-br from-primary/20 to-cyan-500/20 flex items-center justify-center">
-                      <Bot className="h-3 w-3 text-primary" />
+                    <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                      <Bot className="h-4 w-4 text-primary" />
                     </div>
                   )}
                   
                   <div className={cn(
-                    "rounded-xl px-3 py-2 max-w-xl text-sm",
+                    "rounded-2xl px-4 py-3 max-w-lg text-sm shadow-sm",
                     message.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted/80"
+                      ? "bg-gradient-to-br from-primary to-primary/90 text-primary-foreground"
+                      : "bg-muted/60 border border-border/50"
                   )}>
                     <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
                     
                     {message.navigatedTo && (
-                      <Badge variant="outline" className="mt-1 text-[10px] bg-primary/10 border-primary/20">
-                        <Zap className="h-2 w-2 mr-1" />
+                      <Badge variant="outline" className="mt-2 text-[10px] bg-primary/10 border-primary/20">
+                        <Zap className="h-2.5 w-2.5 mr-1" />
                         Navigiert
                       </Badge>
                     )}
                   </div>
                   
                   {message.role === "user" && (
-                    <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center">
-                      <User className="h-3 w-3 text-primary" />
+                    <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
+                      <User className="h-4 w-4 text-primary" />
                     </div>
                   )}
                 </div>
               ))}
               
               {isLoading && (
-                <div className="flex gap-2">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-gradient-to-br from-primary/20 to-cyan-500/20 flex items-center justify-center">
-                    <Bot className="h-3 w-3 text-primary" />
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                    <Bot className="h-4 w-4 text-primary" />
                   </div>
-                  <div className="bg-muted/80 rounded-xl px-3 py-2 flex items-center gap-2">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span className="text-xs text-muted-foreground">Denke nach...</span>
+                  <div className="bg-muted/60 border border-border/50 rounded-2xl px-4 py-3 flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    <span className="text-sm text-muted-foreground">Denke nach...</span>
                   </div>
                 </div>
               )}
@@ -265,43 +273,46 @@ export function BottomChat() {
       )}
 
       {/* Input Bar - Always visible */}
-      <div className="h-16 px-4 flex items-center gap-3">
+      <div className="h-20 px-6 flex items-center gap-4">
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="h-9 w-9 flex-shrink-0"
+          className="h-10 w-10 flex-shrink-0 rounded-xl hover:bg-muted"
         >
-          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronUp className="h-5 w-5" />}
         </Button>
 
-        <div className="flex-1 relative max-w-3xl mx-auto">
-          <Input
-            ref={inputRef}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setIsExpanded(true)}
-            placeholder="Frag mich etwas... (z.B. 'Analysiere Kommentare', 'Zeig Planung')"
-            className="pr-12 bg-muted/50 border-border/50 focus:border-primary/50"
-            disabled={isLoading}
-          />
-          <Button
-            size="icon"
-            onClick={() => sendMessage()}
-            disabled={!inputValue.trim() || isLoading}
-            className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
+        <div className="flex-1 relative max-w-2xl">
+          <div className="relative group">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 via-accent/20 to-primary/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition duration-300" />
+            <Input
+              ref={inputRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={() => setIsExpanded(true)}
+              placeholder="Frag mich etwas... (z.B. 'Analysiere Kommentare', 'Zeig Planung')"
+              className="relative h-12 text-base pr-14 rounded-xl bg-muted/50 border-border/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
+              disabled={isLoading}
+            />
+            <Button
+              size="icon"
+              onClick={() => sendMessage()}
+              disabled={!inputValue.trim() || isLoading}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
         </div>
 
         {/* Quick Actions */}
-        <div className="hidden md:flex items-center gap-2">
+        <div className="hidden lg:flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -309,9 +320,10 @@ export function BottomChat() {
               navigate("/community");
               setInputValue("");
             }}
-            className="text-xs"
+            className="rounded-xl gap-2 h-10"
           >
-            💬 Kommentare
+            <MessageCircle className="h-4 w-4" />
+            Kommentare
           </Button>
           <Button
             variant="outline"
@@ -320,9 +332,10 @@ export function BottomChat() {
               navigate("/calendar");
               setInputValue("");
             }}
-            className="text-xs"
+            className="rounded-xl gap-2 h-10"
           >
-            📅 Planung
+            <CalendarClock className="h-4 w-4" />
+            Planung
           </Button>
         </div>
       </div>
