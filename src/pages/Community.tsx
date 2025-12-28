@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { subDays } from "date-fns";
-import { AppLayout } from "@/components/AppLayout";
+import { CoPilotLayout } from "@/components/CoPilotLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,8 @@ import {
   ExternalLink,
   User,
   Wrench,
+  Loader2,
+  Zap,
 } from "lucide-react";
 import { format, formatDistanceToNow, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
@@ -894,10 +896,7 @@ export default function Community() {
   const selectedCount = comments.filter((c) => c.selected && c.editedReply).length;
 
   return (
-    <AppLayout
-      title="Community"
-      description="Engagement-Zentrale für deine Instagram-Fans"
-    >
+    <CoPilotLayout>
       <div className="space-y-8 pb-28">
         {/* Header Controls */}
         <div className="flex items-center gap-3 flex-wrap">
@@ -1179,6 +1178,6 @@ export default function Community() {
         onSendNow={handleSendNow}
         onWaitForPost={handleWaitForPost}
       />
-    </AppLayout>
+    </CoPilotLayout>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { CoPilotLayout } from "@/components/CoPilotLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -410,28 +410,17 @@ export default function MediaArchivePage() {
 
   if (loading) {
     return (
-      <AppLayout title="📸 Meine Bilder">
+      <CoPilotLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </AppLayout>
+      </CoPilotLayout>
     );
   }
 
   return (
-    <AppLayout
-      title="📸 Meine Bilder"
-      description="Deine Bilder für intelligente Post-Generierung"
-      actions={
-        <Button
-          onClick={() => document.getElementById("media-upload")?.click()}
-          className="bg-gradient-to-r from-primary to-cyan-500 hover:from-primary/80 hover:to-cyan-500/80"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Bilder hinzufügen
-        </Button>
-      }
-    >
+    <CoPilotLayout>
+      <div className="p-6">
       <input
         id="media-upload"
         type="file"
@@ -908,6 +897,7 @@ export default function MediaArchivePage() {
           )}
         </DialogContent>
       </Dialog>
-    </AppLayout>
+      </div>
+    </CoPilotLayout>
   );
 }

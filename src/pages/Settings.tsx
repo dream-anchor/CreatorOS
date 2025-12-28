@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { CoPilotLayout } from "@/components/CoPilotLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Instagram, ScrollText, Sliders, Fingerprint, Hash, Wrench } from "lucide-react";
 import MetaConnectionTab from "@/components/settings/MetaConnectionTab";
@@ -12,7 +12,8 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("general");
 
   return (
-    <AppLayout title="Einstellungen" description="Verwalte deine App-Konfiguration">
+    <CoPilotLayout>
+      <div className="p-6">
       <div className="max-w-4xl">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="glass-card p-1 h-auto flex-wrap gap-1">
@@ -109,6 +110,7 @@ export default function SettingsPage() {
           </TabsContent>
         </Tabs>
       </div>
-    </AppLayout>
+      </div>
+    </CoPilotLayout>
   );
 }

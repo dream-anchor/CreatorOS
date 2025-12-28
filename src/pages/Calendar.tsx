@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { CoPilotLayout } from "@/components/CoPilotLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -137,41 +137,17 @@ export default function CalendarPage() {
 
   if (loading) {
     return (
-      <AppLayout title="Kalender">
+      <CoPilotLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </AppLayout>
+      </CoPilotLayout>
     );
   }
 
   return (
-    <AppLayout
-      title="Kalender"
-      description="Plane deine Posts für die Veröffentlichung"
-      actions={
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -7))}
-          >
-            ← Vorherige
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}
-          >
-            Heute
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 7))}
-          >
-            Nächste →
-          </Button>
-        </div>
-      }
-    >
+    <CoPilotLayout>
+      <div className="p-6">
       <div className="grid gap-6 lg:grid-cols-4">
         {/* Unscheduled Posts */}
         <div className="lg:col-span-1">
@@ -335,6 +311,7 @@ export default function CalendarPage() {
           )}
         </DialogContent>
       </Dialog>
-    </AppLayout>
+      </div>
+    </CoPilotLayout>
   );
 }
