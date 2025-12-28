@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
   AlertCircle,
   EyeOff,
   Ban,
+  ExternalLink,
 } from "lucide-react";
 import {
   Tooltip,
@@ -32,6 +33,7 @@ import { formatDistanceToNow, format, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { AiModelSelector, AI_MODELS } from "@/components/community/AiModelSelector";
+import { RulesConfigPanel } from "@/components/community/RulesConfigPanel";
 
 interface Comment {
   id: string;
@@ -45,12 +47,23 @@ interface Comment {
     id: string;
     caption: string | null;
     original_media_url: string | null;
+    original_ig_permalink: string | null;
   } | null;
 }
 
 interface GeneratedReply {
   text: string;
   model: string;
+}
+
+interface EmojiNogoTerm {
+  id: string;
+  term: string;
+}
+
+interface BlacklistTopic {
+  id: string;
+  topic: string;
 }
 
 export default function Community() {
@@ -66,8 +79,34 @@ export default function Community() {
   const [blockingUser, setBlockingUser] = useState<string | null>(null);
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
 
+  // Fetch emoji nogo terms
+  const { data: emojiNogoTerms = [], refetch: refetchEmoji } = useQuery({
+    queryKey: ['emoji-nogo-terms'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("emoji_nogo_terms")
+        .select("id, term")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as EmojiNogoTerm[];
+    },
+  });
+
+  // Fetch blacklist topics
+  const { data: blacklistTopics = [], refetch: refetchBlacklist } = useQuery({
+    queryKey: ['blacklist-topics'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("blacklist_topics")
+        .select("id, topic")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as BlacklistTopic[];
+    },
+  });
+
   // Fetch comments with post context
-  const { data: comments = [], isLoading, refetch, isRefetching } = useQuery({
+  const { data: rawComments = [], isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['community-comments'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -83,7 +122,8 @@ export default function Community() {
           post:posts!instagram_comments_post_id_fkey (
             id,
             caption,
-            original_media_url
+            original_media_url,
+            original_ig_permalink
           )
         `)
         .eq("is_replied", false)
@@ -96,6 +136,97 @@ export default function Community() {
     },
     staleTime: 30000,
   });
+
+  // Filter comments based on blacklist topics (check post caption)
+  const comments = useMemo(() => {
+    if (blacklistTopics.length === 0) return rawComments;
+    
+    return rawComments.filter(comment => {
+      const caption = comment.post?.caption?.toLowerCase() || "";
+      // Check if caption contains any blacklisted topic
+      const isBlacklisted = blacklistTopics.some(topic => 
+        caption.includes(topic.topic.toLowerCase())
+      );
+      return !isBlacklisted;
+    });
+  }, [rawComments, blacklistTopics]);
+
+  // Handlers for rules config
+  const handleAddEmojiNogoTerms = async (terms: string[]) => {
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) return;
+
+      const inserts = terms.map(term => ({
+        user_id: user.user!.id,
+        term,
+      }));
+
+      const { error } = await supabase
+        .from("emoji_nogo_terms")
+        .insert(inserts);
+
+      if (error) throw error;
+      refetchEmoji();
+      toast.success(`${terms.length} Begriff(e) hinzugefügt`);
+    } catch (err) {
+      console.error("Add emoji nogo error:", err);
+      toast.error("Fehler beim Hinzufügen");
+    }
+  };
+
+  const handleRemoveEmojiNogoTerm = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("emoji_nogo_terms")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      refetchEmoji();
+    } catch (err) {
+      console.error("Remove emoji nogo error:", err);
+      toast.error("Fehler beim Entfernen");
+    }
+  };
+
+  const handleAddBlacklistTopics = async (topics: string[]) => {
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) return;
+
+      const inserts = topics.map(topic => ({
+        user_id: user.user!.id,
+        topic,
+      }));
+
+      const { error } = await supabase
+        .from("blacklist_topics")
+        .insert(inserts);
+
+      if (error) throw error;
+      refetchBlacklist();
+      toast.success(`${topics.length} Thema/Themen hinzugefügt`);
+    } catch (err) {
+      console.error("Add blacklist topic error:", err);
+      toast.error("Fehler beim Hinzufügen");
+    }
+  };
+
+  const handleRemoveBlacklistTopic = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("blacklist_topics")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      refetchBlacklist();
+    } catch (err) {
+      console.error("Remove blacklist topic error:", err);
+      toast.error("Fehler beim Entfernen");
+    }
+  };
 
   // Sync replyTexts with generatedReplies
   useEffect(() => {
@@ -409,6 +540,26 @@ export default function Community() {
           </Card>
         )}
 
+        {/* Rules Config Panel */}
+        <div className="mb-4 sm:mb-6">
+          <RulesConfigPanel
+            emojiNogoTerms={emojiNogoTerms}
+            blacklistTopics={blacklistTopics}
+            onAddEmojiNogoTerms={handleAddEmojiNogoTerms}
+            onRemoveEmojiNogoTerm={handleRemoveEmojiNogoTerm}
+            onAddBlacklistTopics={handleAddBlacklistTopics}
+            onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
+          />
+        </div>
+
+        {/* Filtered count info */}
+        {rawComments.length !== comments.length && (
+          <div className="mb-4 text-xs text-muted-foreground flex items-center gap-2">
+            <EyeOff className="h-3 w-3" />
+            {rawComments.length - comments.length} Kommentar(e) durch Themen-Filter ausgeblendet
+          </div>
+        )}
+
         {/* Empty State */}
         {comments.length === 0 ? (
           <Card className="border-dashed border-2 rounded-2xl">
@@ -464,6 +615,25 @@ export default function Community() {
                           {comment.post.caption?.slice(0, 100) || "Kein Caption"}
                           {(comment.post.caption?.length || 0) > 100 && "..."}
                         </p>
+                        {comment.post.original_ig_permalink && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <a
+                                  href={comment.post.original_ig_permalink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex-shrink-0 p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-primary"
+                                >
+                                  <ExternalLink className="h-4 w-4" />
+                                </a>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Post auf Instagram öffnen</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </div>
                     )}
                     
