@@ -47,7 +47,30 @@ const SIGNATURE_PATTERNS = [
   /\bdein\s+antoine\b/i,
 ];
 
-function validateReply(text: string) {
+// Emoji mapping for forbidden terms
+const EMOJI_TERM_MAP: Record<string, RegExp> = {
+  "herz": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶]/gu,
+  "heart": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶]/gu,
+  "feuer": /🔥/gu,
+  "fire": /🔥/gu,
+  "kuss": /[💋😘😗😚😙]/gu,
+  "kiss": /[💋😘😗😚😙]/gu,
+};
+
+function buildForbiddenEmojiRegex(nogoTerms: string[]): RegExp | null {
+  const patterns: string[] = [];
+  for (const term of nogoTerms) {
+    const lowerTerm = term.toLowerCase();
+    const mapped = EMOJI_TERM_MAP[lowerTerm];
+    if (mapped) {
+      patterns.push(mapped.source);
+    }
+  }
+  if (patterns.length === 0) return null;
+  return new RegExp(patterns.join("|"), "gu");
+}
+
+function validateReply(text: string, forbiddenEmojiRegex: RegExp | null = null) {
   const violations: string[] = [];
   const t = (text || "").trim();
 
@@ -55,11 +78,12 @@ function validateReply(text: string) {
   if (/\bwir\b|\buns\b|\bunser(e|)\b/i.test(t)) violations.push('"Wir/Uns/Unser"');
   if (CTA_PATTERNS.some((p) => p.test(t))) violations.push("CTA (z.B. Link in Bio)");
   if (SIGNATURE_PATTERNS.some((p) => p.test(t))) violations.push("Signatur (LG/@team/etc.)");
+  if (forbiddenEmojiRegex && forbiddenEmojiRegex.test(t)) violations.push("Verbotene Emojis");
 
   return { ok: violations.length === 0, violations };
 }
 
-function sanitizeReply(text: string): string {
+function sanitizeReply(text: string, forbiddenEmojiRegex: RegExp | null = null): string {
   let t = (text || "").trim();
   t = t.replace(/#\S+/g, " ").replace(/\s{2,}/g, " ").trim();
   t = t
@@ -69,6 +93,12 @@ function sanitizeReply(text: string): string {
     .join("\n")
     .trim();
   for (const p of CTA_PATTERNS) t = t.replace(p, "");
+  
+  // Remove forbidden emojis
+  if (forbiddenEmojiRegex) {
+    t = t.replace(forbiddenEmojiRegex, "");
+  }
+  
   return t.replace(/\s{2,}/g, " ").trim();
 }
 
@@ -152,15 +182,17 @@ async function generateWithGuards({
   systemPrompt,
   userMessage,
   imageUrl,
+  forbiddenEmojiRegex,
 }: {
   lovableApiKey: string;
   model: string;
   systemPrompt: string;
   userMessage: string;
   imageUrl?: string | null;
+  forbiddenEmojiRegex?: RegExp | null;
 }): Promise<string> {
   let reply = await callLovableAi({ lovableApiKey, model, systemPrompt, userMessage, imageUrl });
-  let v = validateReply(reply);
+  let v = validateReply(reply, forbiddenEmojiRegex);
   if (v.ok) return reply;
 
   console.warn("[batch-generate] Violations detected, regenerating:", v.violations);
@@ -175,11 +207,11 @@ async function generateWithGuards({
     imageUrl,
   });
 
-  v = validateReply(reply);
+  v = validateReply(reply, forbiddenEmojiRegex);
   if (v.ok) return reply;
 
   console.warn("[batch-generate] Still violating after regeneration, sanitizing:", v.violations);
-  return sanitizeReply(reply);
+  return sanitizeReply(reply, forbiddenEmojiRegex);
 }
 
 // Process a single comment and save immediately
@@ -189,7 +221,9 @@ async function processComment(
   comment: any,
   model: string,
   brandRules: any,
-  validExamples: string[]
+  validExamples: string[],
+  emojiConstraint: string,
+  forbiddenEmojiRegex: RegExp | null
 ): Promise<{ success: boolean; reply?: string; error?: string }> {
   try {
     // Load post data including image URL
@@ -244,7 +278,7 @@ ANALYSIERE das Bild: Was ist darauf zu sehen? (Landschaft, Person, Essen, Tier, 
 NUTZE diese Info für eine kontextbezogene Antwort!
 ========================================` : '';
 
-    const systemPrompt = `ROLE: Du bist ICH (Antoine). Du bist kein Assistent und keine Marke.\n\nSTYLE-GUIDE (echte Beispiele von mir):\n${examplesBlock}\n\nANALYSE: Kopiere Vibe, Satzlänge, Kleinschreibung/Formatierung und Emoji-Nutzung dieser Beispiele so exakt wie möglich.\n\nREGELN (hart, niemals brechen):\n- Perspektive: IMMER 1. Person Singular (\"Ich\"). Niemals \"Wir/Uns/Unser\".\n- Keine Hashtags (#) – absolut verboten.\n- Keine Signaturen (z.B. \"LG\", \"Grüße\", \"Dein Team\", \"@support\", \"@team\").\n- Keine CTAs (\"Link in Bio\", \"schau mal vorbei\", \"mehr Infos\"), außer der Fan fragt explizit danach.\n- Schreibe kurz, natürlich, wie vom Handy (1–2 Sätze).\n\nSPRACHE: ${language === "DE" ? "Deutsch" : language}\nTONALITÄT: ${toneStyle}${writingStyle ? `\nSTIL-HINWEIS: ${writingStyle}` : ""}\nFORMALITÄT: ${formalityInstruction}${visionSection}`;
+    const systemPrompt = `ROLE: Du bist ICH (Antoine). Du bist kein Assistent und keine Marke.\n\nSTYLE-GUIDE (echte Beispiele von mir):\n${examplesBlock}\n\nANALYSE: Kopiere Vibe, Satzlänge, Kleinschreibung/Formatierung und Emoji-Nutzung dieser Beispiele so exakt wie möglich.\n\nREGELN (hart, niemals brechen):\n- Perspektive: IMMER 1. Person Singular (\"Ich\"). Niemals \"Wir/Uns/Unser\".\n- Keine Hashtags (#) – absolut verboten.\n- Keine Signaturen (z.B. \"LG\", \"Grüße\", \"Dein Team\", \"@support\", \"@team\").\n- Keine CTAs (\"Link in Bio\", \"schau mal vorbei\", \"mehr Infos\"), außer der Fan fragt explizit danach.\n- Schreibe kurz, natürlich, wie vom Handy (1–2 Sätze).${emojiConstraint}\n\nSPRACHE: ${language === "DE" ? "Deutsch" : language}\nTONALITÄT: ${toneStyle}${writingStyle ? `\nSTIL-HINWEIS: ${writingStyle}` : ""}\nFORMALITÄT: ${formalityInstruction}${visionSection}`;
 
     const imageContextHint = validatedImageUrl ? "\n\nC) BILD (siehe beigefügtes Bild - beschreibe was du siehst und beziehe dich darauf!)" : "";
     const userMessage = `CONTEXT (du MUSST dich auf BEIDE Teile beziehen):\n\nA) POST-CAPTION (worum ging's?):\n\"\"\"${(postCaption || "").slice(0, 700)}\"\"\"\n\nB) FAN-KOMMENTAR (worauf antworte ich?):\n\"\"\"${comment.comment_text}\"\"\"${imageContextHint}\n\nAUFGABE: Antworte spezifisch auf den Fan-Kommentar, aber immer im Kontext der Caption${validatedImageUrl ? " und des Bildes" : ""}. NUR die Antwort.`;
@@ -255,6 +289,7 @@ NUTZE diese Info für eine kontextbezogene Antwort!
       systemPrompt,
       userMessage,
       imageUrl: validatedImageUrl,
+      forbiddenEmojiRegex,
     });
 
     // IMMEDIATELY save to database
@@ -322,6 +357,23 @@ serve(async (req) => {
       .eq("user_id", user.id)
       .maybeSingle();
 
+    // Load emoji nogo terms
+    const { data: emojiNogoTerms } = await supabase
+      .from("emoji_nogo_terms")
+      .select("term")
+      .eq("user_id", user.id);
+
+    const emojiNogoList = emojiNogoTerms?.map((t: any) => t.term) || [];
+    console.log(`[batch-generate] Loaded ${emojiNogoList.length} emoji nogo terms:`, emojiNogoList);
+
+    // Build emoji constraint for the prompt
+    let emojiConstraint = "";
+    let forbiddenEmojiRegex: RegExp | null = null;
+    if (emojiNogoList.length > 0) {
+      forbiddenEmojiRegex = buildForbiddenEmojiRegex(emojiNogoList);
+      emojiConstraint = `\n\nEMOJI-EINSCHRÄNKUNG (STRIKT!):\nVermeide Emojis zu diesen Themen: ${emojiNogoList.join(", ")}.\nDas bedeutet: KEINE Herz-Emojis (❤️💕💖💗💘💝 etc.) wenn "Herz" verboten ist.\nNutze stattdessen neutrale Alternativen: 🙌 👍 😎 🔥 ✨ 💪 🎯 👏 ⚡ 🚀 💯`;
+    }
+
     // Load few-shot examples once
     const { data: pastReplies } = await supabase
       .from("reply_queue")
@@ -348,7 +400,9 @@ serve(async (req) => {
         comment,
         aiModel,
         brandRules,
-        validExamples
+        validExamples,
+        emojiConstraint,
+        forbiddenEmojiRegex
       );
 
       if (result.success) {

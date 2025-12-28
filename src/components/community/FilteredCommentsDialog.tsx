@@ -95,7 +95,7 @@ export function FilteredCommentsDialog({
         </div>
 
         {/* Filtered Comments List */}
-        <ScrollArea className="flex-1 pr-4">
+        <ScrollArea className="flex-1 max-h-[50vh] pr-4">
           <div className="space-y-3">
             {filteredComments.map(comment => {
               const matchedTopics = getMatchedTopics(comment);
