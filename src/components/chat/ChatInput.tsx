@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Plus, ArrowUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -28,8 +27,9 @@ export function ChatInput({ onSend, isLoading, placeholder = "Nachricht an Co-Pi
   // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      textareaRef.current.style.height = "44px"; // Reset to min height
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = `${Math.min(scrollHeight, 200)}px`;
     }
   }, [inputValue]);
 
@@ -73,6 +73,11 @@ export function ChatInput({ onSend, isLoading, placeholder = "Nachricht an Co-Pi
     onSend(inputValue.trim(), selectedFiles.length > 0 ? selectedFiles : undefined);
     setInputValue("");
     clearSelectedFiles();
+    
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "44px";
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -83,7 +88,7 @@ export function ChatInput({ onSend, isLoading, placeholder = "Nachricht an Co-Pi
   };
 
   return (
-    <div className="w-full flex justify-center px-4 pb-4">
+    <>
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -94,83 +99,85 @@ export function ChatInput({ onSend, isLoading, placeholder = "Nachricht an Co-Pi
         onChange={handleFileSelect}
       />
 
-      {/* Floating input container - ChatGPT style */}
+      {/* Floating Capsule - ChatGPT Style */}
       <div className={cn(
-        "relative flex items-end gap-2 p-2 w-full max-w-3xl",
-        "rounded-2xl border border-border/50 bg-background",
-        "shadow-lg shadow-black/5",
-        "focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/30",
-        "transition-all duration-200"
+        "fixed bottom-6 left-1/2 -translate-x-1/2",
+        "w-[95%] max-w-3xl",
+        "bg-background rounded-[26px]",
+        "shadow-2xl border border-border",
+        "z-50 flex flex-col"
       )}>
-        {/* Plus button - left side */}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => fileInputRef.current?.click()}
-          className="h-9 w-9 rounded-full flex-shrink-0 hover:bg-muted self-end"
-          disabled={isLoading}
-        >
-          <Plus className="h-5 w-5 text-muted-foreground" />
-        </Button>
+        {/* Selected files preview - inside capsule */}
+        {selectedFiles.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap px-4 pt-3">
+            {previewUrls.map((url, idx) => (
+              <div key={idx} className="relative flex-shrink-0">
+                <img
+                  src={url}
+                  alt={`Preview ${idx + 1}`}
+                  className="w-14 h-14 object-cover rounded-xl border border-border/50"
+                />
+                <button
+                  onClick={() => removeSelectedFile(idx)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-foreground text-background flex items-center justify-center hover:bg-foreground/80 transition-colors"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* Middle section: files + textarea */}
-        <div className="flex-1 flex flex-col gap-2">
-          {/* Selected files preview */}
-          {selectedFiles.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap pt-1">
-              {previewUrls.map((url, idx) => (
-                <div key={idx} className="relative flex-shrink-0">
-                  <img
-                    src={url}
-                    alt={`Preview ${idx + 1}`}
-                    className="w-12 h-12 object-cover rounded-lg border border-border/50"
-                  />
-                  <button
-                    onClick={() => removeSelectedFile(idx)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-foreground text-background flex items-center justify-center hover:bg-foreground/80 transition-colors"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+        {/* Input row */}
+        <div className="flex items-end gap-2 p-2">
+          {/* Plus button - left side */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            className="h-10 w-10 rounded-full flex-shrink-0 hover:bg-muted mb-0.5 ml-1"
+            disabled={isLoading}
+          >
+            <Plus className="h-5 w-5 text-muted-foreground" />
+          </Button>
 
           {/* Textarea - auto-growing */}
-          <Textarea
+          <textarea
             ref={textareaRef}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={isLoading}
-            className={cn(
-              "min-h-[40px] max-h-[200px] resize-none",
-              "bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0",
-              "text-sm placeholder:text-muted-foreground/60 py-2.5 px-1",
-              "scrollbar-thin"
-            )}
             rows={1}
+            className={cn(
+              "flex-1 min-h-[44px] max-h-[200px]",
+              "bg-transparent border-none resize-none",
+              "focus:outline-none focus:ring-0",
+              "py-3 px-1 text-foreground",
+              "placeholder:text-muted-foreground/60",
+              "overflow-y-auto scrollbar-thin"
+            )}
           />
-        </div>
 
-        {/* Send button - right side, aligned to bottom */}
-        <Button
-          type="button"
-          size="icon"
-          onClick={handleSubmit}
-          disabled={isLoading || (!inputValue.trim() && selectedFiles.length === 0)}
-          className={cn(
-            "h-9 w-9 rounded-full flex-shrink-0 transition-all self-end",
-            (inputValue.trim() || selectedFiles.length > 0) && !isLoading
-              ? "bg-primary hover:bg-primary/90 text-primary-foreground"
-              : "bg-muted text-muted-foreground"
-          )}
-        >
-          <ArrowUp className="h-4 w-4" />
-        </Button>
+          {/* Send button - right side, ChatGPT style */}
+          <Button
+            type="button"
+            size="icon"
+            onClick={handleSubmit}
+            disabled={isLoading || (!inputValue.trim() && selectedFiles.length === 0)}
+            className={cn(
+              "h-10 w-10 rounded-full flex-shrink-0 mb-0.5 mr-1 transition-all",
+              (inputValue.trim() || selectedFiles.length > 0) && !isLoading
+                ? "bg-foreground hover:bg-foreground/90 text-background"
+                : "bg-muted text-muted-foreground cursor-not-allowed"
+            )}
+          >
+            <ArrowUp className="h-5 w-5" />
+          </Button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
