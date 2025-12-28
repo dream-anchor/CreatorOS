@@ -72,13 +72,30 @@ function sanitizeReply(text: string): string {
   return t.replace(/\s{2,}/g, " ").trim();
 }
 
-// Helper to validate if an image URL is accessible
+// Helper to validate if an image URL is accessible (excludes videos)
 async function isImageUrlValid(url: string | null | undefined): Promise<boolean> {
   if (!url) return false;
+  
+  // Quick check: exclude video file extensions
+  const lowerUrl = url.toLowerCase();
+  if (lowerUrl.includes('.mp4') || lowerUrl.includes('.mov') || lowerUrl.includes('.avi') || lowerUrl.includes('.webm')) {
+    console.log('[regenerate-reply] Skipping video URL:', url.substring(0, 100));
+    return false;
+  }
+  
   try {
     const response = await fetch(url, { method: 'HEAD' });
     const contentType = response.headers.get('content-type') || '';
-    return response.ok && (contentType.startsWith('image/') || contentType.startsWith('video/'));
+    
+    // Only accept image content types, NOT video
+    const isImage = contentType.startsWith('image/') && 
+      (contentType.includes('jpeg') || contentType.includes('png') || contentType.includes('webp') || contentType.includes('gif'));
+    
+    if (!isImage && response.ok) {
+      console.log('[regenerate-reply] Unsupported content-type:', contentType);
+    }
+    
+    return response.ok && isImage;
   } catch {
     return false;
   }
