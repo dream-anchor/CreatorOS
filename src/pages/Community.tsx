@@ -106,11 +106,14 @@ export default function Community() {
     },
   });
 
-  // Fetch comments
+  // State for display limit
+  const [displayLimit, setDisplayLimit] = useState(50);
+
+  // Fetch comments - no hard limit, we control display via state
   const { data: rawComments = [], isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['community-comments'],
     queryFn: async () => {
-      // First fetch comments
+      // First fetch comments - get all unreplied comments
       const { data: commentsData, error: commentsError } = await supabase
         .from("instagram_comments")
         .select(`
@@ -124,8 +127,7 @@ export default function Community() {
         `)
         .eq("is_replied", false)
         .eq("is_hidden", false)
-        .order("comment_timestamp", { ascending: false })
-        .limit(50);
+        .order("comment_timestamp", { ascending: false });
       
       if (commentsError) throw commentsError;
       
@@ -166,7 +168,7 @@ export default function Community() {
   });
 
   // Filter comments based on blacklist topics (check post caption)
-  const comments = useMemo(() => {
+  const allComments = useMemo(() => {
     if (blacklistTopics.length === 0) return rawComments;
     
     return rawComments.filter(comment => {
@@ -178,6 +180,19 @@ export default function Community() {
       return !isBlacklisted;
     });
   }, [rawComments, blacklistTopics]);
+
+  // Display only up to displayLimit comments
+  const comments = useMemo(() => {
+    return allComments.slice(0, displayLimit);
+  }, [allComments, displayLimit]);
+
+  // Statistics for display
+  const stats = useMemo(() => {
+    const total = allComments.length;
+    const withReply = allComments.filter(c => c.ai_reply_suggestion).length;
+    const withoutReply = total - withReply;
+    return { total, withReply, withoutReply };
+  }, [allComments]);
 
   // Group comments by post
   const commentsByPost = useMemo(() => {
@@ -315,22 +330,25 @@ export default function Community() {
     return () => window.removeEventListener('refresh-comments', handleRefresh);
   }, [queryClient]);
 
-  // Auto-generate replies using batch processing - saves each reply immediately to DB
+  // Auto-generate replies using batch processing - processes ALL comments without replies
   const handleGenerateAllReplies = useCallback(async (model: string) => {
-    if (comments.length === 0) {
-      toast.info("Keine Kommentare zum Generieren");
+    // Get all comments WITHOUT ai_reply_suggestion from allComments (not just displayed ones)
+    const commentsToGenerate = allComments.filter(c => !c.ai_reply_suggestion);
+    
+    if (commentsToGenerate.length === 0) {
+      toast.info("Alle Kommentare haben bereits Antworten");
       return;
     }
 
     setIsAutoGenerating(true);
-    setGenerationProgress({ current: 0, total: comments.length });
+    setGenerationProgress({ current: 0, total: commentsToGenerate.length });
     const modelName = AI_MODELS.find(m => m.id === model)?.name || model;
 
-    toast.info(`🧠 Generiere Antworten mit ${modelName}... Die Verarbeitung läuft im Hintergrund.`);
+    toast.info(`🧠 Generiere ${commentsToGenerate.length} Antworten mit ${modelName}... Die Verarbeitung läuft im Hintergrund.`);
 
     try {
-      // Call batch generate function - it processes all comments and saves each immediately
-      const commentIds = comments.map(c => c.id);
+      // Call batch generate function with ALL comments that need replies
+      const commentIds = commentsToGenerate.map(c => c.id);
       
       const { data, error } = await supabase.functions.invoke("batch-generate-replies", {
         body: { comment_ids: commentIds, model },
@@ -344,7 +362,7 @@ export default function Community() {
       await refetch();
       
       const successCount = data?.successCount || 0;
-      toast.success(`✨ ${successCount} von ${comments.length} Antworten generiert und gespeichert!`);
+      toast.success(`✨ ${successCount} von ${commentsToGenerate.length} Antworten generiert und gespeichert!`);
     } catch (err) {
       console.error("Batch generation error:", err);
       toast.error("Fehler bei der Generierung");
@@ -353,7 +371,7 @@ export default function Community() {
       setGenerationProgress(null);
       setModelForReplies(model);
     }
-  }, [comments, refetch]);
+  }, [allComments, refetch]);
 
   // Handle model change - triggers auto-generation
   const handleModelChange = useCallback((model: string) => {
@@ -775,11 +793,40 @@ export default function Community() {
           />
         </div>
 
+        {/* Statistics Card */}
+        <Card className="mb-4 sm:mb-6 rounded-2xl border-border/50 bg-muted/30">
+          <CardContent className="py-4 px-5">
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Gesamt:</span>
+                <span className="font-semibold text-foreground">{stats.total}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span className="text-muted-foreground">Mit KI-Antwort:</span>
+                <span className="font-semibold text-primary">{stats.withReply}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+                <span className="text-muted-foreground">Ohne Antwort:</span>
+                <span className="font-semibold text-amber-500">{stats.withoutReply}</span>
+              </div>
+              {allComments.length > displayLimit && (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <span>•</span>
+                  <span>Zeige {displayLimit} von {allComments.length}</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Filtered count info */}
-        {rawComments.length !== comments.length && (
+        {rawComments.length !== allComments.length && (
           <div className="mb-4 text-xs text-muted-foreground flex items-center gap-2">
             <EyeOff className="h-3 w-3" />
-            {rawComments.length - comments.length} Kommentar(e) durch Themen-Filter ausgeblendet
+            {rawComments.length - allComments.length} Kommentar(e) durch Themen-Filter ausgeblendet
           </div>
         )}
 
@@ -1020,6 +1067,23 @@ export default function Community() {
                 </Card>
               );
             })}
+
+            {/* Load More Button */}
+            {allComments.length > displayLimit && (
+              <div className="mt-6 text-center">
+                <Button
+                  variant="outline"
+                  onClick={() => setDisplayLimit(prev => prev + 50)}
+                  className="gap-2 rounded-xl"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Weitere {Math.min(50, allComments.length - displayLimit)} laden
+                  <Badge variant="secondary" className="ml-1">
+                    {allComments.length - displayLimit} übrig
+                  </Badge>
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
