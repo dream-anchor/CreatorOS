@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,13 +12,14 @@ import {
   Loader2,
   Sparkles,
   Trash2,
-  Check,
+  Send,
   User,
   Clock,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { AiModelSelector } from "@/components/community/AiModelSelector";
 
 interface Comment {
   id: string;
@@ -32,9 +33,11 @@ interface Comment {
 
 export default function Community() {
   const queryClient = useQueryClient();
+  const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
   const [generatingReply, setGeneratingReply] = useState<string | null>(null);
-  const [approvingComment, setApprovingComment] = useState<string | null>(null);
+  const [sendingReply, setSendingReply] = useState<string | null>(null);
   const [deletingComment, setDeletingComment] = useState<string | null>(null);
+  const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
 
   // Fetch comments with useQuery for automatic loading
   const { data: comments = [], isLoading, refetch, isRefetching } = useQuery({
@@ -51,8 +54,21 @@ export default function Community() {
       if (error) throw error;
       return data as Comment[];
     },
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
   });
+
+  // Initialize reply texts from AI suggestions
+  useEffect(() => {
+    const newTexts: Record<string, string> = {};
+    comments.forEach(c => {
+      if (c.ai_reply_suggestion && !replyTexts[c.id]) {
+        newTexts[c.id] = c.ai_reply_suggestion;
+      }
+    });
+    if (Object.keys(newTexts).length > 0) {
+      setReplyTexts(prev => ({ ...prev, ...newTexts }));
+    }
+  }, [comments]);
 
   // Listen for refresh events from the chat
   useEffect(() => {
@@ -80,16 +96,21 @@ export default function Community() {
     }
   };
 
-  // Generate smart reply for a single comment
+  // Generate smart reply using selected model
   const handleSmartReply = async (commentId: string) => {
     setGeneratingReply(commentId);
     
     try {
       const { data, error } = await supabase.functions.invoke("regenerate-reply", {
-        body: { comment_id: commentId },
+        body: { comment_id: commentId, model: selectedModel },
       });
       
       if (error) throw error;
+      
+      // Update local state with the new reply
+      if (data?.new_reply) {
+        setReplyTexts(prev => ({ ...prev, [commentId]: data.new_reply }));
+      }
       
       toast.success("✨ Antwort generiert!");
       refetch();
@@ -101,14 +122,15 @@ export default function Community() {
     }
   };
 
-  // Approve and queue a reply
-  const handleApprove = async (comment: Comment) => {
-    if (!comment.ai_reply_suggestion) {
-      toast.error("Keine Antwort vorhanden - generiere zuerst eine!");
+  // Send reply to queue
+  const handleSendReply = async (comment: Comment) => {
+    const replyText = replyTexts[comment.id]?.trim();
+    if (!replyText) {
+      toast.error("Bitte erst eine Antwort schreiben!");
       return;
     }
     
-    setApprovingComment(comment.id);
+    setSendingReply(comment.id);
     
     try {
       const { data: user } = await supabase.auth.getUser();
@@ -121,27 +143,30 @@ export default function Community() {
           user_id: user.user.id,
           ig_comment_id: comment.ig_comment_id,
           comment_id: comment.id,
-          reply_text: comment.ai_reply_suggestion,
+          reply_text: replyText,
           status: "pending",
         });
       
       if (queueError) throw queueError;
       
       // Mark comment as replied
-      const { error: updateError } = await supabase
+      await supabase
         .from("instagram_comments")
-        .update({ is_replied: true })
+        .update({ is_replied: true, ai_reply_suggestion: replyText })
         .eq("id", comment.id);
       
-      if (updateError) throw updateError;
-      
-      toast.success("✅ In Warteschlange! Wird beim nächsten Golden Window gesendet.");
+      toast.success("✅ In Warteschlange!");
+      setReplyTexts(prev => {
+        const next = { ...prev };
+        delete next[comment.id];
+        return next;
+      });
       refetch();
     } catch (err) {
-      console.error("Approve error:", err);
-      toast.error("Fehler beim Genehmigen");
+      console.error("Send error:", err);
+      toast.error("Fehler beim Senden");
     } finally {
-      setApprovingComment(null);
+      setSendingReply(null);
     }
   };
 
@@ -167,6 +192,11 @@ export default function Community() {
     }
   };
 
+  // Update reply text
+  const handleReplyTextChange = (commentId: string, text: string) => {
+    setReplyTexts(prev => ({ ...prev, [commentId]: text }));
+  };
+
   if (isLoading) {
     return (
       <GlobalLayout>
@@ -179,8 +209,8 @@ export default function Community() {
 
   return (
     <GlobalLayout>
-      <div className="p-6 max-w-4xl mx-auto">
-        {/* Header */}
+      <div className="p-6 max-w-4xl mx-auto pb-32">
+        {/* Header with Model Selector */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -192,15 +222,23 @@ export default function Community() {
             </p>
           </div>
           
-          <Button
-            onClick={handleFetchComments}
-            disabled={isRefetching}
-            variant="outline"
-            className="gap-2"
-          >
-            <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
-            Kommentare abrufen
-          </Button>
+          <div className="flex items-center gap-2">
+            <AiModelSelector
+              selectedModel={selectedModel}
+              onModelChange={setSelectedModel}
+              disabled={generatingReply !== null}
+            />
+            <Button
+              onClick={handleFetchComments}
+              disabled={isRefetching}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
+              <span className="hidden sm:inline">Abrufen</span>
+            </Button>
+          </div>
         </div>
 
         {/* Empty State */}
@@ -222,7 +260,7 @@ export default function Community() {
           </Card>
         ) : (
           /* Comments List */
-          <div className="space-y-3">
+          <div className="space-y-4">
             {comments.map((comment) => (
               <Card key={comment.id} className="overflow-hidden hover:border-primary/30 transition-colors">
                 <CardContent className="p-4">
@@ -234,7 +272,8 @@ export default function Community() {
                     
                     {/* Content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      {/* Header */}
+                      <div className="flex items-center gap-2 mb-2">
                         <span className="font-medium text-foreground">
                           @{comment.commenter_username || "Unbekannt"}
                         </span>
@@ -247,40 +286,22 @@ export default function Community() {
                         </span>
                       </div>
                       
-                      <p className="text-sm text-foreground mb-3">
+                      {/* Fan Comment */}
+                      <p className="text-sm text-foreground bg-muted/50 rounded-lg p-3 mb-3">
                         {comment.comment_text}
                       </p>
                       
-                      {/* AI Reply Preview */}
-                      {comment.ai_reply_suggestion && (
-                        <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Sparkles className="h-3 w-3 text-primary" />
-                            <span className="text-xs font-medium text-primary">KI-Antwort</span>
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            {comment.ai_reply_suggestion}
-                          </p>
-                        </div>
-                      )}
-                      
-                      {/* Actions */}
-                      <div className="flex items-center gap-2">
-                        {comment.ai_reply_suggestion ? (
-                          <Button
-                            size="sm"
-                            onClick={() => handleApprove(comment)}
-                            disabled={approvingComment === comment.id}
-                            className="gap-2"
-                          >
-                            {approvingComment === comment.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Check className="h-4 w-4" />
-                            )}
-                            Genehmigen
-                          </Button>
-                        ) : (
+                      {/* Reply Textarea */}
+                      <div className="space-y-2">
+                        <Textarea
+                          placeholder="Deine Antwort..."
+                          value={replyTexts[comment.id] || ""}
+                          onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
+                          className="min-h-[80px] resize-none"
+                        />
+                        
+                        {/* Actions */}
+                        <div className="flex items-center gap-2">
                           <Button
                             size="sm"
                             variant="outline"
@@ -295,21 +316,35 @@ export default function Community() {
                             )}
                             Smart Reply
                           </Button>
-                        )}
-                        
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDelete(comment.id)}
-                          disabled={deletingComment === comment.id}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          {deletingComment === comment.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
+                          
+                          <Button
+                            size="sm"
+                            onClick={() => handleSendReply(comment)}
+                            disabled={sendingReply === comment.id || !replyTexts[comment.id]?.trim()}
+                            className="gap-2"
+                          >
+                            {sendingReply === comment.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Send className="h-4 w-4" />
+                            )}
+                            Senden
+                          </Button>
+                          
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDelete(comment.id)}
+                            disabled={deletingComment === comment.id}
+                            className="text-muted-foreground hover:text-destructive ml-auto"
+                          >
+                            {deletingComment === comment.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
