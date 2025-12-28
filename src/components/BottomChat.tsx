@@ -23,7 +23,7 @@ interface Message {
   content: string;
   timestamp: Date;
   navigatedTo?: string;
-  images?: string[]; // Preview URLs for uploaded images
+  images?: string[];
   uploadResult?: {
     type: "image" | "carousel";
     scheduledDate: string;
@@ -62,10 +62,8 @@ export function BottomChat() {
     setLoadingHint("📤 Lade Bilder hoch...");
     setIsExpanded(true);
 
-    // Create preview URLs for user message
     const previewUrls = files.map(f => URL.createObjectURL(f));
 
-    // Show user message with image previews
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
@@ -76,7 +74,6 @@ export function BottomChat() {
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      // Convert files to base64 for upload
       const fileDataPromises = files.map(async (file) => {
         const buffer = await file.arrayBuffer();
         const base64 = btoa(
@@ -106,12 +103,11 @@ export function BottomChat() {
         throw new Error(data?.error || "Upload fehlgeschlagen");
       }
 
-      // Create success message
       const formatLabel = data.format === "carousel" ? "Karussell" : "Bild";
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `📸 Upload verarbeitet als **${formatLabel}**.\n📝 Text optimiert.\n📅 Automatisch eingeplant für **${data.scheduledDay}**, den **${data.scheduledDate}** um 18:00 Uhr (nächste freie Lücke).`,
+        content: `📸 Upload verarbeitet als **${formatLabel}**.\n📝 Text optimiert.\n📅 Automatisch eingeplant für **${data.scheduledDay}**, den **${data.scheduledDate}** um 18:00 Uhr.`,
         timestamp: new Date(),
         uploadResult: {
           type: data.format,
@@ -151,7 +147,7 @@ export function BottomChat() {
       const successMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "✨ Analyse abgeschlossen! Die Smart Replies wurden generiert. Du siehst sie jetzt in der Kommentar-Liste.",
+        content: "✨ Analyse abgeschlossen! Die Smart Replies wurden generiert.",
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, successMessage]);
@@ -167,7 +163,6 @@ export function BottomChat() {
   };
 
   const handleSend = useCallback(async (message: string, files?: File[]) => {
-    // If files are provided, do smart upload
     if (files && files.length > 0) {
       await handleSmartUpload(files, message);
       return;
@@ -185,14 +180,12 @@ export function BottomChat() {
     };
     setMessages(prev => [...prev, userMessage]);
 
-    // Handle special commands
     if (message.toLowerCase().includes("analysiere kommentare") || 
         message.toLowerCase().includes("smart reply")) {
       await handleAnalyzeComments();
       return;
     }
 
-    // Check for navigation intent
     const navRoute = parseNavigationIntent(message);
     if (navRoute) {
       navigate(navRoute);
@@ -219,7 +212,6 @@ export function BottomChat() {
       return;
     }
 
-    // Regular AI chat
     setIsLoading(true);
 
     try {
@@ -259,59 +251,54 @@ export function BottomChat() {
   }, [isLoading, messages, navigate]);
 
   return (
-    <div className={cn(
-      "fixed bottom-0 left-0 right-0 lg:left-60 z-50 bg-card/98 backdrop-blur-2xl border-t border-border/50 transition-all duration-300 shadow-2xl",
-      isExpanded ? "h-[60vh] sm:h-[50vh]" : "h-auto"
-    )}>
-      {/* Gradient top border */}
-      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-primary/50 via-accent/50 to-primary/50" />
-      
-      {/* Expanded Chat History */}
+    <>
+      {/* Chat History Overlay - Only shown when expanded */}
       {isExpanded && (
-        <div className="h-[calc(100%-6rem)] flex flex-col">
-          <div className="flex items-center justify-between px-4 sm:px-6 py-2 sm:py-3 border-b border-border/30">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center shadow-lg animate-pulse-slow">
-                <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-white" />
+        <div className="fixed inset-0 lg:left-60 z-40 bg-background/95 backdrop-blur-xl flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border/30">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center shadow-lg">
+                <Bot className="h-4 w-4 text-white" />
               </div>
               <div>
-                <span className="text-xs sm:text-sm font-semibold">Co-Pilot</span>
-                <p className="text-[9px] sm:text-[10px] text-muted-foreground">Dein KI-Assistent</p>
+                <span className="text-sm font-semibold">Co-Pilot</span>
+                <p className="text-[10px] text-muted-foreground">Dein KI-Assistent</p>
               </div>
             </div>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setIsExpanded(false)}
-              className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg hover:bg-muted"
+              className="h-8 w-8 rounded-lg hover:bg-muted"
             >
               <X className="h-4 w-4" />
             </Button>
           </div>
           
-          <ScrollArea className="flex-1 px-4 sm:px-6 py-3 sm:py-4">
-            <div className="space-y-3 sm:space-y-4 max-w-3xl mx-auto">
+          {/* Messages */}
+          <ScrollArea className="flex-1 px-4 sm:px-6 py-4 pb-32">
+            <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((message) => (
                 <div
                   key={message.id}
                   className={cn(
-                    "flex gap-2 sm:gap-3",
+                    "flex gap-3",
                     message.role === "user" ? "justify-end" : "justify-start"
                   )}
                 >
                   {message.role === "assistant" && (
-                    <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                      <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
+                    <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                      <Bot className="h-4 w-4 text-primary" />
                     </div>
                   )}
                   
                   <div className={cn(
-                    "rounded-2xl px-3 py-2 sm:px-4 sm:py-3 max-w-[75%] sm:max-w-lg text-xs sm:text-sm shadow-sm",
+                    "rounded-2xl px-4 py-3 max-w-lg text-sm shadow-sm",
                     message.role === "user"
                       ? "bg-gradient-to-br from-primary to-primary/90 text-primary-foreground"
                       : "bg-muted/60 border border-border/50"
                   )}>
-                    {/* Image previews for user messages */}
                     {message.images && message.images.length > 0 && (
                       <div className="flex gap-2 mb-2 flex-wrap">
                         {message.images.map((url, idx) => (
@@ -319,7 +306,7 @@ export function BottomChat() {
                             key={idx}
                             src={url}
                             alt={`Upload ${idx + 1}`}
-                            className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-lg"
+                            className="w-20 h-20 object-cover rounded-lg"
                           />
                         ))}
                       </div>
@@ -328,13 +315,12 @@ export function BottomChat() {
                     <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
                     
                     {message.navigatedTo && (
-                      <Badge variant="outline" className="mt-2 text-[9px] sm:text-[10px] bg-primary/10 border-primary/20">
+                      <Badge variant="outline" className="mt-2 text-[10px] bg-primary/10 border-primary/20">
                         <Zap className="h-2.5 w-2.5 mr-1" />
                         Navigiert
                       </Badge>
                     )}
 
-                    {/* Upload result with preview link */}
                     {message.uploadResult && (
                       <Link
                         to="/calendar"
@@ -347,21 +333,21 @@ export function BottomChat() {
                   </div>
                   
                   {message.role === "user" && (
-                    <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-primary/20 flex items-center justify-center">
-                      <User className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
+                    <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
+                      <User className="h-4 w-4 text-primary" />
                     </div>
                   )}
                 </div>
               ))}
               
               {isLoading && (
-                <div className="flex gap-2 sm:gap-3">
-                  <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                    <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                    <Bot className="h-4 w-4 text-primary" />
                   </div>
-                  <div className="bg-muted/60 border border-border/50 rounded-2xl px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2">
-                    <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin text-primary" />
-                    <span className="text-xs sm:text-sm text-muted-foreground">{loadingHint}</span>
+                  <div className="bg-muted/60 border border-border/50 rounded-2xl px-4 py-3 flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    <span className="text-sm text-muted-foreground">{loadingHint}</span>
                   </div>
                 </div>
               )}
@@ -372,14 +358,12 @@ export function BottomChat() {
         </div>
       )}
 
-      {/* ChatInput - ChatGPT Style floating input */}
-      <div onClick={() => !isExpanded && setIsExpanded(true)}>
-        <ChatInput
-          onSend={handleSend}
-          isLoading={isLoading}
-          placeholder="Nachricht an Co-Pilot..."
-        />
-      </div>
-    </div>
+      {/* Floating ChatInput - Always visible, no trigger behavior */}
+      <ChatInput
+        onSend={handleSend}
+        isLoading={isLoading}
+        placeholder="Nachricht an Co-Pilot..."
+      />
+    </>
   );
 }
