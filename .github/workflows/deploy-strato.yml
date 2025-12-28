@@ -1,4 +1,4 @@
-name: Build & Deploy to Strato (postpro)
+name: Build, Prerender (react-snap) & Deploy to Strato (postpro)
 
 on:
   push:
@@ -26,20 +26,59 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
-
-      - name: Create .htaccess for SPA routing
+      # ✅ Inject prerendering tooling/config (no local changes needed)
+      - name: Inject react-snap + config (CI only)
         shell: bash
         run: |
+          set -e
+
+          # Install react-snap only inside the GitHub runner
+          npm i -D react-snap
+
+          # Ensure build lifecycle runs react-snap after build:
+          # npm run build -> (postbuild runs automatically if defined)
+          npm pkg set scripts.postbuild="react-snap"
+
+          # Configure react-snap for Vite-style output folder "dist"
+          # - include: start route(s); react-snap crawls internal links from there
+          # - puppeteerArgs: required on GitHub runner
+          # - source: points to your built folder
+          npm pkg set reactSnap.source="dist"
+          npm pkg set reactSnap.minifyHtml=true
+          npm pkg set reactSnap.crawl=true
+          npm pkg set reactSnap.include[0]="/"
+          npm pkg set reactSnap.puppeteerArgs[0]="--no-sandbox"
+          npm pkg set reactSnap.puppeteerArgs[1]="--disable-setuid-sandbox"
+
+      - name: Build (includes prerender via postbuild)
+        run: npm run build
+
+      # ✅ .htaccess: serve prerendered HTML first, fallback to SPA only if nothing exists
+      - name: Create .htaccess (prefer prerendered pages)
+        shell: bash
+        run: |
+          set -e
           mkdir -p dist
+
           cat > dist/.htaccess <<'EOF'
           RewriteEngine On
           RewriteBase /
-          RewriteRule ^index\.html$ - [L]
-          RewriteCond %{REQUEST_FILENAME} !-f
-          RewriteCond %{REQUEST_FILENAME} !-d
-          RewriteRule . /index.html [L]
+
+          # 1) If a real file exists, serve it
+          RewriteCond %{REQUEST_FILENAME} -f
+          RewriteRule ^ - [L]
+
+          # 2) If a real directory exists, serve it
+          RewriteCond %{REQUEST_FILENAME} -d
+          RewriteRule ^ - [L]
+
+          # 3) If a prerendered route exists as /route/index.html, serve it
+          #    Example: request "/about" -> serve "/about/index.html" if it exists
+          RewriteCond %{DOCUMENT_ROOT}/$1/index.html -f
+          RewriteRule ^(.+?)/?$ $1/index.html [L]
+
+          # 4) Otherwise fallback to SPA entry
+          RewriteRule ^ index.html [L]
           EOF
 
       - name: Install lftp
@@ -51,8 +90,10 @@ jobs:
           SSH_PORT: ${{ secrets.STRATO_PORT }}
           SSH_USER: ${{ secrets.STRATO_USER }}
           SSH_PASSWORD: ${{ secrets.STRATO_PASS }}
+        shell: bash
         run: |
           set -e
+
           TARGET_DIR="/WEBSITE/POSTPRO.ANTOINEMONOT.COM"
 
           lftp -e "
@@ -60,6 +101,7 @@ jobs:
             set net:max-retries 3;
             set net:timeout 20;
             open -u ${SSH_USER},${SSH_PASSWORD} sftp://${SSH_HOST}:${SSH_PORT};
+            mkdir -p ${TARGET_DIR};
             cd ${TARGET_DIR};
             pwd;
             mirror -R --delete --verbose --only-newer dist/ .;
