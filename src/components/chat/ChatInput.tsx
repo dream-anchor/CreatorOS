@@ -8,14 +8,32 @@ interface ChatInputProps {
   onSend: (message: string, files?: File[]) => void;
   isLoading: boolean;
   placeholder?: string;
+  externalFiles?: File[];
+  onClearExternalFiles?: () => void;
 }
 
-export function ChatInput({ onSend, isLoading, placeholder = "Nachricht an Co-Pilot..." }: ChatInputProps) {
+export function ChatInput({ 
+  onSend, 
+  isLoading, 
+  placeholder = "Nachricht an Co-Pilot...",
+  externalFiles,
+  onClearExternalFiles
+}: ChatInputProps) {
   const [inputValue, setInputValue] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle external files from global drag & drop
+  useEffect(() => {
+    if (externalFiles && externalFiles.length > 0) {
+      const urls = externalFiles.map(f => URL.createObjectURL(f));
+      setSelectedFiles(prev => [...prev, ...externalFiles]);
+      setPreviewUrls(prev => [...prev, ...urls]);
+      onClearExternalFiles?.();
+    }
+  }, [externalFiles, onClearExternalFiles]);
 
   // Cleanup preview URLs on unmount
   useEffect(() => {

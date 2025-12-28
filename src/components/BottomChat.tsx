@@ -47,6 +47,11 @@ export function BottomChat() {
   const [loadingHint, setLoadingHint] = useState("Denke nach...");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Global drag & drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+  const dragCounterRef = useRef(0);
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
@@ -54,6 +59,61 @@ export function BottomChat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading, scrollToBottom]);
+
+  // Global drag & drop handler
+  useEffect(() => {
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      dragCounterRef.current++;
+      if (e.dataTransfer?.types.includes('Files')) {
+        setIsDragging(true);
+      }
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      dragCounterRef.current--;
+      if (dragCounterRef.current === 0) {
+        setIsDragging(false);
+      }
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+
+      const files = Array.from(e.dataTransfer?.files || []);
+      const imageFiles = files.filter(f => f.type.startsWith('image/'));
+
+      if (imageFiles.length > 0) {
+        setDroppedFiles(imageFiles);
+        toast.success(`${imageFiles.length} Bild(er) hinzugefügt`);
+      } else if (files.length > 0) {
+        toast.error("Bitte nur Bilder hochladen (JPG, PNG, etc.)");
+      }
+    };
+
+    window.addEventListener('dragenter', handleDragEnter);
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('drop', handleDrop);
+
+    return () => {
+      window.removeEventListener('dragenter', handleDragEnter);
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, []);
+
+  const clearDroppedFiles = useCallback(() => {
+    setDroppedFiles([]);
+  }, []);
 
   const handleSmartUpload = async (files: File[], rawText: string) => {
     if (files.length === 0) return;
@@ -358,6 +418,20 @@ export function BottomChat() {
         </div>
       )}
 
+      {/* Global Drag & Drop Overlay */}
+      {isDragging && (
+        <div className="fixed inset-0 z-[60] bg-primary/10 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="border-2 border-dashed border-primary rounded-3xl p-12 bg-background/80 shadow-2xl">
+            <p className="text-xl font-semibold text-primary text-center">
+              📸 Bild hier ablegen
+            </p>
+            <p className="text-sm text-muted-foreground text-center mt-2">
+              Wird automatisch eingeplant
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Gradient Fade - Visual fade effect at bottom */}
       <div 
         className="fixed bottom-0 left-0 w-full h-32 z-40 pointer-events-none bg-gradient-to-t from-background via-background/90 to-transparent dark:from-background dark:via-background/90"
@@ -369,6 +443,8 @@ export function BottomChat() {
         onSend={handleSend}
         isLoading={isLoading}
         placeholder="Nachricht an Co-Pilot..."
+        externalFiles={droppedFiles}
+        onClearExternalFiles={clearDroppedFiles}
       />
     </>
   );
