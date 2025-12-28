@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Send, Clock, AlertCircle, CheckCircle2, Zap, RefreshCw, Trash2 } from "lucide-react";
+import { Send, Clock, AlertCircle, CheckCircle2, Zap, RefreshCw, Trash2, Pencil, X, Check } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -35,6 +36,11 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
   const [isOpen, setIsOpen] = useState(false);
   const [isForcing, setIsForcing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Editing state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const loadQueue = async () => {
     setIsLoading(true);
@@ -119,6 +125,41 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
     } catch (err) {
       console.error("Delete queue item error:", err);
       toast.error("Fehler beim Löschen");
+    }
+  };
+
+  const startEditing = (item: QueueItem) => {
+    setEditingId(item.id);
+    setEditingText(item.reply_text);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditingText("");
+  };
+
+  const saveEdit = async () => {
+    if (!editingId || !editingText.trim()) return;
+    
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from("comment_reply_queue")
+        .update({ reply_text: editingText.trim() })
+        .eq("id", editingId);
+      
+      if (error) throw error;
+      
+      toast.success("Antwort aktualisiert");
+      setEditingId(null);
+      setEditingText("");
+      await loadQueue();
+      onQueueChange?.();
+    } catch (err) {
+      console.error("Save edit error:", err);
+      toast.error("Fehler beim Speichern");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -250,7 +291,43 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
                         </span>
                       )}
                     </div>
-                    <p className="text-sm line-clamp-2">{item.reply_text}</p>
+                    
+                    {/* Editable reply text */}
+                    {editingId === item.id ? (
+                      <div className="space-y-2">
+                        <Textarea
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          className="min-h-[80px] text-sm"
+                          disabled={isSaving}
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={saveEdit}
+                            disabled={isSaving || !editingText.trim()}
+                            className="gap-1"
+                          >
+                            <Check className="h-3 w-3" />
+                            Speichern
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={cancelEditing}
+                            disabled={isSaving}
+                            className="gap-1"
+                          >
+                            <X className="h-3 w-3" />
+                            Abbrechen
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm line-clamp-2">{item.reply_text}</p>
+                    )}
+                    
                     {item.error_message && (
                       <p className="text-xs text-destructive mt-1">
                         Fehler: {item.error_message}
@@ -260,14 +337,30 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
                       Erstellt: {formatDistanceToNow(new Date(item.created_at), { locale: de, addSuffix: true })}
                     </p>
                   </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => deleteQueueItem(item.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  
+                  {/* Action buttons */}
+                  {editingId !== item.id && (
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => startEditing(item)}
+                        title="Bearbeiten"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => deleteQueueItem(item.id)}
+                        title="Löschen"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))
