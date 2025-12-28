@@ -277,7 +277,7 @@ export function BottomChat() {
           </div>
           
           {/* Messages */}
-          <ScrollArea className="flex-1 px-4 sm:px-6 py-4 pb-32">
+          <ScrollArea className="flex-1 px-4 sm:px-6 py-4 pb-40">
             <div className="space-y-4 max-w-3xl mx-auto">
               {messages.map((message) => (
                 <div
@@ -357,6 +357,12 @@ export function BottomChat() {
           </ScrollArea>
         </div>
       )}
+
+      {/* Gradient Fade - Visual fade effect at bottom */}
+      <div 
+        className="fixed bottom-0 left-0 w-full h-32 z-40 pointer-events-none bg-gradient-to-t from-background via-background/90 to-transparent dark:from-background dark:via-background/90"
+        aria-hidden="true"
+      />
 
       {/* Floating ChatInput - Always visible, no trigger behavior */}
       <ChatInput
