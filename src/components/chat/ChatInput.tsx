@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Paperclip, ArrowUp, X, Image as ImageIcon } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Plus, ArrowUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -95,58 +94,44 @@ export function ChatInput({ onSend, isLoading, placeholder = "Nachricht an Co-Pi
         onChange={handleFileSelect}
       />
 
-      {/* Selected files preview */}
-      {selectedFiles.length > 0 && (
-        <div className="mb-3 p-3 bg-muted/30 rounded-xl border border-border/50">
-          <div className="flex items-center gap-3 overflow-x-auto">
-            {previewUrls.map((url, idx) => (
-              <div key={idx} className="relative flex-shrink-0">
-                <img
-                  src={url}
-                  alt={`Preview ${idx + 1}`}
-                  className="w-16 h-16 object-cover rounded-lg border border-border"
-                />
-                <button
-                  onClick={() => removeSelectedFile(idx)}
-                  className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-            <Badge variant="secondary" className="flex-shrink-0">
-              <ImageIcon className="h-3 w-3 mr-1" />
-              {selectedFiles.length}
-            </Badge>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={clearSelectedFiles}
-              className="flex-shrink-0 text-xs h-8"
-            >
-              Alle entfernen
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Input container */}
+      {/* Input container - ChatGPT style pill */}
       <div className={cn(
-        "relative flex items-end gap-2 p-2 rounded-2xl border",
-        "bg-muted/30 border-border/50",
-        "focus-within:border-primary/50 focus-within:bg-muted/50 transition-all"
+        "relative flex items-end gap-1 p-1.5 rounded-3xl border",
+        "bg-muted/50 border-border/50",
+        "focus-within:border-border transition-all"
       )}>
-        {/* Paperclip button */}
+        {/* Plus button */}
         <Button
           type="button"
           variant="ghost"
           size="icon"
           onClick={() => fileInputRef.current?.click()}
-          className="h-10 w-10 rounded-xl flex-shrink-0 hover:bg-muted"
+          className="h-9 w-9 rounded-full flex-shrink-0 hover:bg-background/80"
           disabled={isLoading}
         >
-          <Paperclip className="h-5 w-5 text-muted-foreground" />
+          <Plus className="h-5 w-5 text-muted-foreground" />
         </Button>
+
+        {/* Selected files preview - inline */}
+        {selectedFiles.length > 0 && (
+          <div className="flex items-center gap-1.5 py-1">
+            {previewUrls.map((url, idx) => (
+              <div key={idx} className="relative flex-shrink-0">
+                <img
+                  src={url}
+                  alt={`Preview ${idx + 1}`}
+                  className="w-10 h-10 object-cover rounded-lg"
+                />
+                <button
+                  onClick={() => removeSelectedFile(idx)}
+                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-foreground text-background flex items-center justify-center"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Textarea */}
         <Textarea
@@ -157,9 +142,9 @@ export function ChatInput({ onSend, isLoading, placeholder = "Nachricht an Co-Pi
           placeholder={placeholder}
           disabled={isLoading}
           className={cn(
-            "flex-1 min-h-[44px] max-h-[200px] resize-none",
+            "flex-1 min-h-[36px] max-h-[200px] resize-none",
             "bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0",
-            "text-sm placeholder:text-muted-foreground/70 py-3 px-1"
+            "text-sm placeholder:text-muted-foreground/60 py-2 px-1"
           )}
           rows={1}
         />
@@ -171,20 +156,15 @@ export function ChatInput({ onSend, isLoading, placeholder = "Nachricht an Co-Pi
           onClick={handleSubmit}
           disabled={isLoading || (!inputValue.trim() && selectedFiles.length === 0)}
           className={cn(
-            "h-10 w-10 rounded-xl flex-shrink-0 transition-all",
+            "h-9 w-9 rounded-full flex-shrink-0 transition-all",
             (inputValue.trim() || selectedFiles.length > 0) && !isLoading
-              ? "bg-primary hover:bg-primary/90 text-primary-foreground"
+              ? "bg-foreground hover:bg-foreground/90 text-background"
               : "bg-muted text-muted-foreground"
           )}
         >
-          <ArrowUp className="h-5 w-5" />
+          <ArrowUp className="h-4 w-4" />
         </Button>
       </div>
-
-      {/* Hint text */}
-      <p className="text-center text-[11px] text-muted-foreground/60 mt-2">
-        <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px]">Enter</kbd> zum Senden · <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px]">Shift+Enter</kbd> für neue Zeile
-      </p>
     </div>
   );
 }

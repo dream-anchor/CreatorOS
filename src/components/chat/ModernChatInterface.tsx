@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Loader2, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { parseNavigationIntent } from "@/hooks/useNavigation";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 interface Message {
   id: string;
@@ -25,17 +26,12 @@ interface Message {
 
 export function ModernChatInterface() {
   const navigate = useNavigate();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: "Hey! 👋 Was steht an? Lade Bilder hoch und ich plane sie automatisch ein, oder stell mir eine Frage.",
-      timestamp: new Date(),
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingHint, setLoadingHint] = useState("Denke nach...");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const hasMessages = messages.length > 0;
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -47,7 +43,7 @@ export function ModernChatInterface() {
 
   const handleSmartUpload = async (rawText: string, files: File[], previewUrls: string[]) => {
     setIsLoading(true);
-    setLoadingHint("📤 Lade Bilder hoch...");
+    setLoadingHint("Lade Bilder hoch...");
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -68,7 +64,7 @@ export function ModernChatInterface() {
       });
 
       const fileData = await Promise.all(fileDataPromises);
-      setLoadingHint("🎨 Analysiere Bilder & erstelle Text...");
+      setLoadingHint("Analysiere Bilder & erstelle Text...");
 
       const { data, error } = await supabase.functions.invoke("process-smart-upload", {
         body: { files: fileData, rawText },
@@ -81,7 +77,7 @@ export function ModernChatInterface() {
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `📸 Upload verarbeitet als **${formatLabel}**.\n📝 Text optimiert.\n📅 Automatisch eingeplant für **${data.scheduledDay}**, den **${data.scheduledDate}** um 18:00 Uhr (nächste freie Lücke).`,
+        content: `Upload verarbeitet als ${formatLabel}.\nText optimiert.\nAutomatisch eingeplant für ${data.scheduledDay}, den ${data.scheduledDate} um 18:00 Uhr.`,
         timestamp: new Date(),
         uploadResult: {
           type: data.format,
@@ -92,14 +88,14 @@ export function ModernChatInterface() {
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-      toast.success("Post eingeplant! 🎉");
+      toast.success("Post eingeplant!");
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(errorMsg);
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `❌ Fehler: ${errorMsg}`,
+        content: `Fehler: ${errorMsg}`,
         timestamp: new Date(),
       }]);
     } finally {
@@ -142,7 +138,7 @@ export function ModernChatInterface() {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `🚀 **${routeNames[navRoute] || navRoute}** geöffnet!`,
+        content: `${routeNames[navRoute] || navRoute} geöffnet!`,
         navigatedTo: navRoute,
         timestamp: new Date(),
       }]);
@@ -155,7 +151,6 @@ export function ModernChatInterface() {
 
     try {
       const messageHistory = messages
-        .filter(m => m.id !== "welcome")
         .concat(userMessage)
         .map(m => ({ role: m.role, content: m.content }));
 
@@ -177,7 +172,7 @@ export function ModernChatInterface() {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `❌ Fehler: ${errorMsg}`,
+        content: `Fehler: ${errorMsg}`,
         timestamp: new Date(),
       }]);
     } finally {
@@ -186,53 +181,64 @@ export function ModernChatInterface() {
   }, [messages, navigate]);
 
   return (
-    <div className="flex flex-col h-full max-w-3xl mx-auto w-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-border/30">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center shadow-lg">
-          <Sparkles className="h-5 w-5 text-white" />
-        </div>
-        <div>
-          <h1 className="font-semibold text-foreground">Co-Pilot</h1>
-          <p className="text-xs text-muted-foreground">Dein KI-Assistent für Content & Planung</p>
-        </div>
+    <div className="flex flex-col h-full w-full">
+      {/* Header - Minimal like ChatGPT */}
+      <div className="flex items-center justify-center py-3 border-b border-border/30">
+        <span className="text-sm font-medium text-foreground">Co-Pilot</span>
       </div>
 
-      {/* Messages Area */}
-      <ScrollArea className="flex-1 px-4">
-        <div className="py-4">
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              role={message.role}
-              content={message.content}
-              images={message.images}
-              navigatedTo={message.navigatedTo}
-              uploadResult={message.uploadResult}
-            />
-          ))}
+      {/* Chat Area */}
+      {hasMessages ? (
+        /* Messages view */
+        <>
+          <ScrollArea className="flex-1">
+            <div className="max-w-3xl mx-auto px-4 py-4">
+              {messages.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  role={message.role}
+                  content={message.content}
+                  images={message.images}
+                  navigatedTo={message.navigatedTo}
+                  uploadResult={message.uploadResult}
+                />
+              ))}
 
-          {/* Loading indicator */}
-          {isLoading && (
-            <div className="flex gap-4 py-6">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                <Bot className="h-4 w-4 text-primary" />
-              </div>
-              <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-muted/50 border border-border/50">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <span className="text-sm text-muted-foreground">{loadingHint}</span>
-              </div>
+              {/* Loading indicator */}
+              {isLoading && (
+                <div className="py-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>{loadingHint}</span>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
             </div>
-          )}
+          </ScrollArea>
 
-          <div ref={messagesEndRef} />
+          {/* Input - Sticky bottom */}
+          <div className="border-t border-border/30 bg-background">
+            <div className="max-w-3xl mx-auto px-4 py-4">
+              <ChatInput onSend={handleSend} isLoading={isLoading} />
+            </div>
+          </div>
+        </>
+      ) : (
+        /* Empty state - Centered input like ChatGPT */
+        <div className="flex-1 flex flex-col items-center justify-center px-4">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-semibold text-foreground mb-2">Was kann ich für dich tun?</h2>
+            <p className="text-sm text-muted-foreground">
+              Lade Bilder hoch oder stell mir eine Frage
+            </p>
+          </div>
+          <div className="w-full max-w-2xl">
+            <ChatInput onSend={handleSend} isLoading={isLoading} />
+          </div>
         </div>
-      </ScrollArea>
-
-      {/* Input Area - Sticky at bottom */}
-      <div className="sticky bottom-0 bg-gradient-to-t from-background via-background to-transparent pt-4 pb-6 px-4">
-        <ChatInput onSend={handleSend} isLoading={isLoading} />
-      </div>
+      )}
     </div>
   );
 }
