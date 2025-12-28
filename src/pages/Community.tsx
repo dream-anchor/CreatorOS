@@ -667,7 +667,7 @@ export default function Community() {
 
   return (
     <GlobalLayout>
-      <div className="p-4 sm:p-6 max-w-5xl mx-auto pb-28 sm:pb-32">
+      <div className="p-4 sm:p-6 max-w-5xl mx-auto pb-40">
         {/* Header with Model Selector */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
           <div>

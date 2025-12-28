@@ -113,9 +113,17 @@ export function GlobalLayout({ children, hideBottomChat = false }: GlobalLayoutP
       </aside>
 
       {/* Main Content Area */}
-      <main className={`flex-1 lg:ml-60 relative z-10 pt-14 lg:pt-0 ${hideBottomChat ? "" : "pb-24 sm:pb-28"}`}>
+      <main className={`flex-1 lg:ml-60 relative z-10 pt-14 lg:pt-0 ${hideBottomChat ? "" : "pb-40"}`}>
         {children}
       </main>
+
+      {/* Gradient Fade - Visual fade effect at bottom for better chat readability */}
+      {!hideBottomChat && (
+        <div 
+          className="fixed bottom-0 left-0 lg:left-60 right-0 h-32 z-40 pointer-events-none bg-gradient-to-t from-background via-background/90 to-transparent"
+          aria-hidden="true"
+        />
+      )}
 
       {/* Bottom Chat Bar - conditionally rendered */}
       {!hideBottomChat && <BottomChat />}
