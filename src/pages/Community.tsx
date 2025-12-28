@@ -913,33 +913,34 @@ export default function Community() {
                                 "{comment.comment_text}"
                               </div>
 
-                              {/* Reply Textarea */}
+                              {/* AI Reply Section - PROMINENT */}
                               <div className="space-y-2">
-                                <div className="relative">
-                                  <Textarea
-                                    placeholder={
-                                      noModelSelected
-                                        ? "Wähle zuerst ein KI-Modell..."
-                                        : "Deine Antwort..."
-                                    }
-                                    value={replyTexts[comment.id] || ""}
-                                    onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
-                                    disabled={noModelSelected || isAutoGenerating}
-                                    className={cn(
-                                      "min-h-[80px] resize-none rounded-xl border-border/50 focus:border-primary/50 text-sm",
-                                      noModelSelected && "bg-muted/50 cursor-not-allowed"
-                                    )}
-                                  />
-                                  {/* Model Badge */}
-                                  {generatedReply && (
-                                    <Badge
-                                      variant="secondary"
-                                      className="absolute top-2 right-2 text-xs gap-1 rounded-lg"
-                                    >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Sparkles className="h-4 w-4 text-primary" />
+                                  <span className="text-sm font-medium text-foreground">Deine Antwort</span>
+                                  {(generatedReply || comment.ai_reply_suggestion) && (
+                                    <Badge variant="secondary" className="text-xs gap-1 rounded-lg">
                                       <Brain className="h-3 w-3" />
-                                      {AI_MODELS.find((m) => m.id === generatedReply.model)?.name || "KI"}
+                                      {generatedReply 
+                                        ? AI_MODELS.find((m) => m.id === generatedReply.model)?.name || "KI"
+                                        : "KI-generiert"
+                                      }
                                     </Badge>
                                   )}
+                                </div>
+                                <div className="relative">
+                                  <Textarea
+                                    placeholder="Antwort eingeben oder per KI generieren lassen..."
+                                    value={replyTexts[comment.id] || ""}
+                                    onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
+                                    disabled={isAutoGenerating}
+                                    className={cn(
+                                      "min-h-[100px] resize-none rounded-xl text-sm",
+                                      hasReply 
+                                        ? "border-primary/50 bg-primary/5 focus:border-primary focus:bg-primary/10" 
+                                        : "border-border/50 focus:border-primary/50"
+                                    )}
+                                  />
                                 </div>
 
                                 {/* Actions */}
@@ -947,15 +948,13 @@ export default function Community() {
                                   <Button
                                     size="sm"
                                     onClick={() => handleSendReply(comment)}
-                                    disabled={
-                                      sendingReply === comment.id || !hasReply || noModelSelected
-                                    }
-                                    className="gap-2 rounded-xl h-8 text-xs"
+                                    disabled={sendingReply === comment.id || !hasReply}
+                                    className="gap-2 rounded-xl h-9"
                                   >
                                     {sendingReply === comment.id ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                      <Loader2 className="h-4 w-4 animate-spin" />
                                     ) : (
-                                      <Send className="h-3 w-3" />
+                                      <Send className="h-4 w-4" />
                                     )}
                                     Senden
                                   </Button>
