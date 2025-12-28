@@ -147,12 +147,12 @@ export default function CalendarPage() {
 
   return (
     <GlobalLayout>
-      <div className="p-6">
-      <div className="grid gap-6 lg:grid-cols-4">
+      <div className="p-4 sm:p-6">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-4">
         {/* Unscheduled Posts */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 order-2 lg:order-1">
           <Card className="glass-card">
-            <CardHeader>
+            <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">
                 Bereit zur Planung
               </CardTitle>
@@ -187,19 +187,21 @@ export default function CalendarPage() {
         </div>
 
         {/* Week Calendar */}
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-3 order-1 lg:order-2">
           <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CalendarIcon className="h-5 w-5" />
-                {format(currentWeekStart, "d. MMMM", { locale: de })} -{" "}
-                {format(endOfWeek(currentWeekStart, { weekStartsOn: 1 }), "d. MMMM yyyy", {
-                  locale: de,
-                })}
+            <CardHeader className="pb-3 sm:pb-4">
+              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="truncate">
+                  {format(currentWeekStart, "d. MMM", { locale: de })} -{" "}
+                  {format(endOfWeek(currentWeekStart, { weekStartsOn: 1 }), "d. MMM yyyy", {
+                    locale: de,
+                  })}
+                </span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-7 gap-2">
+            <CardContent className="overflow-x-auto">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 min-w-[500px]">
                 {weekDays.map((day) => {
                   const dayPosts = getPostsForDay(day);
                   const isToday = isSameDay(day, new Date());
@@ -207,43 +209,43 @@ export default function CalendarPage() {
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`min-h-[200px] p-2 rounded-lg border ${
+                      className={`min-h-[140px] sm:min-h-[200px] p-1.5 sm:p-2 rounded-lg border ${
                         isToday ? "border-primary bg-primary/5" : "border-border"
                       }`}
                     >
-                      <div className="text-center mb-2">
-                        <p className="text-xs text-muted-foreground">
+                      <div className="text-center mb-1 sm:mb-2">
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                           {format(day, "EEE", { locale: de })}
                         </p>
                         <p
-                          className={`text-lg font-semibold ${
+                          className={`text-sm sm:text-lg font-semibold ${
                             isToday ? "text-primary" : ""
                           }`}
                         >
                           {format(day, "d")}
                         </p>
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-1 sm:space-y-2">
                         {dayPosts.map((post) => (
                           <div
                             key={post.id}
                             onClick={() => openScheduleDialog(post)}
-                            className="p-2 rounded bg-muted hover:bg-muted/80 cursor-pointer transition-colors"
+                            className="p-1.5 sm:p-2 rounded bg-muted hover:bg-muted/80 cursor-pointer transition-colors"
                           >
                             <div className="flex items-center gap-1 mb-1">
-                              <Clock className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">
+                              <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-muted-foreground" />
+                              <span className="text-[10px] sm:text-xs text-muted-foreground">
                                 {post.scheduled_at &&
                                   format(new Date(post.scheduled_at), "HH:mm")}
                               </span>
                               {post.remixed_from_id && (
-                                <span className="text-xs bg-amber-500/20 text-amber-600 px-1 rounded">
+                                <span className="text-[10px] sm:text-xs bg-amber-500/20 text-amber-600 px-1 rounded">
                                   ♻️
                                 </span>
                               )}
                             </div>
-                            <StatusBadge status={post.status} className="mb-1" />
-                            <p className="text-xs line-clamp-2">{post.caption}</p>
+                            <StatusBadge status={post.status} className="mb-1 text-[10px]" />
+                            <p className="text-[10px] sm:text-xs line-clamp-2">{post.caption}</p>
                           </div>
                         ))}
                       </div>

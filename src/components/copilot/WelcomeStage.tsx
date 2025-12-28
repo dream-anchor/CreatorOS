@@ -56,31 +56,31 @@ export function WelcomeStage() {
   const firstName = displayName?.split(" ")[0] || "Creator";
 
   return (
-    <div className="h-full flex items-center justify-center p-8">
-      <div className="max-w-2xl w-full text-center space-y-8">
+    <div className="h-full flex items-center justify-center p-4 sm:p-8">
+      <div className="max-w-2xl w-full text-center space-y-6 sm:space-y-8">
         {/* Greeting */}
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold text-foreground">
+          <h1 className="text-2xl sm:text-4xl font-bold text-foreground">
             {getGreeting()}, {firstName}. 👋
           </h1>
-          <p className="text-xl text-muted-foreground">
+          <p className="text-base sm:text-xl text-muted-foreground">
             Ich bin bereit. Was steht an?
           </p>
         </div>
 
         {/* Quick Stats */}
         {(stats.pendingComments > 0 || stats.scheduledPosts > 0 || stats.draftPosts > 0) && (
-          <div className="flex justify-center gap-4 text-sm text-muted-foreground">
+          <div className="flex flex-wrap justify-center gap-3 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
             {stats.pendingComments > 0 && (
               <span className="flex items-center gap-1.5">
-                <MessageCircle className="h-4 w-4 text-primary" />
-                {stats.pendingComments} offene Kommentare
+                <MessageCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
+                {stats.pendingComments} Kommentare
               </span>
             )}
             {stats.scheduledPosts > 0 && (
               <span className="flex items-center gap-1.5">
-                <CalendarClock className="h-4 w-4 text-cyan-500" />
-                {stats.scheduledPosts} geplante Posts
+                <CalendarClock className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-cyan-500" />
+                {stats.scheduledPosts} geplant
               </span>
             )}
           </div>
@@ -162,8 +162,8 @@ export function WelcomeStage() {
         </div>
 
         {/* Hint */}
-        <p className="text-sm text-muted-foreground">
-          💡 Tipp: Nutze den Co-Pilot rechts um per Chat zu navigieren
+        <p className="text-xs sm:text-sm text-muted-foreground px-4">
+          💡 Nutze den Co-Pilot unten um per Chat zu navigieren
         </p>
       </div>
     </div>
