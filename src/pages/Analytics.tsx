@@ -132,20 +132,20 @@ export default function AnalyticsPage() {
 
   return (
     <GlobalLayout>
-      <div className="p-6 space-y-6">
-      <div className="space-y-6">
+      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {stats.map((stat) => (
             <Card key={stat.title} className="glass-card">
-              <CardContent className="p-6">
+              <CardContent className="p-4 sm:p-6">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{stat.title}</p>
-                    <p className="text-3xl font-bold mt-1">{stat.value}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs sm:text-sm text-muted-foreground truncate">{stat.title}</p>
+                    <p className="text-xl sm:text-3xl font-bold mt-1">{stat.value}</p>
                   </div>
-                  <div className={`p-3 rounded-xl ${stat.bgColor}`}>
-                    <stat.icon className={`h-6 w-6 ${stat.color}`} />
+                  <div className={`p-2 sm:p-3 rounded-xl ${stat.bgColor} flex-shrink-0`}>
+                    <stat.icon className={`h-4 w-4 sm:h-6 sm:w-6 ${stat.color}`} />
                   </div>
                 </div>
               </CardContent>
@@ -154,20 +154,20 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Insights */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
           <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-primary" />
+            <CardHeader className="pb-2 sm:pb-4">
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                 Engagement Rate
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8">
-                <p className="text-5xl font-bold text-primary">
+              <div className="text-center py-6 sm:py-8">
+                <p className="text-3xl sm:text-5xl font-bold text-primary">
                   {analytics.avgEngagementRate.toFixed(2)}%
                 </p>
-                <p className="text-muted-foreground mt-2">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-2">
                   Durchschnittliche Engagement Rate
                 </p>
               </div>
@@ -175,18 +175,18 @@ export default function AnalyticsPage() {
           </Card>
 
           <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
+            <CardHeader className="pb-2 sm:pb-4">
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <Users className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                 Bester Tag
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8">
-                <p className="text-5xl font-bold text-primary">
+              <div className="text-center py-6 sm:py-8">
+                <p className="text-3xl sm:text-5xl font-bold text-primary">
                   {analytics.topPerformingDay || "—"}
                 </p>
-                <p className="text-muted-foreground mt-2">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-2">
                   Tag mit dem höchsten Engagement
                 </p>
               </div>
@@ -196,13 +196,13 @@ export default function AnalyticsPage() {
 
         {/* Coming Soon */}
         <Card className="glass-card border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-4">
-              <BarChart3 className="h-8 w-8 text-primary" />
+          <CardContent className="flex flex-col items-center justify-center py-10 sm:py-16 px-4">
+            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-3 sm:mb-4">
+              <BarChart3 className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">Erweiterte Analytics</h3>
-            <p className="text-muted-foreground text-center max-w-md">
-              Detaillierte Wachstumskurven, Follower-Trends und Performance-Vergleiche 
+            <h3 className="text-base sm:text-lg font-semibold mb-2">Erweiterte Analytics</h3>
+            <p className="text-muted-foreground text-center text-xs sm:text-sm max-w-md">
+              Detaillierte Wachstumskurven und Performance-Vergleiche 
               werden bald verfügbar sein.
             </p>
           </CardContent>

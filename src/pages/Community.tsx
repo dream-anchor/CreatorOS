@@ -319,22 +319,22 @@ export default function Community() {
 
   return (
     <GlobalLayout>
-      <div className="p-6 max-w-5xl mx-auto pb-32">
+      <div className="p-4 sm:p-6 max-w-5xl mx-auto pb-28 sm:pb-32">
         {/* Header with Model Selector */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                <MessageCircle className="h-5 w-5 text-white" />
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
               </div>
               Community
             </h1>
-            <p className="text-sm text-muted-foreground mt-2 ml-[52px]">
-              {comments.length} offene Kommentare warten auf deine Antwort
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1 sm:mt-2 ml-10 sm:ml-[52px]">
+              {comments.length} offene Kommentare
             </p>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <AiModelSelector
               selectedModel={selectedModel}
               onModelChange={handleModelChange}
@@ -346,7 +346,8 @@ export default function Community() {
               onClick={handleFetchComments}
               disabled={isRefetching}
               variant="outline"
-              className="gap-2 rounded-xl h-10"
+              size="sm"
+              className="gap-2 rounded-xl h-9 sm:h-10"
             >
               <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
               <span className="hidden sm:inline">Sync</span>
@@ -356,15 +357,15 @@ export default function Community() {
 
         {/* No Model Selected Prompt */}
         {noModelSelected && comments.length > 0 && (
-          <Card className="mb-6 border-primary/50 bg-primary/5 rounded-2xl">
-            <CardContent className="flex items-center gap-4 py-5">
-              <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
-                <AlertCircle className="h-6 w-6 text-primary" />
+          <Card className="mb-4 sm:mb-6 border-primary/50 bg-primary/5 rounded-2xl">
+            <CardContent className="flex items-start sm:items-center gap-3 sm:gap-4 py-4 sm:py-5">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
               </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-foreground">KI-Modell auswählen</h3>
-                <p className="text-sm text-muted-foreground">
-                  Wähle oben rechts ein Modell, um automatisch Smart Replies für alle {comments.length} Kommentare zu generieren.
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-foreground text-sm sm:text-base">KI-Modell auswählen</h3>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  Wähle oben ein Modell für Smart Replies.
                 </p>
               </div>
             </CardContent>
@@ -374,17 +375,17 @@ export default function Community() {
         {/* Empty State */}
         {comments.length === 0 ? (
           <Card className="border-dashed border-2 rounded-2xl">
-            <CardContent className="flex flex-col items-center justify-center py-20">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-6">
-                <MessageCircle className="h-10 w-10 text-primary" />
+            <CardContent className="flex flex-col items-center justify-center py-12 sm:py-20 px-4">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-4 sm:mb-6">
+                <MessageCircle className="h-8 w-8 sm:h-10 sm:w-10 text-primary" />
               </div>
-              <h2 className="text-xl font-semibold mb-2">Keine offenen Kommentare</h2>
-              <p className="text-muted-foreground text-center max-w-md mb-6">
+              <h2 className="text-lg sm:text-xl font-semibold mb-2 text-center">Keine offenen Kommentare</h2>
+              <p className="text-muted-foreground text-center text-sm max-w-md mb-4 sm:mb-6">
                 Alle Kommentare bearbeitet oder noch keine von Instagram geladen.
               </p>
-              <Button onClick={handleFetchComments} size="lg" className="gap-2 rounded-xl">
+              <Button onClick={handleFetchComments} size="default" className="gap-2 rounded-xl">
                 <RefreshCw className="h-4 w-4" />
-                Kommentare jetzt abrufen
+                Kommentare abrufen
               </Button>
             </CardContent>
           </Card>

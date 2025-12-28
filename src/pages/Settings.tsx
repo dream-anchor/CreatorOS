@@ -13,99 +13,99 @@ export default function SettingsPage() {
 
   return (
     <GlobalLayout>
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
       <div className="max-w-4xl">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="glass-card p-1 h-auto flex-wrap gap-1">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 sm:space-y-6">
+          <TabsList className="glass-card p-1 h-auto flex flex-wrap gap-1">
             <TabsTrigger 
               value="general" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-4 py-2.5"
+              className="flex items-center gap-1.5 sm:gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm"
             >
-              <Sliders className="h-4 w-4" />
-              Allgemein
+              <Sliders className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden xs:inline">Allgemein</span>
             </TabsTrigger>
             <TabsTrigger 
               value="brand" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-4 py-2.5"
+              className="flex items-center gap-1.5 sm:gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm"
             >
-              <Fingerprint className="h-4 w-4" />
-              Meine DNA
+              <Fingerprint className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden xs:inline">DNA</span>
             </TabsTrigger>
             <TabsTrigger 
               value="topics" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-4 py-2.5"
+              className="flex items-center gap-1.5 sm:gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm"
             >
-              <Hash className="h-4 w-4" />
-              Themen
+              <Hash className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden xs:inline">Themen</span>
             </TabsTrigger>
             <TabsTrigger 
               value="instagram" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-4 py-2.5"
+              className="flex items-center gap-1.5 sm:gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm"
             >
-              <Instagram className="h-4 w-4" />
-              Instagram
+              <Instagram className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Instagram</span>
             </TabsTrigger>
             <TabsTrigger 
               value="system" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-4 py-2.5"
+              className="flex items-center gap-1.5 sm:gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm"
             >
-              <Wrench className="h-4 w-4" />
-              System
+              <Wrench className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">System</span>
             </TabsTrigger>
             <TabsTrigger 
               value="logs" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-4 py-2.5"
+              className="flex items-center gap-1.5 sm:gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm"
             >
-              <ScrollText className="h-4 w-4" />
-              Logs
+              <ScrollText className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Logs</span>
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="general" className="mt-6">
+          <TabsContent value="general" className="mt-4 sm:mt-6">
             <GeneralSettingsTab />
           </TabsContent>
 
-          <TabsContent value="brand" className="mt-6">
-            <div className="glass-card p-6 text-center">
-              <Fingerprint className="h-12 w-12 text-primary mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Marken-DNA verwalten</h3>
-              <p className="text-muted-foreground mb-4">
-                Definiere deinen Schreibstil, Tone of Voice und Brand-Regeln.
+          <TabsContent value="brand" className="mt-4 sm:mt-6">
+            <div className="glass-card p-4 sm:p-6 text-center">
+              <Fingerprint className="h-10 w-10 sm:h-12 sm:w-12 text-primary mx-auto mb-3 sm:mb-4" />
+              <h3 className="text-base sm:text-lg font-semibold mb-2">Marken-DNA verwalten</h3>
+              <p className="text-xs sm:text-sm text-muted-foreground mb-4">
+                Definiere deinen Schreibstil und Brand-Regeln.
               </p>
               <Link 
                 to="/brand" 
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
               >
                 Zur Marken-DNA
               </Link>
             </div>
           </TabsContent>
 
-          <TabsContent value="topics" className="mt-6">
-            <div className="glass-card p-6 text-center">
-              <Hash className="h-12 w-12 text-primary mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Themen verwalten</h3>
-              <p className="text-muted-foreground mb-4">
+          <TabsContent value="topics" className="mt-4 sm:mt-6">
+            <div className="glass-card p-4 sm:p-6 text-center">
+              <Hash className="h-10 w-10 sm:h-12 sm:w-12 text-primary mx-auto mb-3 sm:mb-4" />
+              <h3 className="text-base sm:text-lg font-semibold mb-2">Themen verwalten</h3>
+              <p className="text-xs sm:text-sm text-muted-foreground mb-4">
                 Verwalte deine Content-Themen und Keywords.
               </p>
               <Link 
                 to="/topics" 
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
               >
                 Zu den Themen
               </Link>
             </div>
           </TabsContent>
 
-          <TabsContent value="instagram" className="mt-6">
+          <TabsContent value="instagram" className="mt-4 sm:mt-6">
             <MetaConnectionTab />
           </TabsContent>
 
-          <TabsContent value="system" className="mt-6">
+          <TabsContent value="system" className="mt-4 sm:mt-6">
             <SystemStatusTab />
           </TabsContent>
 
-          <TabsContent value="logs" className="mt-6">
+          <TabsContent value="logs" className="mt-4 sm:mt-6">
             <LogsTab />
           </TabsContent>
         </Tabs>
