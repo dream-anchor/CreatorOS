@@ -1,10 +1,12 @@
 import { GlobalLayout } from "@/components/GlobalLayout";
-import { WelcomeStage } from "@/components/copilot/WelcomeStage";
+import { ModernChatInterface } from "@/components/chat/ModernChatInterface";
 
 export default function DashboardPage() {
   return (
-    <GlobalLayout>
-      <WelcomeStage />
+    <GlobalLayout hideBottomChat>
+      <div className="h-[calc(100vh-3.5rem)] lg:h-screen">
+        <ModernChatInterface />
+      </div>
     </GlobalLayout>
   );
 }

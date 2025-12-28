@@ -19,6 +19,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 interface GlobalLayoutProps {
   children: ReactNode;
+  hideBottomChat?: boolean;
 }
 
 const navItems = [
@@ -78,7 +79,7 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function GlobalLayout({ children }: GlobalLayoutProps) {
+export function GlobalLayout({ children, hideBottomChat = false }: GlobalLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -112,12 +113,12 @@ export function GlobalLayout({ children }: GlobalLayoutProps) {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 lg:ml-60 relative z-10 pt-14 lg:pt-0 pb-24 sm:pb-28">
+      <main className={`flex-1 lg:ml-60 relative z-10 pt-14 lg:pt-0 ${hideBottomChat ? "" : "pb-24 sm:pb-28"}`}>
         {children}
       </main>
 
-      {/* Bottom Chat Bar */}
-      <BottomChat />
+      {/* Bottom Chat Bar - conditionally rendered */}
+      {!hideBottomChat && <BottomChat />}
     </div>
   );
 }
