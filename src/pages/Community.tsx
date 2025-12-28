@@ -151,6 +151,36 @@ export default function Community() {
     });
   }, [rawComments, blacklistTopics]);
 
+  // Group comments by post
+  const commentsByPost = useMemo(() => {
+    const groups: Record<string, {
+      postId: string;
+      igMediaId: string;
+      post: Comment["post"];
+      comments: Comment[];
+    }> = {};
+
+    comments.forEach(comment => {
+      const key = comment.ig_media_id || "no-post";
+      if (!groups[key]) {
+        groups[key] = {
+          postId: comment.post?.id || "",
+          igMediaId: comment.ig_media_id,
+          post: comment.post,
+          comments: [],
+        };
+      }
+      groups[key].comments.push(comment);
+    });
+
+    // Sort groups by most recent comment
+    return Object.values(groups).sort((a, b) => {
+      const aTime = Math.max(...a.comments.map(c => new Date(c.comment_timestamp).getTime()));
+      const bTime = Math.max(...b.comments.map(c => new Date(c.comment_timestamp).getTime()));
+      return bTime - aTime;
+    });
+  }, [comments]);
+
   // Handlers for rules config
   const handleAddEmojiNogoTerms = async (terms: string[]) => {
     try {
@@ -591,188 +621,223 @@ export default function Community() {
             </CardContent>
           </Card>
         ) : (
-          /* Comments List */
-          <div className="space-y-4">
-            {comments.map((comment) => {
-              const generatedReply = generatedReplies[comment.id];
-              const hasReply = !!replyTexts[comment.id]?.trim();
-              
+          /* Comments grouped by Post */
+          <div className="space-y-6">
+            {commentsByPost.map((group) => {
+              const { post, comments: groupComments } = group;
+              const caption = post?.caption || "";
+              const isLongCaption = caption.length > 300;
+
               return (
                 <Card 
-                  key={comment.id} 
-                  className={cn(
-                    "overflow-hidden rounded-2xl border-border/50 transition-all hover:shadow-lg",
-                    noModelSelected && "opacity-75",
-                    generatedReply && "border-primary/30 hover:border-primary/50"
-                  )}
+                  key={group.igMediaId} 
+                  className="overflow-hidden rounded-2xl border-border/50"
                 >
-                  <CardContent className="p-0">
-                    {/* Post Context Header */}
-                    {comment.post && (
-                      <div className="flex items-center gap-3 px-5 py-3 bg-muted/30 border-b border-border/30">
-                        {comment.post.original_media_url ? (
-                          <img 
-                            src={comment.post.original_media_url} 
-                            alt="Post" 
-                            className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                  {/* Post Header - Full Context */}
+                  <div className="bg-muted/30 border-b border-border/30">
+                    <div className="flex gap-4 p-5">
+                      {/* Post Image */}
+                      <div className="flex-shrink-0">
+                        {post?.original_media_url ? (
+                          <img
+                            src={post.original_media_url}
+                            alt="Post"
+                            className="w-28 h-28 sm:w-36 sm:h-36 rounded-xl object-cover"
                             onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
+                              (e.target as HTMLImageElement).src = "/placeholder.svg";
                             }}
                           />
                         ) : (
-                          <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                          <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-xl bg-muted flex items-center justify-center">
+                            <ImageIcon className="h-10 w-10 text-muted-foreground" />
                           </div>
-                        )}
-                        <p className="text-xs text-muted-foreground line-clamp-2 flex-1">
-                          {comment.post.caption?.slice(0, 100) || "Kein Caption"}
-                          {(comment.post.caption?.length || 0) > 100 && "..."}
-                        </p>
-                        {comment.post.original_ig_permalink && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <a
-                                  href={comment.post.original_ig_permalink}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex-shrink-0 p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-primary"
-                                >
-                                  <ExternalLink className="h-4 w-4" />
-                                </a>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Post auf Instagram öffnen</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
                         )}
                       </div>
-                    )}
-                    
-                    <div className="p-5">
-                      <div className="flex items-start gap-4">
-                        {/* Avatar */}
-                        <div className="flex-shrink-0 w-11 h-11 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                          <User className="h-5 w-5 text-primary" />
-                        </div>
-                        
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          {/* Header */}
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="font-semibold text-foreground">
-                              @{comment.commenter_username || "Unbekannt"}
-                            </span>
-                            <span className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {formatDistanceToNow(new Date(comment.comment_timestamp), { 
-                                addSuffix: true, 
-                                locale: de 
-                              })}
-                            </span>
-                          </div>
-                          
-                          {/* Fan Comment */}
-                          <div className="text-sm text-foreground bg-muted/40 rounded-xl p-4 mb-4 border border-border/30">
-                            "{comment.comment_text}"
-                          </div>
-                          
-                          {/* Reply Textarea */}
-                          <div className="space-y-3">
-                            <div className="relative">
-                              <Textarea
-                                placeholder={noModelSelected ? "Wähle zuerst ein KI-Modell..." : "Deine Antwort..."}
-                                value={replyTexts[comment.id] || ""}
-                                onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
-                                disabled={noModelSelected || isAutoGenerating}
-                                className={cn(
-                                  "min-h-[90px] resize-none rounded-xl border-border/50 focus:border-primary/50",
-                                  noModelSelected && "bg-muted/50 cursor-not-allowed"
-                                )}
-                              />
-                              {/* Model Badge */}
-                              {generatedReply && (
-                                <Badge 
-                                  variant="secondary" 
-                                  className="absolute top-2 right-2 text-xs gap-1 rounded-lg"
-                                >
-                                  <Brain className="h-3 w-3" />
-                                  {AI_MODELS.find(m => m.id === generatedReply.model)?.name || "KI"}
-                                </Badge>
-                              )}
-                            </div>
-                            
-                            {/* Actions */}
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => handleSendReply(comment)}
-                                disabled={sendingReply === comment.id || !hasReply || noModelSelected}
-                                className="gap-2 rounded-xl h-9"
-                              >
-                                {sendingReply === comment.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Send className="h-4 w-4" />
-                                )}
-                                Senden
-                              </Button>
-                              
-                              {/* Moderation Icons */}
-                              <div className="flex items-center gap-1 ml-auto">
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => handleHideComment(comment.id)}
-                                        disabled={hidingComment === comment.id}
-                                        className="text-muted-foreground hover:text-amber-500 rounded-xl h-9 w-9 p-0"
-                                      >
-                                        {hidingComment === comment.id ? (
-                                          <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                          <EyeOff className="h-4 w-4" />
-                                        )}
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>Kommentar ausblenden</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
 
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => handleBlockUser(comment.id, comment.commenter_username)}
-                                        disabled={blockingUser === comment.id}
-                                        className="text-muted-foreground hover:text-destructive rounded-xl h-9 w-9 p-0"
-                                      >
-                                        {blockingUser === comment.id ? (
-                                          <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                          <Ban className="h-4 w-4" />
-                                        )}
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>Absender blockieren</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
+                      {/* Post Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <Badge variant="secondary" className="gap-1.5 rounded-lg">
+                            <MessageCircle className="h-3 w-3" />
+                            {groupComments.length} Kommentar{groupComments.length !== 1 ? "e" : ""}
+                          </Badge>
+                          
+                          {post?.original_ig_permalink && (
+                            <a
+                              href={post.original_ig_permalink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              <span className="hidden sm:inline">Auf Instagram öffnen</span>
+                            </a>
+                          )}
+                        </div>
+
+                        {/* Caption */}
+                        <div className="text-sm text-foreground">
+                          {isLongCaption ? (
+                            <details className="group">
+                              <summary className="cursor-pointer list-none">
+                                <span className="whitespace-pre-wrap">{caption.slice(0, 300)}...</span>
+                                <span className="text-primary hover:underline text-xs ml-1 group-open:hidden">
+                                  Mehr anzeigen
+                                </span>
+                              </summary>
+                              <span className="whitespace-pre-wrap">{caption.slice(300)}</span>
+                              <span className="text-primary hover:underline text-xs ml-1 block mt-1">
+                                Weniger anzeigen
+                              </span>
+                            </details>
+                          ) : (
+                            <p className="whitespace-pre-wrap">{caption || "Kein Caption"}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Comments List */}
+                  <div className="divide-y divide-border/30">
+                    {groupComments.map((comment) => {
+                      const generatedReply = generatedReplies[comment.id];
+                      const hasReply = !!replyTexts[comment.id]?.trim();
+
+                      return (
+                        <div key={comment.id} className="p-5">
+                          <div className="flex items-start gap-4">
+                            {/* Avatar */}
+                            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+                              <User className="h-4 w-4 text-primary" />
+                            </div>
+
+                            {/* Content */}
+                            <div className="flex-1 min-w-0">
+                              {/* Header */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="font-semibold text-foreground text-sm">
+                                  @{comment.commenter_username || "Unbekannt"}
+                                </span>
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {formatDistanceToNow(new Date(comment.comment_timestamp), {
+                                    addSuffix: true,
+                                    locale: de,
+                                  })}
+                                </span>
+                              </div>
+
+                              {/* Fan Comment */}
+                              <div className="text-sm text-foreground bg-muted/40 rounded-xl p-3 mb-3 border border-border/30">
+                                "{comment.comment_text}"
+                              </div>
+
+                              {/* Reply Textarea */}
+                              <div className="space-y-2">
+                                <div className="relative">
+                                  <Textarea
+                                    placeholder={
+                                      noModelSelected
+                                        ? "Wähle zuerst ein KI-Modell..."
+                                        : "Deine Antwort..."
+                                    }
+                                    value={replyTexts[comment.id] || ""}
+                                    onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
+                                    disabled={noModelSelected || isAutoGenerating}
+                                    className={cn(
+                                      "min-h-[80px] resize-none rounded-xl border-border/50 focus:border-primary/50 text-sm",
+                                      noModelSelected && "bg-muted/50 cursor-not-allowed"
+                                    )}
+                                  />
+                                  {/* Model Badge */}
+                                  {generatedReply && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="absolute top-2 right-2 text-xs gap-1 rounded-lg"
+                                    >
+                                      <Brain className="h-3 w-3" />
+                                      {AI_MODELS.find((m) => m.id === generatedReply.model)?.name || "KI"}
+                                    </Badge>
+                                  )}
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSendReply(comment)}
+                                    disabled={
+                                      sendingReply === comment.id || !hasReply || noModelSelected
+                                    }
+                                    className="gap-2 rounded-xl h-8 text-xs"
+                                  >
+                                    {sendingReply === comment.id ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Send className="h-3 w-3" />
+                                    )}
+                                    Senden
+                                  </Button>
+
+                                  {/* Moderation Icons */}
+                                  <div className="flex items-center gap-1 ml-auto">
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => handleHideComment(comment.id)}
+                                            disabled={hidingComment === comment.id}
+                                            className="text-muted-foreground hover:text-amber-500 rounded-xl h-8 w-8 p-0"
+                                          >
+                                            {hidingComment === comment.id ? (
+                                              <Loader2 className="h-3 w-3 animate-spin" />
+                                            ) : (
+                                              <EyeOff className="h-3 w-3" />
+                                            )}
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Kommentar ausblenden</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() =>
+                                              handleBlockUser(comment.id, comment.commenter_username)
+                                            }
+                                            disabled={blockingUser === comment.id}
+                                            className="text-muted-foreground hover:text-destructive rounded-xl h-8 w-8 p-0"
+                                          >
+                                            {blockingUser === comment.id ? (
+                                              <Loader2 className="h-3 w-3 animate-spin" />
+                                            ) : (
+                                              <Ban className="h-3 w-3" />
+                                            )}
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Absender blockieren</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  </CardContent>
+                      );
+                    })}
+                  </div>
                 </Card>
               );
             })}
