@@ -510,6 +510,17 @@ export default function Community() {
               isGenerating={isAutoGenerating}
               generationProgress={generationProgress}
             />
+            {/* Generate button - shows when model selected but no replies generated yet */}
+            {selectedModel && Object.keys(generatedReplies).length === 0 && comments.length > 0 && !isAutoGenerating && (
+              <Button
+                onClick={() => handleGenerateAllReplies(selectedModel)}
+                size="sm"
+                className="gap-2 rounded-xl h-9 sm:h-10"
+              >
+                <Sparkles className="h-4 w-4" />
+                <span className="hidden sm:inline">Generieren</span>
+              </Button>
+            )}
             <Button
               onClick={handleFetchComments}
               disabled={isRefetching}
