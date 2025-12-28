@@ -26,84 +26,65 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # ✅ Inject prerendering tooling/config (no local changes needed)
-      - name: Inject react-snap + config (CI only)
+      # ✅ Install modern Chrome (fixes "Unexpected token ?")
+      - name: Install Google Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      # ✅ Inject react-snap + force modern Chrome
+      - name: Inject react-snap (CI only)
         shell: bash
         run: |
           set -e
 
-          # Install react-snap only inside the GitHub runner
           npm i -D react-snap
 
-          # Ensure build lifecycle runs react-snap after build:
-          # npm run build -> (postbuild runs automatically if defined)
           npm pkg set scripts.postbuild="react-snap"
 
-          # Configure react-snap for Vite-style output folder "dist"
-          # - include: start route(s); react-snap crawls internal links from there
-          # - puppeteerArgs: required on GitHub runner
-          # - source: points to your built folder
           npm pkg set reactSnap.source="dist"
-          npm pkg set reactSnap.minifyHtml=true
           npm pkg set reactSnap.crawl=true
+          npm pkg set reactSnap.minifyHtml=true
           npm pkg set reactSnap.include[0]="/"
+
+          npm pkg set reactSnap.puppeteerExecutablePath="/usr/bin/google-chrome"
           npm pkg set reactSnap.puppeteerArgs[0]="--no-sandbox"
           npm pkg set reactSnap.puppeteerArgs[1]="--disable-setuid-sandbox"
 
-      - name: Build (includes prerender via postbuild)
+      - name: Build (includes prerender)
         run: npm run build
 
-      # ✅ .htaccess: serve prerendered HTML first, fallback to SPA only if nothing exists
-      - name: Create .htaccess (prefer prerendered pages)
+      # ✅ Apache: serve prerendered HTML first
+      - name: Create .htaccess
         shell: bash
         run: |
-          set -e
           mkdir -p dist
-
           cat > dist/.htaccess <<'EOF'
           RewriteEngine On
-          RewriteBase /
 
-          # 1) If a real file exists, serve it
-          RewriteCond %{REQUEST_FILENAME} -f
-          RewriteRule ^ - [L]
-
-          # 2) If a real directory exists, serve it
+          RewriteCond %{REQUEST_FILENAME} -f [OR]
           RewriteCond %{REQUEST_FILENAME} -d
           RewriteRule ^ - [L]
 
-          # 3) If a prerendered route exists as /route/index.html, serve it
-          #    Example: request "/about" -> serve "/about/index.html" if it exists
           RewriteCond %{DOCUMENT_ROOT}/$1/index.html -f
           RewriteRule ^(.+?)/?$ $1/index.html [L]
 
-          # 4) Otherwise fallback to SPA entry
           RewriteRule ^ index.html [L]
           EOF
 
       - name: Install lftp
-        run: sudo apt-get update && sudo apt-get install -y lftp
+        run: sudo apt-get install -y lftp
 
-      - name: Deploy dist/ to Strato via SFTP (mirror --delete)
+      - name: Deploy to Strato (SFTP)
         env:
           SSH_HOST: ${{ secrets.STRATO_HOST }}
           SSH_PORT: ${{ secrets.STRATO_PORT }}
           SSH_USER: ${{ secrets.STRATO_USER }}
           SSH_PASSWORD: ${{ secrets.STRATO_PASS }}
-        shell: bash
         run: |
-          set -e
-
-          TARGET_DIR="/WEBSITE/POSTPRO.ANTOINEMONOT.COM"
-
           lftp -e "
             set sftp:auto-confirm yes;
-            set net:max-retries 3;
-            set net:timeout 20;
             open -u ${SSH_USER},${SSH_PASSWORD} sftp://${SSH_HOST}:${SSH_PORT};
-            mkdir -p ${TARGET_DIR};
-            cd ${TARGET_DIR};
-            pwd;
-            mirror -R --delete --verbose --only-newer dist/ .;
+            mirror -R --delete dist/ /WEBSITE/POSTPRO.ANTOINEMONOT.COM;
             bye
           "
