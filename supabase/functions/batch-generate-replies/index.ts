@@ -47,12 +47,21 @@ const SIGNATURE_PATTERNS = [
   /\bdein\s+antoine\b/i,
 ];
 
-// Emoji mapping for forbidden terms
+// Expanded emoji mapping for forbidden terms
 const EMOJI_TERM_MAP: Record<string, RegExp> = {
-  "herz": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶]/gu,
-  "heart": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶]/gu,
+  // Herz/Liebe
+  "herz": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶♥️💌]/gu,
+  "heart": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶♥️💌]/gu,
+  "liebe": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶♥️💌😍🥰💑💏]/gu,
+  "love": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶♥️💌😍🥰💑💏]/gu,
+  // Kitsch (Sterne, Glitzer, übertriebene Deko)
+  "kitsch": /[✨🌟💫⭐🌠🎀🦋🌸🌺🌷🌹🌼💐🎆🎇🏵️]/gu,
+  "glitzer": /[✨🌟💫⭐🌠🎆🎇]/gu,
+  "sparkle": /[✨🌟💫⭐🌠🎆🎇]/gu,
+  // Feuer
   "feuer": /🔥/gu,
   "fire": /🔥/gu,
+  // Kuss
   "kuss": /[💋😘😗😚😙]/gu,
   "kiss": /[💋😘😗😚😙]/gu,
 };
@@ -371,7 +380,7 @@ serve(async (req) => {
     let forbiddenEmojiRegex: RegExp | null = null;
     if (emojiNogoList.length > 0) {
       forbiddenEmojiRegex = buildForbiddenEmojiRegex(emojiNogoList);
-      emojiConstraint = `\n\nEMOJI-EINSCHRÄNKUNG (STRIKT!):\nVermeide Emojis zu diesen Themen: ${emojiNogoList.join(", ")}.\nDas bedeutet: KEINE Herz-Emojis (❤️💕💖💗💘💝 etc.) wenn "Herz" verboten ist.\nNutze stattdessen neutrale Alternativen: 🙌 👍 😎 🔥 ✨ 💪 🎯 👏 ⚡ 🚀 💯`;
+      emojiConstraint = `\n\nEMOJI-EINSCHRÄNKUNG (ABSOLUT VERBOTEN!):\nDie folgenden Emojis sind STRIKT VERBOTEN und dürfen NIEMALS verwendet werden:\n- Verbotene Kategorien: ${emojiNogoList.join(", ")}\n- Das bedeutet z.B.: KEINE ❤️ 💕 💖 💗 💘 💝 oder andere Herz-Emojis wenn "Herz" oder "Liebe" verboten ist\n- KEINE ✨ 🌟 💫 wenn "Kitsch" verboten ist\nWENN du eines dieser Emojis verwendest, wird die Antwort ABGELEHNT.\nNutze NUR neutrale Alternativen wie: 🙌 👍 😎 💪 🎯 👏 ⚡ 🚀 💯`;
     }
 
     // Load few-shot examples once

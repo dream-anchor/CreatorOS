@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +15,42 @@ import { toast } from "sonner";
 import { Send, Clock, AlertCircle, CheckCircle2, Zap, RefreshCw, Trash2, Pencil, X, Check } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { de } from "date-fns/locale";
+
+// Expanded emoji mapping for forbidden terms (must match backend)
+const EMOJI_TERM_MAP: Record<string, RegExp> = {
+  "herz": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶♥️💌]/gu,
+  "heart": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶♥️💌]/gu,
+  "liebe": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶♥️💌😍🥰💑💏]/gu,
+  "love": /[❤️💕💖💗💘💝💓💞💟🖤🤍🤎💙💚💛🧡💜🩷🩵🩶♥️💌😍🥰💑💏]/gu,
+  "kitsch": /[✨🌟💫⭐🌠🎀🦋🌸🌺🌷🌹🌼💐🎆🎇🏵️]/gu,
+  "glitzer": /[✨🌟💫⭐🌠🎆🎇]/gu,
+  "sparkle": /[✨🌟💫⭐🌠🎆🎇]/gu,
+  "feuer": /🔥/gu,
+  "fire": /🔥/gu,
+  "kuss": /[💋😘😗😚😙]/gu,
+  "kiss": /[💋😘😗😚😙]/gu,
+};
+
+function buildForbiddenEmojiRegex(nogoTerms: string[]): RegExp | null {
+  const patterns: string[] = [];
+  for (const term of nogoTerms) {
+    const lowerTerm = term.toLowerCase();
+    const mapped = EMOJI_TERM_MAP[lowerTerm];
+    if (mapped) {
+      patterns.push(mapped.source);
+    }
+  }
+  if (patterns.length === 0) return null;
+  return new RegExp(patterns.join("|"), "gu");
+}
+
+function sanitizeReply(text: string, forbiddenEmojiRegex: RegExp | null): string {
+  let t = (text || "").trim();
+  if (forbiddenEmojiRegex) {
+    t = t.replace(forbiddenEmojiRegex, "");
+  }
+  return t.replace(/\s{2,}/g, " ").trim();
+}
 
 interface QueueItem {
   id: string;
@@ -36,6 +72,7 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
   const [isOpen, setIsOpen] = useState(false);
   const [isForcing, setIsForcing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [emojiNogoTerms, setEmojiNogoTerms] = useState<string[]>([]);
   
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -60,8 +97,21 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
     }
   };
 
+  // Load emoji nogo terms
+  const loadEmojiNogoTerms = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("emoji_nogo_terms")
+        .select("term");
+      setEmojiNogoTerms(data?.map((t) => t.term) || []);
+    } catch (err) {
+      console.error("Error loading emoji nogo terms:", err);
+    }
+  }, []);
+
   useEffect(() => {
     loadQueue();
+    loadEmojiNogoTerms();
     
     // Subscribe to realtime changes
     const channel = supabase
@@ -83,7 +133,7 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [onQueueChange]);
+  }, [onQueueChange, loadEmojiNogoTerms]);
 
   const forceProcessQueue = async () => {
     setIsForcing(true);
@@ -143,9 +193,18 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
     
     setIsSaving(true);
     try {
+      // Sanitize the text to remove forbidden emojis before saving
+      const forbiddenEmojiRegex = buildForbiddenEmojiRegex(emojiNogoTerms);
+      const sanitizedText = sanitizeReply(editingText.trim(), forbiddenEmojiRegex);
+      
+      // Notify user if emojis were removed
+      if (sanitizedText !== editingText.trim()) {
+        toast.info("Verbotene Emojis wurden entfernt");
+      }
+      
       const { error } = await supabase
         .from("comment_reply_queue")
-        .update({ reply_text: editingText.trim() })
+        .update({ reply_text: sanitizedText })
         .eq("id", editingId);
       
       if (error) throw error;
