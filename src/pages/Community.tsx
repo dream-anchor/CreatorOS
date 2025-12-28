@@ -48,6 +48,7 @@ interface Comment {
     caption: string | null;
     original_media_url: string | null;
     original_ig_permalink: string | null;
+    published_at: string | null;
   } | null;
 }
 
@@ -105,11 +106,12 @@ export default function Community() {
     },
   });
 
-  // Fetch comments with post context
+  // Fetch comments
   const { data: rawComments = [], isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['community-comments'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // First fetch comments
+      const { data: commentsData, error: commentsError } = await supabase
         .from("instagram_comments")
         .select(`
           id, 
@@ -118,21 +120,47 @@ export default function Community() {
           comment_timestamp, 
           ai_reply_suggestion, 
           ig_comment_id, 
-          ig_media_id,
-          post:posts!instagram_comments_post_id_fkey (
-            id,
-            caption,
-            original_media_url,
-            original_ig_permalink
-          )
+          ig_media_id
         `)
         .eq("is_replied", false)
         .eq("is_hidden", false)
         .order("comment_timestamp", { ascending: false })
         .limit(50);
       
-      if (error) throw error;
-      return data as Comment[];
+      if (commentsError) throw commentsError;
+      
+      // Get unique ig_media_ids
+      const igMediaIds = [...new Set(commentsData.map(c => c.ig_media_id).filter(Boolean))];
+      
+      // Fetch posts by ig_media_id
+      let postsMap: Record<string, { id: string; caption: string | null; original_media_url: string | null; original_ig_permalink: string | null; published_at: string | null }> = {};
+      
+      if (igMediaIds.length > 0) {
+        const { data: postsData, error: postsError } = await supabase
+          .from("posts")
+          .select("id, caption, original_media_url, original_ig_permalink, ig_media_id, published_at")
+          .in("ig_media_id", igMediaIds);
+        
+        if (!postsError && postsData) {
+          postsData.forEach(post => {
+            if (post.ig_media_id) {
+              postsMap[post.ig_media_id] = {
+                id: post.id,
+                caption: post.caption,
+                original_media_url: post.original_media_url,
+                original_ig_permalink: post.original_ig_permalink,
+                published_at: post.published_at,
+              };
+            }
+          });
+        }
+      }
+      
+      // Merge posts into comments
+      return commentsData.map(comment => ({
+        ...comment,
+        post: postsMap[comment.ig_media_id] || null,
+      })) as Comment[];
     },
     staleTime: 30000,
   });
