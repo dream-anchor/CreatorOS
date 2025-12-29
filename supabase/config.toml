@@ -92,3 +92,6 @@ verify_jwt = false
 
 [functions.shortcut-upload]
 verify_jwt = false
+
+[functions.like-comments-batch]
+verify_jwt = false
