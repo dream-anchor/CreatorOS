@@ -89,3 +89,6 @@ verify_jwt = false
 
 [functions.process-smart-upload]
 verify_jwt = false
+
+[functions.shortcut-upload]
+verify_jwt = false
