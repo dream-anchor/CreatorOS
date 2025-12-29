@@ -95,3 +95,12 @@ verify_jwt = false
 
 [functions.like-comments-batch]
 verify_jwt = false
+
+[functions.test-like-comment]
+verify_jwt = false
+
+[functions.check-permissions]
+verify_jwt = false
+
+[functions.verify-comment-like]
+verify_jwt = false
