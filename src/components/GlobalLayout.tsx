@@ -50,57 +50,60 @@ function GenerationIndicator({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div 
-      className="mx-3 mb-2 p-3 rounded-xl bg-primary/10 border border-primary/20 cursor-pointer hover:bg-primary/15 transition-colors"
+      className="mt-2 p-2.5 rounded-xl bg-primary/10 border border-primary/20 cursor-pointer hover:bg-primary/15 transition-colors"
       onClick={() => {
         navigate("/community");
         onNavigate?.();
       }}
     >
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-          <Brain className="h-4 w-4 text-primary animate-pulse" />
+      {/* Row 1: Icon + Label */}
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+          <Brain className="h-3.5 w-3.5 text-primary animate-pulse" />
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-foreground truncate">
-            Generiere Antworten
-          </p>
-          <p className="text-[10px] text-muted-foreground">
-            {progress.current} / {progress.total}
-          </p>
-        </div>
+        <span className="text-xs font-medium text-foreground">
+          Generiere...
+        </span>
+      </div>
+      
+      {/* Row 2: Progress info + Cancel */}
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-muted-foreground">
+          {progress.current} / {progress.total}
+        </span>
         <div className="flex items-center gap-1.5">
           {/* Mini progress ring */}
-          <div className="relative w-7 h-7">
-            <svg className="w-7 h-7 -rotate-90">
+          <div className="relative w-6 h-6">
+            <svg className="w-6 h-6 -rotate-90">
               <circle
-                cx="14"
-                cy="14"
-                r="10"
+                cx="12"
+                cy="12"
+                r="9"
                 stroke="currentColor"
-                strokeWidth="2.5"
+                strokeWidth="2"
                 fill="none"
                 className="text-muted"
               />
               <circle
-                cx="14"
-                cy="14"
-                r="10"
+                cx="12"
+                cy="12"
+                r="9"
                 stroke="currentColor"
-                strokeWidth="2.5"
+                strokeWidth="2"
                 fill="none"
-                strokeDasharray={62.8}
-                strokeDashoffset={62.8 - (62.8 * percentage) / 100}
+                strokeDasharray={56.5}
+                strokeDashoffset={56.5 - (56.5 * percentage) / 100}
                 className="text-primary transition-all duration-300"
               />
             </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-[8px] font-medium">
+            <span className="absolute inset-0 flex items-center justify-center text-[7px] font-medium">
               {percentage}%
             </span>
           </div>
           <Button
             size="icon"
             variant="ghost"
-            className="h-6 w-6"
+            className="h-5 w-5"
             onClick={(e) => {
               e.stopPropagation();
               cancelGeneration();
