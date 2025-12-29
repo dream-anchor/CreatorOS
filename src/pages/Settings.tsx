@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Instagram, ScrollText, Sliders, Fingerprint, Hash, Wrench } from "lucide-react";
+import { Instagram, ScrollText, Sliders, Fingerprint, Hash, Wrench, Smartphone } from "lucide-react";
 import MetaConnectionTab from "@/components/settings/MetaConnectionTab";
 import LogsTab from "@/components/settings/LogsTab";
 import GeneralSettingsTab from "@/components/settings/GeneralSettingsTab";
 import SystemStatusTab from "@/components/settings/SystemStatusTab";
+import MobileUploadTab from "@/components/settings/MobileUploadTab";
 import { Link } from "react-router-dom";
 
 export default function SettingsPage() {
@@ -44,6 +45,13 @@ export default function SettingsPage() {
             >
               <Instagram className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Instagram</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="mobile" 
+              className="flex items-center gap-1.5 sm:gap-2 data-[state=active]:bg-primary/20 data-[state=active]:text-primary rounded-lg px-2.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm"
+            >
+              <Smartphone className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Mobile</span>
             </TabsTrigger>
             <TabsTrigger 
               value="system" 
@@ -99,6 +107,10 @@ export default function SettingsPage() {
 
           <TabsContent value="instagram" className="mt-4 sm:mt-6">
             <MetaConnectionTab />
+          </TabsContent>
+
+          <TabsContent value="mobile" className="mt-4 sm:mt-6">
+            <MobileUploadTab />
           </TabsContent>
 
           <TabsContent value="system" className="mt-4 sm:mt-6">
