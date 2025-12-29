@@ -14,7 +14,7 @@ export default function SettingsPage() {
 
   return (
     <GlobalLayout>
-      <div className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 sm:space-y-6">
           <TabsList className="glass-card p-1 h-auto flex flex-wrap gap-1">
