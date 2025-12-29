@@ -18,13 +18,16 @@ serve(async (req) => {
 
     console.log('[like-comments-batch] Starting batch like operation...');
 
-    // Get all sent replies that we need to like
-    const { data: sentReplies, error: fetchError } = await supabase
-      .from('comment_reply_queue')
+    // Get all replied comments from instagram_comments table
+    const { data: repliedComments, error: fetchError } = await supabase
+      .from('instagram_comments')
       .select('ig_comment_id, user_id')
-      .eq('status', 'sent');
+      .eq('is_replied', true);
 
     if (fetchError) throw fetchError;
+
+    // Rename for consistency
+    const sentReplies = repliedComments;
 
     if (!sentReplies || sentReplies.length === 0) {
       return new Response(JSON.stringify({
