@@ -323,119 +323,150 @@ export default function CalendarPage() {
 
   return (
     <GlobalLayout>
-      <div className="p-4 sm:p-6">
-      <div className="grid gap-4 sm:gap-6 lg:grid-cols-4">
-        {/* Unscheduled Posts */}
-        <div className="lg:col-span-1 order-2 lg:order-1">
-          <Card className="glass-card">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">
-                Bereit zur Planung
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {getUnscheduledApproved().length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Keine genehmigten Posts
-                </p>
-              ) : (
-                getUnscheduledApproved().map((post) => (
-                  <div
-                    key={post.id}
-                    onClick={() => openScheduleDialog(post)}
-                    className="p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <StatusBadge status={post.status} />
-                      {post.remixed_from_id && (
-                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
-                          <Recycle className="h-3 w-3 mr-1" />
-                          Remix
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm mt-2 line-clamp-2">{post.caption}</p>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+      <div className="p-4 sm:p-6 lg:p-8">
+        {/* Week Navigation */}
+        <div className="flex items-center justify-between mb-4 lg:mb-6">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -7))}
+          >
+            ← Vorherige
+          </Button>
+          <div className="flex items-center gap-2 text-sm sm:text-base font-medium">
+            <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+            <span>
+              {format(currentWeekStart, "d. MMM", { locale: de })} –{" "}
+              {format(endOfWeek(currentWeekStart, { weekStartsOn: 1 }), "d. MMM yyyy", { locale: de })}
+            </span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 7))}
+          >
+            Nächste →
+          </Button>
         </div>
 
-        {/* Week Calendar */}
-        <div className="lg:col-span-3 order-1 lg:order-2">
-          <Card className="glass-card">
-            <CardHeader className="pb-3 sm:pb-4">
-              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-                <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span className="truncate">
-                  {format(currentWeekStart, "d. MMM", { locale: de })} -{" "}
-                  {format(endOfWeek(currentWeekStart, { weekStartsOn: 1 }), "d. MMM yyyy", {
-                    locale: de,
-                  })}
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-7 gap-2 sm:gap-3">
-                {weekDays.map((day) => {
-                  const dayPosts = getPostsForDay(day);
-                  const isToday = isSameDay(day, new Date());
-
-                  return (
+        <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+          {/* Unscheduled Posts - Below on mobile, left on desktop */}
+          <div className="order-2 lg:order-1 lg:w-64 xl:w-72 flex-shrink-0">
+            <Card className="glass-card">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center justify-between">
+                  Bereit zur Planung
+                  <Badge variant="secondary" className="ml-2">
+                    {getUnscheduledApproved().length}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 max-h-[300px] lg:max-h-[calc(100vh-280px)] overflow-y-auto">
+                {getUnscheduledApproved().length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Keine genehmigten Posts
+                  </p>
+                ) : (
+                  getUnscheduledApproved().map((post) => (
                     <div
-                      key={day.toISOString()}
-                      className={`min-h-[120px] sm:min-h-[160px] p-2 sm:p-3 rounded-xl border-2 ${
-                        isToday ? "border-primary bg-primary/5" : "border-border/50"
-                      }`}
+                      key={post.id}
+                      onClick={() => openScheduleDialog(post)}
+                      className="p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors"
                     >
-                      <div className="text-center mb-2">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                          {format(day, "EEE", { locale: de })}
-                        </p>
-                        <p
-                          className={`text-xl sm:text-2xl font-bold ${
-                            isToday ? "text-primary" : ""
-                          }`}
-                        >
-                          {format(day, "d")}
-                        </p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <StatusBadge status={post.status} />
+                        {post.remixed_from_id && (
+                          <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
+                            <Recycle className="h-3 w-3 mr-1" />
+                            Remix
+                          </Badge>
+                        )}
                       </div>
-                      <div className="space-y-1.5">
-                        {dayPosts.map((post) => (
-                          <div
-                            key={post.id}
-                            onClick={() => openScheduleDialog(post)}
-                            className="p-2 rounded-lg bg-muted/60 hover:bg-muted cursor-pointer transition-colors"
-                          >
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                              <span className="text-xs text-muted-foreground">
-                                {post.scheduled_at &&
-                                  format(new Date(post.scheduled_at), "HH:mm")}
-                              </span>
-                            </div>
-                            <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                              post.status === "PUBLISHED" 
-                                ? "bg-emerald-500/20 text-emerald-600" 
-                                : post.status === "SCHEDULED"
-                                ? "bg-primary/20 text-primary"
-                                : "bg-muted-foreground/20 text-muted-foreground"
-                            }`}>
-                              {post.status === "PUBLISHED" ? "Veröff." : post.status === "SCHEDULED" ? "Geplant" : post.status}
-                            </span>
-                            <p className="text-xs line-clamp-2 mt-1">{post.caption}</p>
-                          </div>
-                        ))}
-                      </div>
+                      <p className="text-sm mt-2 line-clamp-2">{post.caption}</p>
                     </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Week Calendar - Full width */}
+          <div className="order-1 lg:order-2 flex-1 min-w-0">
+            <Card className="glass-card">
+              <CardContent className="p-3 sm:p-4 lg:p-6">
+                {/* Responsive Grid: 2 cols mobile, 4 cols tablet, 7 cols desktop */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3">
+                  {weekDays.map((day) => {
+                    const dayPosts = getPostsForDay(day);
+                    const isToday = isSameDay(day, new Date());
+
+                    return (
+                      <div
+                        key={day.toISOString()}
+                        className={`min-h-[120px] sm:min-h-[140px] lg:min-h-[160px] p-2 sm:p-3 rounded-xl border-2 transition-colors ${
+                          isToday ? "border-primary bg-primary/5" : "border-border/50 hover:border-border"
+                        }`}
+                      >
+                        <div className="text-center mb-2">
+                          <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
+                            {format(day, "EEE", { locale: de })}
+                          </p>
+                          <p
+                            className={`text-lg sm:text-xl lg:text-2xl font-bold ${
+                              isToday ? "text-primary" : ""
+                            }`}
+                          >
+                            {format(day, "d")}
+                          </p>
+                        </div>
+                        <div className="space-y-1.5 max-h-[80px] sm:max-h-[100px] overflow-y-auto">
+                          {dayPosts.map((post) => (
+                            <div
+                              key={post.id}
+                              onClick={() => openScheduleDialog(post)}
+                              className="p-1.5 sm:p-2 rounded-lg bg-muted/60 hover:bg-muted cursor-pointer transition-colors"
+                            >
+                              <div className="flex items-center gap-1 mb-0.5">
+                                <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-muted-foreground flex-shrink-0" />
+                                <span className="text-[10px] sm:text-xs text-muted-foreground">
+                                  {post.scheduled_at &&
+                                    format(new Date(post.scheduled_at), "HH:mm")}
+                                </span>
+                              </div>
+                              {/* Compact status: icon only on mobile, text on larger screens */}
+                              <span className={`inline-flex items-center text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 rounded-full font-medium ${
+                                post.status === "PUBLISHED" 
+                                  ? "bg-emerald-500/20 text-emerald-600" 
+                                  : post.status === "SCHEDULED"
+                                  ? "bg-primary/20 text-primary"
+                                  : "bg-muted-foreground/20 text-muted-foreground"
+                              }`}>
+                                {post.status === "PUBLISHED" ? (
+                                  <>
+                                    <span className="hidden sm:inline">Veröff.</span>
+                                    <span className="sm:hidden">✓</span>
+                                  </>
+                                ) : post.status === "SCHEDULED" ? (
+                                  <>
+                                    <span className="hidden sm:inline">Geplant</span>
+                                    <span className="sm:hidden">◷</span>
+                                  </>
+                                ) : (
+                                  post.status
+                                )}
+                              </span>
+                              <p className="text-[10px] sm:text-xs line-clamp-1 sm:line-clamp-2 mt-0.5">{post.caption}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
 
       {/* Schedule Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

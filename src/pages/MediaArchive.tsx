@@ -420,7 +420,7 @@ export default function MediaArchivePage() {
 
   return (
     <GlobalLayout>
-      <div className="p-6">
+      <div className="p-4 sm:p-6 lg:p-8">
       <input
         id="media-upload"
         type="file"
@@ -473,7 +473,7 @@ export default function MediaArchivePage() {
       {assets.length > 0 && (
         <div className="space-y-6">
           {/* Stats, AI Analyze & Filter */}
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             <div className="glass-card px-4 py-3 rounded-xl">
               <p className="text-2xl font-bold text-foreground">{assets.length}</p>
               <p className="text-sm text-muted-foreground">Bilder</p>
