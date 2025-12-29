@@ -10,11 +10,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Post, Asset } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Calendar as CalendarIcon, Clock, Recycle, X, Plus, GripVertical, ImageIcon, Users } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, Clock, Recycle, X, Plus, GripVertical, ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { format, startOfWeek, endOfWeek, addDays, isSameDay } from "date-fns";
 import { de } from "date-fns/locale";
+import { CollaboratorAutocomplete } from "@/components/CollaboratorAutocomplete";
 
 export default function CalendarPage() {
   const { user } = useAuth();
@@ -33,7 +34,6 @@ export default function CalendarPage() {
   const [saving, setSaving] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [collaborators, setCollaborators] = useState<string[]>([]);
-  const [newCollaborator, setNewCollaborator] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -88,7 +88,6 @@ export default function CalendarPage() {
     // Load collaborators
     const postCollaborators = (post as any).collaborators || [];
     setCollaborators(postCollaborators);
-    setNewCollaborator("");
     if (post.scheduled_at) {
       const date = new Date(post.scheduled_at);
       setScheduleDate(format(date, "yyyy-MM-dd"));
@@ -98,19 +97,6 @@ export default function CalendarPage() {
       setScheduleTime("12:00");
     }
     setDialogOpen(true);
-  };
-
-  const addCollaborator = () => {
-    if (!newCollaborator.trim()) return;
-    const username = newCollaborator.trim().replace(/^@/, "");
-    if (username && !collaborators.includes(username)) {
-      setCollaborators([...collaborators, username]);
-    }
-    setNewCollaborator("");
-  };
-
-  const removeCollaborator = (username: string) => {
-    setCollaborators(collaborators.filter(c => c !== username));
   };
 
   const handleDeleteAsset = async (asset: Asset) => {
@@ -570,48 +556,10 @@ export default function CalendarPage() {
               </div>
 
               {/* Collaborators */}
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Collaborators (Collab-Post)
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="@username"
-                    value={newCollaborator}
-                    onChange={(e) => setNewCollaborator(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addCollaborator();
-                      }
-                    }}
-                    className="flex-1"
-                  />
-                  <Button type="button" variant="outline" size="icon" onClick={addCollaborator}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-                {collaborators.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {collaborators.map((username) => (
-                      <Badge key={username} variant="secondary" className="gap-1 pr-1">
-                        @{username}
-                        <button
-                          type="button"
-                          onClick={() => removeCollaborator(username)}
-                          className="ml-1 hover:bg-muted rounded-full p-0.5"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Diese User erhalten eine Collab-Einladung beim Posten
-                </p>
-              </div>
+              <CollaboratorAutocomplete
+                collaborators={collaborators}
+                onChange={setCollaborators}
+              />
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
