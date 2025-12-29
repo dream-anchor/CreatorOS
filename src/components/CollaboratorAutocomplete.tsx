@@ -124,8 +124,18 @@ export function CollaboratorAutocomplete({ collaborators, onChange }: Collaborat
           <Input
             ref={inputRef}
             placeholder="@username eingeben..."
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            value={inputValue.startsWith("@") ? inputValue : inputValue ? `@${inputValue}` : ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              // Always ensure @ prefix when there's content
+              if (val === "" || val === "@") {
+                setInputValue("");
+              } else if (val.startsWith("@")) {
+                setInputValue(val);
+              } else {
+                setInputValue(`@${val}`);
+              }
+            }}
             onFocus={() => setShowSuggestions(true)}
             onKeyDown={handleKeyDown}
             className="flex-1"
