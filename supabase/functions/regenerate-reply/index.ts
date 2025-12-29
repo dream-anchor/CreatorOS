@@ -29,6 +29,123 @@ function isEmojiOnly(text: string): boolean {
   return !hasLettersOrNumbers((text || "").trim());
 }
 
+// --- Tone detection: Sincere vs Humorous ---
+type CommentTone = "sincere" | "humorous" | "neutral";
+
+function detectCommentTone(commentText: string): CommentTone {
+  const text = (commentText || "").toLowerCase().trim();
+  
+  // Patterns indicating SINCERE/EARNEST comments (require heartfelt, simple responses)
+  const sincerePatterns = [
+    // Compliments about relationships/people
+    /süßes?\s*paar/i,
+    /schönes?\s*paar/i,
+    /tolles?\s*paar/i,
+    /niedliches?\s*paar/i,
+    /perfektes?\s*paar/i,
+    /traumhaftes?\s*paar/i,
+    /ihr\s+passt\s+.*zusammen/i,
+    /ihr\s+seid\s+.*süß/i,
+    /ihr\s+seid\s+.*toll/i,
+    /ihr\s+seid\s+.*schön/i,
+    // Personal compliments
+    /du\s+bist\s+.*schön/i,
+    /du\s+bist\s+.*toll/i,
+    /du\s+bist\s+.*super/i,
+    /du\s+bist\s+.*inspirierend/i,
+    /du\s+bist\s+.*wunderbar/i,
+    /du\s+bist\s+.*fantastisch/i,
+    // Gratulations/wishes
+    /herzlichen\s+glückwunsch/i,
+    /alles\s+gute/i,
+    /viel\s+glück/i,
+    /viel\s+erfolg/i,
+    /freut\s+mich\s+für/i,
+    /ich\s+wünsche/i,
+    /glückwunsch/i,
+    // Condolences/support
+    /mein\s+beileid/i,
+    /tut\s+mir\s+leid/i,
+    /gute\s+besserung/i,
+    /bleib\s+stark/i,
+    /ich\s+denke?\s+an\s+dich/i,
+    // Appreciation/thanks
+    /vielen\s+dank/i,
+    /danke\s+für/i,
+    /inspirierst\s+mich/i,
+    /macht\s+mich\s+glücklich/i,
+    /berührt\s+mich/i,
+    // Serious questions
+    /wie\s+hast\s+du\s+.*geschafft/i,
+    /woher\s+hast\s+du/i,
+    /kannst\s+du\s+mir\s+.*erklären/i,
+    /was\s+rätst\s+du/i,
+    /darf\s+ich\s+.*fragen/i,
+    /hätte\s+.*frage/i,
+    // Pure positive affirmations (not joke-like)
+    /respekt/i,
+    /bewundere/i,
+    /großartig/i,
+    /wunderschön/i,
+    /bezaubernd/i,
+  ];
+  
+  // Patterns indicating HUMOROUS context (playful banter ok)
+  const humorPatterns = [
+    /haha/i,
+    /😂/,
+    /🤣/,
+    /lol/i,
+    /rofl/i,
+    /witzig/i,
+    /lustig/i,
+    /zu\s+geil/i,
+    /mega\s+geil/i,
+    /krass/i,
+    /digga/i,
+    /alter/i,
+    /ey\s/i,
+    /diggi/i,
+  ];
+  
+  // Check for sincere patterns first (they take priority)
+  for (const pattern of sincerePatterns) {
+    if (pattern.test(text)) {
+      return "sincere";
+    }
+  }
+  
+  // Check for humor patterns
+  for (const pattern of humorPatterns) {
+    if (pattern.test(text)) {
+      return "humorous";
+    }
+  }
+  
+  return "neutral";
+}
+
+function getToneInstruction(tone: CommentTone): string {
+  switch (tone) {
+    case "sincere":
+      return `\n\nWICHTIG - TON-ANPASSUNG (HERZLICH/ERNST):
+Der Kommentar ist ein ernstes Kompliment, eine herzliche Nachricht oder eine ernsthafte Frage.
+→ Antworte WARMHERZIG und AUFRICHTIG, NICHT witzig oder flapsig.
+→ Ein einfaches "Vielen Dank! 🙏😊" oder "Das bedeutet mir sehr viel, danke! 🙌" ist perfekt.
+→ Sei kurz, herzlich und authentisch - keine Witze, keine übertriebene Coolness.
+→ Zeige echte Wertschätzung für das nette Feedback.`;
+    
+    case "humorous":
+      return `\n\nTON-ANPASSUNG (HUMORVOLL):
+Der Kommentar hat einen lockeren, lustigen Vibe.
+→ Du kannst gerne witzig und spielerisch antworten.
+→ Humor und Banter sind hier willkommen!`;
+    
+    default:
+      return ""; // Neutral = use default tone from brand rules
+  }
+}
+
 // --- strict output guards
 const CTA_PATTERNS = [
   /link\s+in\s+bio/i,
@@ -361,6 +478,11 @@ serve(async (req) => {
       formalityInstruction = "Antworte IMMER mit \"Du\".";
     }
 
+    // Detect comment tone for appropriate response style
+    const commentTone = detectCommentTone(comment.comment_text);
+    const toneInstruction = getToneInstruction(commentTone);
+    console.log(`[regenerate-reply] Comment ${comment_id} detected tone: ${commentTone}`);
+
     // Vision-enhanced section
     const visionSection = validatedImageUrl ? `
 ===== VISUELLER KONTEXT (WICHTIG!) =====
@@ -371,7 +493,7 @@ Beispiel: Wenn jemand "Wow!" schreibt und auf dem Bild ist ein Hund → Antworte
 ========================================` : '';
 
     // System prompt (dynamic persona engine)
-    const systemPrompt = `ROLE: Du bist ICH (Antoine). Du bist kein Assistent und keine Marke.\n\nSTYLE-GUIDE (echte Beispiele von mir):\n${examplesBlock}\n\nANALYSE: Kopiere Vibe, Satzlänge, Kleinschreibung/Formatierung und Emoji-Nutzung dieser Beispiele so exakt wie möglich.\n\nREGELN (hart, niemals brechen):\n- Perspektive: IMMER 1. Person Singular (\"Ich\"). Niemals \"Wir/Uns/Unser\".\n- Keine Hashtags (#) – absolut verboten.\n- Keine Signaturen (z.B. \"LG\", \"Grüße\", \"Dein Team\", \"@support\", \"@team\").\n- Keine CTAs (\"Link in Bio\", \"schau mal vorbei\", \"mehr Infos\"), außer der Fan fragt explizit danach.\n- Schreibe kurz, natürlich, wie vom Handy (1–2 Sätze).${emojiConstraint}\n\nSPRACHE: ${language === "DE" ? "Deutsch" : language}\nTONALITÄT: ${toneStyle}${writingStyle ? `\nSTIL-HINWEIS: ${writingStyle}` : ""}\nFORMALITÄT: ${formalityInstruction}${visionSection}`;
+    const systemPrompt = `ROLE: Du bist ICH (Antoine). Du bist kein Assistent und keine Marke.\n\nSTYLE-GUIDE (echte Beispiele von mir):\n${examplesBlock}\n\nANALYSE: Kopiere Vibe, Satzlänge, Kleinschreibung/Formatierung und Emoji-Nutzung dieser Beispiele so exakt wie möglich.\n\nREGELN (hart, niemals brechen):\n- Perspektive: IMMER 1. Person Singular (\"Ich\"). Niemals \"Wir/Uns/Unser\".\n- Keine Hashtags (#) – absolut verboten.\n- Keine Signaturen (z.B. \"LG\", \"Grüße\", \"Dein Team\", \"@support\", \"@team\").\n- Keine CTAs (\"Link in Bio\", \"schau mal vorbei\", \"mehr Infos\"), außer der Fan fragt explizit danach.\n- Schreibe kurz, natürlich, wie vom Handy (1–2 Sätze).${emojiConstraint}\n\nSPRACHE: ${language === "DE" ? "Deutsch" : language}\nTONALITÄT: ${toneStyle}${writingStyle ? `\nSTIL-HINWEIS: ${writingStyle}` : ""}\nFORMALITÄT: ${formalityInstruction}${toneInstruction}${visionSection}`;
 
     // User message (A/B context injection) - mention image if present
     const imageContextHint = validatedImageUrl ? "\n\nC) BILD (siehe beigefügtes Bild - beschreibe was du siehst und beziehe dich darauf!)" : "";
