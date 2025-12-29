@@ -91,6 +91,12 @@ serve(async (req) => {
 
     let igMediaId: string;
 
+    // Parse collaborators (for collab invite)
+    const collaborators: string[] = post.collaborators || [];
+    if (collaborators.length > 0) {
+      console.log(`[publish-to-instagram] Collaborators: ${collaborators.join(", ")}`);
+    }
+
     // Check if this is a carousel (multiple images) or single image
     if (assets.length === 1) {
       // Single image post
@@ -100,7 +106,8 @@ serve(async (req) => {
         accessToken,
         assets[0].public_url,
         fullCaption,
-        post.alt_text
+        post.alt_text,
+        collaborators
       );
     } else {
       // Carousel post (2-10 images)
@@ -109,7 +116,8 @@ serve(async (req) => {
         igUserId,
         accessToken,
         assets.map(a => a.public_url),
-        fullCaption
+        fullCaption,
+        collaborators
       );
     }
 
@@ -151,7 +159,8 @@ async function publishSingleImage(
   accessToken: string,
   imageUrl: string,
   caption: string,
-  altText?: string
+  altText?: string,
+  collaborators?: string[]
 ): Promise<string> {
   // Step 1: Create media container
   console.log("[publish-to-instagram] Creating single image container...");
@@ -164,6 +173,14 @@ async function publishSingleImage(
 
   if (altText) {
     containerParams.append("alt_text", altText);
+  }
+
+  // Add collaborators as collab invite (if any)
+  // Instagram uses collaborator_usernames parameter for collab posts
+  if (collaborators && collaborators.length > 0) {
+    // Instagram API expects usernames as JSON array string
+    containerParams.append("collaborators", JSON.stringify(collaborators));
+    console.log(`[publish-to-instagram] Adding collaborators: ${collaborators.join(", ")}`);
   }
 
   const containerResponse = await fetch(`${containerUrl}?${containerParams}`, {
@@ -192,7 +209,8 @@ async function publishCarousel(
   igUserId: string,
   accessToken: string,
   imageUrls: string[],
-  caption: string
+  caption: string,
+  collaborators?: string[]
 ): Promise<string> {
   // Instagram carousel supports 2-10 items
   const validUrls = imageUrls.slice(0, 10);
@@ -252,6 +270,12 @@ async function publishCarousel(
     children: childContainerIds.join(","),
     access_token: accessToken,
   });
+
+  // Add collaborators for carousel
+  if (collaborators && collaborators.length > 0) {
+    carouselParams.append("collaborators", JSON.stringify(collaborators));
+    console.log(`[publish-to-instagram] Adding collaborators to carousel: ${collaborators.join(", ")}`);
+  }
 
   const carouselResponse = await fetch(`${carouselUrl}?${carouselParams}`, {
     method: "POST",

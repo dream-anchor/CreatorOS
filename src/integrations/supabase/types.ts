@@ -637,6 +637,7 @@ export type Database = {
           caption_alt: string | null
           caption_short: string | null
           category: string | null
+          collaborators: string[] | null
           comments_count: number | null
           created_at: string
           engagement_rate: number | null
@@ -672,6 +673,7 @@ export type Database = {
           caption_alt?: string | null
           caption_short?: string | null
           category?: string | null
+          collaborators?: string[] | null
           comments_count?: number | null
           created_at?: string
           engagement_rate?: number | null
@@ -707,6 +709,7 @@ export type Database = {
           caption_alt?: string | null
           caption_short?: string | null
           category?: string | null
+          collaborators?: string[] | null
           comments_count?: number | null
           created_at?: string
           engagement_rate?: number | null
