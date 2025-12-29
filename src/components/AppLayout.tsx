@@ -1,7 +1,12 @@
 import { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
 import { ThemeToggle } from "./ThemeToggle";
 import { CoPilot } from "./community/CoPilot";
+import { Button } from "./ui/button";
+import { LogOut } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -11,6 +16,14 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, title, description, actions }: AppLayoutProps) {
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    toast.success("Erfolgreich abgemeldet");
+    navigate("/login");
+  };
+
   return (
     <div className="min-h-screen relative bg-background">
       {/* Aurora Background Effects - only in dark mode */}
@@ -39,6 +52,15 @@ export function AppLayout({ children, title, description, actions }: AppLayoutPr
             <div className="flex items-center gap-4">
               {actions}
               <ThemeToggle />
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={handleSignOut}
+                className="text-muted-foreground hover:text-foreground"
+                title="Abmelden"
+              >
+                <LogOut className="h-5 w-5" />
+              </Button>
             </div>
           </div>
           

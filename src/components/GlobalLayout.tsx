@@ -1,8 +1,10 @@
 import { ReactNode, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BottomChat } from "@/components/BottomChat";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import {
   Home,
   MessageCircle,
@@ -12,7 +14,7 @@ import {
   Settings,
   Sparkles,
   Menu,
-  X,
+  LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -33,7 +35,14 @@ const navItems = [
 
 function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const isActive = (href: string) => location.pathname === href;
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    toast.success("Erfolgreich abgemeldet");
+    navigate("/login");
+  };
 
   return (
     <>
@@ -69,11 +78,18 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-border/30 p-4">
+      <div className="border-t border-border/30 p-4 space-y-2">
         <div className="flex items-center justify-between px-2">
           <span className="text-xs text-muted-foreground">Theme</span>
           <ThemeToggle />
         </div>
+        <button
+          onClick={handleSignOut}
+          className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-all"
+        >
+          <LogOut className="h-5 w-5" />
+          Abmelden
+        </button>
       </div>
     </>
   );
