@@ -177,6 +177,7 @@ serve(async (req) => {
     console.log(`[shortcut-upload] Format detected: ${format}`);
 
     // Step 2: Upload files to storage
+    const uploadedFiles: { storagePath: string; publicUrl: string }[] = [];
     const uploadedUrls: string[] = [];
     const slides: any[] = [];
 
@@ -216,6 +217,8 @@ serve(async (req) => {
         .getPublicUrl(fileName);
 
       const publicUrl = publicUrlData.publicUrl;
+
+      uploadedFiles.push({ storagePath: fileName, publicUrl });
       uploadedUrls.push(publicUrl);
 
       slides.push({
@@ -344,17 +347,38 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
 
     console.log(`[shortcut-upload] Post created: ${post.id}`);
 
-    // Step 7: Create slide assets for carousel
+    // Step 7: Link uploaded images to the post (planner reads assets(*))
+    const { error: assetsError } = await supabase.from("assets").insert(
+      uploadedFiles.map((f) => ({
+        user_id: userId,
+        post_id: post.id,
+        storage_path: f.storagePath,
+        public_url: f.publicUrl,
+      })),
+    );
+
+    if (assetsError) {
+      console.error("[shortcut-upload] Assets creation error:", assetsError);
+      await logError(supabase, userId, `Assets-Erstellung fehlgeschlagen: ${assetsError.message}`, {
+        source: "ios_shortcut",
+        postId: post.id,
+        filesCount: files.length,
+      });
+      // IMPORTANT: don't throw here to avoid creating duplicate scheduled posts on retry
+    }
+
+    // Step 8: Create slide assets for carousel (keeps order)
     if (format === "carousel") {
-      for (let i = 0; i < uploadedUrls.length; i++) {
+      for (let i = 0; i < uploadedFiles.length; i++) {
         await supabase.from("slide_assets").insert({
           user_id: userId,
           post_id: post.id,
           slide_index: i,
-          public_url: uploadedUrls[i],
+          public_url: uploadedFiles[i].publicUrl,
+          storage_path: uploadedFiles[i].storagePath,
         });
       }
-      console.log(`[shortcut-upload] Created ${uploadedUrls.length} slide assets`);
+      console.log(`[shortcut-upload] Created ${uploadedFiles.length} slide assets`);
     }
 
     // Step 8: Log the successful action
