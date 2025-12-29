@@ -159,10 +159,12 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
             {item.name}
           </Link>
         ))}
-        
-        {/* Generation Indicator - below Settings */}
-        <GenerationIndicator onNavigate={onNavigate} />
       </nav>
+      
+      {/* Generation Indicator - above footer */}
+      <div className="px-3">
+        <GenerationIndicator onNavigate={onNavigate} />
+      </div>
 
       {/* Footer */}
       <div className="border-t border-border/30 p-4 space-y-2">
