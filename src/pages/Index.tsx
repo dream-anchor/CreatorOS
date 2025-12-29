@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { LogOut, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -28,7 +29,23 @@ const Index = () => {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className="relative flex min-h-screen items-center justify-center bg-background">
+      {/* Bottom left controls */}
+      <div className="fixed bottom-4 left-4 flex items-center gap-2 p-2 rounded-xl bg-card/80 backdrop-blur-sm border border-border">
+        <ThemeToggle />
+        {user && (
+          <Button 
+            variant="ghost" 
+            size="icon"
+            onClick={handleSignOut}
+            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+            title="Abmelden"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
       <div className="text-center space-y-6">
         <div className="flex justify-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-accent/15 border border-primary/20">
@@ -42,19 +59,9 @@ const Index = () => {
         </div>
 
         {user ? (
-          <div className="flex flex-col gap-3">
-            <Button onClick={handleGoToDashboard} size="lg" className="min-w-[200px]">
-              Zum Dashboard
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={handleSignOut}
-              className="min-w-[200px] gap-2"
-            >
-              <LogOut className="h-4 w-4" />
-              Abmelden
-            </Button>
-          </div>
+          <Button onClick={handleGoToDashboard} size="lg" className="min-w-[200px]">
+            Zum Dashboard
+          </Button>
         ) : (
           <Button onClick={() => navigate("/login")} size="lg" className="min-w-[200px]">
             Anmelden
