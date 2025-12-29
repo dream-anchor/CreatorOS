@@ -114,24 +114,37 @@ serve(async (req) => {
           continue;
         }
 
-        // 1. Like the comment first
-        const likeUrl = `https://graph.facebook.com/v17.0/${reply.ig_comment_id}/likes`;
+        // 1. Like the original comment first (using v19.0 API)
+        const likeUrl = `https://graph.facebook.com/v19.0/${reply.ig_comment_id}/likes`;
         
-        const likeResponse = await fetch(likeUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            access_token: connection.token_encrypted,
-          }),
-        });
+        let liked = false;
+        try {
+          const likeResponse = await fetch(likeUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              access_token: connection.token_encrypted,
+            }),
+          });
 
-        if (likeResponse.ok) {
-          console.log(`[process-reply-queue] Liked comment ${reply.ig_comment_id}`);
-        } else {
-          const likeError = await likeResponse.json();
-          console.warn(`[process-reply-queue] Could not like comment (non-blocking):`, likeError.error?.message);
+          const likeData = await likeResponse.json();
+          
+          if (likeResponse.ok && likeData.success === true) {
+            console.log(`[process-reply-queue] ✓ Liked comment ${reply.ig_comment_id}`);
+            liked = true;
+            
+            // Mark comment as liked in database
+            await supabase
+              .from('instagram_comments')
+              .update({ is_liked: true })
+              .eq('id', reply.comment_id);
+          } else {
+            console.warn(`[process-reply-queue] Could not like comment: ${likeData.error?.message || 'Unknown'}`);
+          }
+        } catch (likeErr) {
+          console.warn(`[process-reply-queue] Like request failed (non-blocking):`, likeErr);
         }
 
         // 2. Post reply to Instagram
@@ -191,7 +204,7 @@ serve(async (req) => {
             queue_id: reply.id,
             comment_id: reply.comment_id,
             ig_reply_id: responseData.id,
-            liked: likeResponse.ok
+            liked: liked
           }
         });
 

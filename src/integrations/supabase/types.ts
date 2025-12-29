@@ -400,6 +400,7 @@ export type Database = {
           ig_media_id: string
           is_critical: boolean | null
           is_hidden: boolean | null
+          is_liked: boolean | null
           is_replied: boolean | null
           post_id: string | null
           sentiment_score: number | null
@@ -418,6 +419,7 @@ export type Database = {
           ig_media_id: string
           is_critical?: boolean | null
           is_hidden?: boolean | null
+          is_liked?: boolean | null
           is_replied?: boolean | null
           post_id?: string | null
           sentiment_score?: number | null
@@ -436,6 +438,7 @@ export type Database = {
           ig_media_id?: string
           is_critical?: boolean | null
           is_hidden?: boolean | null
+          is_liked?: boolean | null
           is_replied?: boolean | null
           post_id?: string | null
           sentiment_score?: number | null
