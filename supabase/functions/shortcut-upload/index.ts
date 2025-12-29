@@ -152,8 +152,13 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
 
     const body = await req.json();
-    const { files, rawText } = body;
+    const { files, rawText, collaborators } = body;
     userId = body.userId;
+
+    // Parse collaborators (remove @ symbols if present)
+    const parsedCollaborators: string[] = Array.isArray(collaborators) 
+      ? collaborators.map((c: string) => c.replace(/^@/, '').trim()).filter(Boolean)
+      : [];
 
     console.log(`[shortcut-upload] Request metadata - User-Agent: ${userAgent}, Content-Length: ${contentLength}`);
 
@@ -332,9 +337,14 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
         original_media_url: uploadedUrls[0],
         slides: format === "carousel" ? slides : null,
         scheduled_at: scheduledAt.toISOString(),
+        collaborators: parsedCollaborators,
       })
       .select("id")
       .single();
+
+    if (parsedCollaborators.length > 0) {
+      console.log(`[shortcut-upload] Collaborators added: ${parsedCollaborators.join(", ")}`);
+    }
 
     if (postError) {
       console.error("[shortcut-upload] Post creation error:", postError);
@@ -392,6 +402,7 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
         files_count: files.length,
         scheduled_for: scheduledAt.toISOString(),
         raw_text_provided: !!rawText,
+        collaborators: parsedCollaborators,
         source: "ios_shortcut",
         userAgent,
       },
@@ -407,7 +418,10 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
         scheduledDate: scheduledDateFormatted,
         scheduledDay: scheduledDay,
         imagesUploaded: uploadedUrls.length,
-        message: `📸 Post eingeplant für ${scheduledDay}, ${scheduledDateFormatted} um 18:00 Uhr`,
+        collaborators: parsedCollaborators,
+        message: parsedCollaborators.length > 0 
+          ? `📸 Collab-Post eingeplant für ${scheduledDay}, ${scheduledDateFormatted} um 18:00 Uhr (mit ${parsedCollaborators.join(", ")})`
+          : `📸 Post eingeplant für ${scheduledDay}, ${scheduledDateFormatted} um 18:00 Uhr`,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
