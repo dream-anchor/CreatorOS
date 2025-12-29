@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Post, Asset } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Calendar as CalendarIcon, Clock, Recycle, X, Plus } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, Clock, Recycle, X, Plus, GripVertical, ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { format, startOfWeek, endOfWeek, addDays, isSameDay } from "date-fns";
@@ -31,6 +31,7 @@ export default function CalendarPage() {
   const [postAssets, setPostAssets] = useState<Asset[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -70,7 +71,10 @@ export default function CalendarPage() {
   const openScheduleDialog = (post: Post & { assets?: Asset[] }) => {
     setSelectedPost(post);
     setEditCaption(post.caption || "");
-    setPostAssets(post.assets || []);
+    // Ensure assets are properly loaded
+    const assets = post.assets || [];
+    console.log("Loading assets for post:", post.id, assets);
+    setPostAssets(assets);
     if (post.scheduled_at) {
       const date = new Date(post.scheduled_at);
       setScheduleDate(format(date, "yyyy-MM-dd"));
@@ -148,6 +152,42 @@ export default function CalendarPage() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+  // Drag and drop handlers for reordering
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+
+    setPostAssets((prev) => {
+      const newAssets = [...prev];
+      const draggedItem = newAssets[draggedIndex];
+      newAssets.splice(draggedIndex, 1);
+      newAssets.splice(index, 0, draggedItem);
+      return newAssets;
+    });
+    setDraggedIndex(index);
+  }, [draggedIndex]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedIndex(null);
+  }, []);
+
+  // Touch-based reordering for mobile
+  const moveAsset = useCallback((fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= postAssets.length) return;
+    setPostAssets((prev) => {
+      const newAssets = [...prev];
+      const item = newAssets[fromIndex];
+      newAssets.splice(fromIndex, 1);
+      newAssets.splice(toIndex, 0, item);
+      return newAssets;
+    });
+  }, [postAssets.length]);
 
   const handleSchedule = async () => {
     if (!selectedPost || !scheduleDate || !scheduleTime) return;
@@ -335,7 +375,7 @@ export default function CalendarPage() {
 
       {/* Schedule Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Post planen</DialogTitle>
           </DialogHeader>
@@ -344,60 +384,153 @@ export default function CalendarPage() {
             <div className="space-y-4">
               {/* Images Section */}
               <div className="space-y-2">
-                <Label>Bilder</Label>
-                <div className="flex flex-wrap gap-2">
-                  {postAssets.map((asset) => (
-                    <div key={asset.id} className="relative group">
-                      <img
-                        src={asset.public_url || ""}
-                        alt=""
-                        className="w-20 h-20 object-cover rounded-lg border border-border"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteAsset(asset)}
-                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                <Label className="flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4" />
+                  Bilder ({postAssets.length})
+                </Label>
+                
+                {postAssets.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border rounded-lg bg-muted/30">
+                    <ImageIcon className="h-8 w-8 text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground mb-3">Keine Bilder vorhanden</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingImage}
+                    >
+                      {uploadingImage ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <Plus className="h-4 w-4 mr-2" />
+                      )}
+                      Bild hinzufügen
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {postAssets.map((asset, index) => (
+                      <div
+                        key={asset.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDragEnd={handleDragEnd}
+                        className={`relative group aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+                          draggedIndex === index
+                            ? "border-primary opacity-50"
+                            : "border-border hover:border-primary/50"
+                        }`}
                       >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingImage}
-                    className="w-20 h-20 border-2 border-dashed border-border rounded-lg flex items-center justify-center hover:border-primary/50 transition-colors"
-                  >
-                    {uploadingImage ? (
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                    ) : (
-                      <Plus className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAddImage}
-                    className="hidden"
-                  />
-                </div>
+                        {/* Drag Handle */}
+                        <div className="absolute top-1 left-1 z-10 bg-background/80 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+                          <GripVertical className="h-3 w-3 text-muted-foreground" />
+                        </div>
+                        
+                        {/* Position indicator */}
+                        <div className="absolute top-1 right-1 z-10 bg-background/80 rounded px-1.5 py-0.5 text-[10px] font-medium">
+                          {index + 1}
+                        </div>
+
+                        <img
+                          src={asset.public_url || ""}
+                          alt={`Bild ${index + 1}`}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                          }}
+                        />
+                        
+                        {/* Delete button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteAsset(asset);
+                          }}
+                          className="absolute bottom-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/90"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+
+                        {/* Mobile reorder buttons */}
+                        <div className="absolute bottom-1 left-1 flex gap-1 sm:hidden">
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveAsset(index, index - 1);
+                              }}
+                              className="bg-background/80 rounded px-1.5 py-0.5 text-[10px]"
+                            >
+                              ←
+                            </button>
+                          )}
+                          {index < postAssets.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveAsset(index, index + 1);
+                              }}
+                              className="bg-background/80 rounded px-1.5 py-0.5 text-[10px]"
+                            >
+                              →
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {/* Add Image Button */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingImage}
+                      className="aspect-square border-2 border-dashed border-border rounded-lg flex items-center justify-center hover:border-primary/50 hover:bg-muted/50 transition-all"
+                    >
+                      {uploadingImage ? (
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      ) : (
+                        <Plus className="h-5 w-5 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
+                )}
+                
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAddImage}
+                  className="hidden"
+                />
+                
+                {postAssets.length > 1 && (
+                  <p className="text-xs text-muted-foreground">
+                    Ziehe Bilder um die Reihenfolge zu ändern
+                  </p>
+                )}
               </div>
 
               {/* Caption */}
               <div className="space-y-2">
-                <StatusBadge status={selectedPost.status} />
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={selectedPost.status} />
+                </div>
                 <Label htmlFor="caption">Caption</Label>
                 <Textarea
                   id="caption"
                   value={editCaption}
                   onChange={(e) => setEditCaption(e.target.value)}
-                  rows={5}
+                  rows={4}
                   className="resize-none"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="date">Datum</Label>
                   <Input
@@ -418,7 +551,7 @@ export default function CalendarPage() {
                 </div>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2">
                 {selectedPost.status === "SCHEDULED" && (
                   <Button
                     variant="outline"
