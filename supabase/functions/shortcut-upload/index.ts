@@ -72,45 +72,101 @@ async function findNextFreeSlot(supabase: any, userId: string): Promise<Date> {
   return fallback;
 }
 
+// Helper to log errors to database
+async function logError(
+  supabase: any, 
+  userId: string | null, 
+  errorMessage: string, 
+  details: Record<string, any>
+) {
+  try {
+    // Only log if we have a userId
+    if (userId) {
+      await supabase.from("logs").insert({
+        user_id: userId,
+        event_type: "shortcut_upload_error",
+        level: "error",
+        details: {
+          error: errorMessage,
+          ...details,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (logError) {
+    console.error("[shortcut-upload] Failed to log error:", logError);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const shortcutApiKey = Deno.env.get("SHORTCUT_API_KEY");
+
+  // Capture request metadata for logging
+  const userAgent = req.headers.get("user-agent") || "unknown";
+  const contentLength = req.headers.get("content-length") || "unknown";
+
+  // API Key Authentication
+  const providedApiKey = req.headers.get("x-api-key");
+
+  if (!shortcutApiKey) {
+    console.error("[shortcut-upload] SHORTCUT_API_KEY not configured");
+    return new Response(
+      JSON.stringify({ success: false, error: "Server nicht konfiguriert" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  if (!providedApiKey || providedApiKey !== shortcutApiKey) {
+    console.error("[shortcut-upload] Invalid API key provided");
+    return new Response(
+      JSON.stringify({ success: false, error: "Ungültiger API-Key" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // ========== GET Request: Test/Ping Endpoint ==========
+  if (req.method === "GET") {
+    console.log("[shortcut-upload] Test ping received - API key valid");
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        message: "Verbindung OK",
+        timestamp: new Date().toISOString(),
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // ========== POST Request: Main Upload Logic ==========
+  let userId: string | null = null;
+
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
-    const shortcutApiKey = Deno.env.get("SHORTCUT_API_KEY");
 
-    // API Key Authentication
-    const providedApiKey = req.headers.get("x-api-key");
-    
-    if (!shortcutApiKey) {
-      console.error("[shortcut-upload] SHORTCUT_API_KEY not configured");
-      return new Response(
-        JSON.stringify({ success: false, error: "Server nicht konfiguriert" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const body = await req.json();
+    const { files, rawText } = body;
+    userId = body.userId;
 
-    if (!providedApiKey || providedApiKey !== shortcutApiKey) {
-      console.error("[shortcut-upload] Invalid API key");
-      return new Response(
-        JSON.stringify({ success: false, error: "Ungültiger API-Key" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const { files, rawText, userId } = await req.json();
+    console.log(`[shortcut-upload] Request metadata - User-Agent: ${userAgent}, Content-Length: ${contentLength}`);
 
     if (!userId) {
       throw new Error("userId ist erforderlich");
     }
 
     if (!files || !Array.isArray(files) || files.length === 0) {
+      await logError(supabase, userId, "Keine Bilder hochgeladen", {
+        source: "ios_shortcut",
+        userAgent,
+        contentLength,
+      });
       throw new Error("Keine Bilder hochgeladen");
     }
 
@@ -145,6 +201,12 @@ serve(async (req) => {
 
       if (uploadError) {
         console.error(`[shortcut-upload] Upload error for file ${i}:`, uploadError);
+        await logError(supabase, userId, `Upload-Fehler: ${uploadError.message}`, {
+          source: "ios_shortcut",
+          fileIndex: i,
+          filesTotal: files.length,
+          userAgent,
+        });
         throw new Error(`Fehler beim Hochladen: ${uploadError.message}`);
       }
 
@@ -228,6 +290,11 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error("[shortcut-upload] AI error:", errorText);
+      await logError(supabase, userId, "AI-Generierung fehlgeschlagen", {
+        source: "ios_shortcut",
+        aiError: errorText,
+        filesCount: files.length,
+      });
       throw new Error("AI-Generierung fehlgeschlagen");
     }
 
@@ -235,6 +302,10 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
     const generatedCaption = (aiData.choices?.[0]?.message?.content ?? "").trim();
 
     if (!generatedCaption) {
+      await logError(supabase, userId, "Keine Caption generiert", {
+        source: "ios_shortcut",
+        filesCount: files.length,
+      });
       throw new Error("Keine Caption generiert");
     }
 
@@ -264,6 +335,10 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
 
     if (postError) {
       console.error("[shortcut-upload] Post creation error:", postError);
+      await logError(supabase, userId, `Post-Erstellung fehlgeschlagen: ${postError.message}`, {
+        source: "ios_shortcut",
+        filesCount: files.length,
+      });
       throw new Error(`Post konnte nicht erstellt werden: ${postError.message}`);
     }
 
@@ -282,7 +357,7 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
       console.log(`[shortcut-upload] Created ${uploadedUrls.length} slide assets`);
     }
 
-    // Step 8: Log the action
+    // Step 8: Log the successful action
     await supabase.from("logs").insert({
       user_id: userId,
       post_id: post.id,
@@ -294,6 +369,7 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
         scheduled_for: scheduledAt.toISOString(),
         raw_text_provided: !!rawText,
         source: "ios_shortcut",
+        userAgent,
       },
     });
 
@@ -313,6 +389,16 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
     );
   } catch (error) {
     console.error("[shortcut-upload] Error:", error);
+    
+    // Log error if we have a userId
+    if (userId) {
+      await logError(supabase, userId, error instanceof Error ? error.message : "Unbekannter Fehler", {
+        source: "ios_shortcut",
+        userAgent,
+        contentLength,
+      });
+    }
+
     return new Response(
       JSON.stringify({
         success: false,
