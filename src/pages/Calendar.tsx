@@ -46,8 +46,16 @@ export default function CalendarPage() {
         .in("status", ["APPROVED", "SCHEDULED", "PUBLISHED"])
         .order("scheduled_at", { ascending: true });
 
-      if (error) throw error;
-      setPosts((data as (Post & { assets?: Asset[] })[]) || []);
+      
+      // Sort assets by created_at to maintain order
+      const postsWithSortedAssets = (data || []).map(post => ({
+        ...post,
+        assets: (post.assets || []).sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        )
+      }));
+      
+      setPosts(postsWithSortedAssets as (Post & { assets?: Asset[] })[]);
     } catch (error: any) {
       toast.error("Fehler: " + error.message);
     } finally {
@@ -196,6 +204,7 @@ export default function CalendarPage() {
     try {
       const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}:00`);
 
+      // Save post with updated caption
       const { error } = await supabase
         .from("posts")
         .update({
@@ -206,6 +215,16 @@ export default function CalendarPage() {
         .eq("id", selectedPost.id);
 
       if (error) throw error;
+
+      // Save the new asset order by updating created_at timestamps
+      // Assets are ordered by created_at in the query, so we update them in sequence
+      for (let i = 0; i < postAssets.length; i++) {
+        const newTimestamp = new Date(Date.now() + i * 1000).toISOString();
+        await supabase
+          .from("assets")
+          .update({ created_at: newTimestamp })
+          .eq("id", postAssets[i].id);
+      }
 
       await supabase.from("logs").insert({
         user_id: user!.id,
