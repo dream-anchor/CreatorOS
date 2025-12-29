@@ -114,7 +114,27 @@ serve(async (req) => {
           continue;
         }
 
-        // Post reply to Instagram
+        // 1. Like the comment first
+        const likeUrl = `https://graph.facebook.com/v17.0/${reply.ig_comment_id}/likes`;
+        
+        const likeResponse = await fetch(likeUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            access_token: connection.token_encrypted,
+          }),
+        });
+
+        if (likeResponse.ok) {
+          console.log(`[process-reply-queue] Liked comment ${reply.ig_comment_id}`);
+        } else {
+          const likeError = await likeResponse.json();
+          console.warn(`[process-reply-queue] Could not like comment (non-blocking):`, likeError.error?.message);
+        }
+
+        // 2. Post reply to Instagram
         const replyUrl = `https://graph.facebook.com/v17.0/${reply.ig_comment_id}/replies`;
         
         const response = await fetch(replyUrl, {
@@ -170,7 +190,8 @@ serve(async (req) => {
           details: {
             queue_id: reply.id,
             comment_id: reply.comment_id,
-            ig_reply_id: responseData.id
+            ig_reply_id: responseData.id,
+            liked: likeResponse.ok
           }
         });
 
