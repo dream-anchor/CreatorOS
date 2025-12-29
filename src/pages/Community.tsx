@@ -19,6 +19,7 @@ import {
   Image as ImageIcon,
   Brain,
   AlertCircle,
+  AlertTriangle,
   EyeOff,
   Ban,
   ExternalLink,
@@ -36,6 +37,7 @@ import { AiModelSelector, AI_MODELS } from "@/components/community/AiModelSelect
 import { RulesConfigPanel } from "@/components/community/RulesConfigPanel";
 import { ReplyQueueIndicator } from "@/components/community/ReplyQueueIndicator";
 import { FilteredCommentsDialog } from "@/components/community/FilteredCommentsDialog";
+import { NegativeCommentsDialog } from "@/components/community/NegativeCommentsDialog";
 import { useGenerationContext } from "@/contexts/GenerationContext";
 
 interface Comment {
@@ -46,6 +48,8 @@ interface Comment {
   ai_reply_suggestion: string | null;
   ig_comment_id: string;
   ig_media_id: string;
+  sentiment_score: number | null;
+  is_critical: boolean | null;
   post?: {
     id: string;
     caption: string | null;
@@ -126,7 +130,9 @@ export default function Community() {
           comment_timestamp, 
           ai_reply_suggestion, 
           ig_comment_id, 
-          ig_media_id
+          ig_media_id,
+          sentiment_score,
+          is_critical
         `)
         .eq("is_replied", false)
         .eq("is_hidden", false)
@@ -170,13 +176,10 @@ export default function Community() {
     staleTime: 30000,
   });
 
-  // Filter comments based on blacklist topics (check post caption)
-  const { filteredComments, allComments } = useMemo(() => {
-    if (blacklistTopics.length === 0) {
-      return { filteredComments: [], allComments: rawComments };
-    }
-    
+  // Filter comments based on blacklist topics (check post caption) and separate negative comments
+  const { filteredComments, negativeComments, allComments } = useMemo(() => {
     const filtered: Comment[] = [];
+    const negative: Comment[] = [];
     const visible: Comment[] = [];
     
     rawComments.forEach(comment => {
@@ -184,14 +187,23 @@ export default function Community() {
       const isBlacklisted = blacklistTopics.some(topic => 
         caption.includes(topic.topic.toLowerCase())
       );
+      
       if (isBlacklisted) {
         filtered.push(comment);
       } else {
-        visible.push(comment);
+        // Check if negative/critical - sentiment_score < 0.3 or is_critical = true
+        const isNegative = comment.is_critical === true || 
+          (comment.sentiment_score !== null && comment.sentiment_score < 0.3);
+        
+        if (isNegative) {
+          negative.push(comment);
+        } else {
+          visible.push(comment);
+        }
       }
     });
     
-    return { filteredComments: filtered, allComments: visible };
+    return { filteredComments: filtered, negativeComments: negative, allComments: visible };
   }, [rawComments, blacklistTopics]);
 
   // Display only up to displayLimit comments
@@ -201,11 +213,13 @@ export default function Community() {
 
   // Statistics for display
   const stats = useMemo(() => {
-    const total = allComments.length;
-    const withReply = allComments.filter(c => c.ai_reply_suggestion).length;
+    const total = allComments.length + negativeComments.length;
+    const withReply = allComments.filter(c => c.ai_reply_suggestion).length + 
+                      negativeComments.filter(c => c.ai_reply_suggestion).length;
     const withoutReply = total - withReply;
-    return { total, withReply, withoutReply };
-  }, [allComments]);
+    const negativeCount = negativeComments.length;
+    return { total, withReply, withoutReply, negativeCount };
+  }, [allComments, negativeComments]);
 
   // Group comments by post
   const commentsByPost = useMemo(() => {
@@ -855,6 +869,13 @@ export default function Community() {
                 <span className="text-muted-foreground">Ohne Antwort:</span>
                 <span className="font-semibold text-amber-500">{stats.withoutReply}</span>
               </div>
+              {stats.negativeCount > 0 && (
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                  <span className="text-muted-foreground">Negativ/Kritisch:</span>
+                  <span className="font-semibold text-destructive">{stats.negativeCount}</span>
+                </div>
+              )}
               {allComments.length > displayLimit && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <span>•</span>
@@ -865,17 +886,31 @@ export default function Community() {
           </CardContent>
         </Card>
 
-        {/* Filtered count info - clickable dialog */}
-        {filteredComments.length > 0 && (
-          <div className="mb-4">
+        {/* Negative/Critical comments dialog + Filtered count info */}
+        <div className="flex flex-wrap items-center gap-4 mb-4">
+          {negativeComments.length > 0 && (
+            <NegativeCommentsDialog
+              negativeComments={negativeComments}
+              triggerText={`${negativeComments.length} negative/kritische Kommentar(e)`}
+              replyTexts={replyTexts}
+              onReplyTextChange={handleReplyTextChange}
+              onSendReply={handleSendReply}
+              onHideComment={(comment) => handleHideComment(comment.id)}
+              onBlockUser={(comment) => handleBlockUser(comment.id, comment.commenter_username)}
+              sendingReply={sendingReply}
+              hidingComment={hidingComment}
+              blockingUser={blockingUser}
+            />
+          )}
+          {filteredComments.length > 0 && (
             <FilteredCommentsDialog
               filteredComments={filteredComments}
               blacklistTopics={blacklistTopics}
               onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
               triggerText={`${filteredComments.length} Kommentar(e) durch Themen-Filter ausgeblendet`}
             />
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Empty State */}
         {comments.length === 0 ? (
