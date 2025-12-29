@@ -138,9 +138,6 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
 
-      {/* Generation Indicator - in sidebar */}
-      <GenerationIndicator onNavigate={onNavigate} />
-
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 space-y-1">
         {navItems.map((item) => (
@@ -159,6 +156,9 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
             {item.name}
           </Link>
         ))}
+        
+        {/* Generation Indicator - below Settings */}
+        <GenerationIndicator onNavigate={onNavigate} />
       </nav>
 
       {/* Footer */}
