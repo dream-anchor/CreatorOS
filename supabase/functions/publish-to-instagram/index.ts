@@ -135,6 +135,50 @@ serve(async (req) => {
       })
       .eq("id", postId);
 
+    // Save collaborators to the collaborators table for autocomplete/learning
+    if (collaborators.length > 0) {
+      console.log(`[publish-to-instagram] Saving ${collaborators.length} collaborators for future autocomplete...`);
+      for (const username of collaborators) {
+        const cleanUsername = username.toLowerCase().replace(/^@/, "");
+        
+        // Check if collaborator exists
+        const { data: existing } = await supabase
+          .from("collaborators")
+          .select("id, use_count")
+          .eq("user_id", post.user_id)
+          .eq("username", cleanUsername)
+          .single();
+
+        if (existing) {
+          // Update use_count
+          await supabase
+            .from("collaborators")
+            .update({
+              use_count: (existing.use_count || 0) + 1,
+              last_used_at: new Date().toISOString(),
+            })
+            .eq("id", existing.id);
+          console.log(`[publish-to-instagram] Updated collaborator ${cleanUsername}, use_count: ${(existing.use_count || 0) + 1}`);
+        } else {
+          // Insert new collaborator
+          const { error: insertError } = await supabase
+            .from("collaborators")
+            .insert({
+              user_id: post.user_id,
+              username: cleanUsername,
+              use_count: 1,
+              last_used_at: new Date().toISOString(),
+            });
+
+          if (insertError) {
+            console.log(`[publish-to-instagram] Error inserting collaborator ${cleanUsername}:`, insertError.message);
+          } else {
+            console.log(`[publish-to-instagram] Added new collaborator ${cleanUsername}`);
+          }
+        }
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,

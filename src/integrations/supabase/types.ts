@@ -151,6 +151,42 @@ export type Database = {
         }
         Relationships: []
       }
+      collaborators: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          last_used_at: string | null
+          updated_at: string
+          use_count: number | null
+          user_id: string
+          username: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          last_used_at?: string | null
+          updated_at?: string
+          use_count?: number | null
+          user_id: string
+          username: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          last_used_at?: string | null
+          updated_at?: string
+          use_count?: number | null
+          user_id?: string
+          username?: string
+        }
+        Relationships: []
+      }
       comment_reply_queue: {
         Row: {
           comment_id: string | null
