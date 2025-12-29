@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { BottomChat } from "@/components/BottomChat";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useGenerationContext } from "@/contexts/GenerationContext";
 import {
   Home,
   MessageCircle,
@@ -15,6 +16,8 @@ import {
   Sparkles,
   Menu,
   LogOut,
+  Brain,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -32,6 +35,84 @@ const navItems = [
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
+
+function GenerationIndicator({ onNavigate }: { onNavigate?: () => void }) {
+  const { isGenerating, progress, cancelGeneration } = useGenerationContext();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Don't show on community page (it has its own indicator)
+  if (!isGenerating || !progress || location.pathname === "/community") {
+    return null;
+  }
+
+  const percentage = Math.round((progress.current / progress.total) * 100);
+
+  return (
+    <div 
+      className="mx-3 mb-2 p-3 rounded-xl bg-primary/10 border border-primary/20 cursor-pointer hover:bg-primary/15 transition-colors"
+      onClick={() => {
+        navigate("/community");
+        onNavigate?.();
+      }}
+    >
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+          <Brain className="h-4 w-4 text-primary animate-pulse" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-foreground truncate">
+            Generiere Antworten
+          </p>
+          <p className="text-[10px] text-muted-foreground">
+            {progress.current} / {progress.total}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {/* Mini progress ring */}
+          <div className="relative w-7 h-7">
+            <svg className="w-7 h-7 -rotate-90">
+              <circle
+                cx="14"
+                cy="14"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                fill="none"
+                className="text-muted"
+              />
+              <circle
+                cx="14"
+                cy="14"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                fill="none"
+                strokeDasharray={62.8}
+                strokeDashoffset={62.8 - (62.8 * percentage) / 100}
+                className="text-primary transition-all duration-300"
+              />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-[8px] font-medium">
+              {percentage}%
+            </span>
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
+            onClick={(e) => {
+              e.stopPropagation();
+              cancelGeneration();
+            }}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
@@ -56,6 +137,9 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
           <p className="text-[10px] sm:text-[11px] text-muted-foreground">Instagram Agent</p>
         </div>
       </div>
+
+      {/* Generation Indicator - in sidebar */}
+      <GenerationIndicator onNavigate={onNavigate} />
 
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 space-y-1">
