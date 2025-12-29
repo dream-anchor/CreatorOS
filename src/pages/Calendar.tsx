@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,6 +27,7 @@ export default function CalendarPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("12:00");
+  const [editCaption, setEditCaption] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -64,6 +66,7 @@ export default function CalendarPage() {
 
   const openScheduleDialog = (post: Post) => {
     setSelectedPost(post);
+    setEditCaption(post.caption || "");
     if (post.scheduled_at) {
       const date = new Date(post.scheduled_at);
       setScheduleDate(format(date, "yyyy-MM-dd"));
@@ -87,6 +90,7 @@ export default function CalendarPage() {
         .update({
           status: "SCHEDULED",
           scheduled_at: scheduledAt.toISOString(),
+          caption: editCaption,
         })
         .eq("id", selectedPost.id);
 
@@ -267,9 +271,16 @@ export default function CalendarPage() {
 
           {selectedPost && (
             <div className="space-y-4">
-              <div className="p-4 rounded-lg bg-muted/50 border border-border">
+              <div className="space-y-2">
                 <StatusBadge status={selectedPost.status} />
-                <p className="text-sm mt-2 line-clamp-3">{selectedPost.caption}</p>
+                <Label htmlFor="caption">Caption</Label>
+                <Textarea
+                  id="caption"
+                  value={editCaption}
+                  onChange={(e) => setEditCaption(e.target.value)}
+                  rows={5}
+                  className="resize-none"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
