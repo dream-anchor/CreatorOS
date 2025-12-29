@@ -445,6 +445,7 @@ export default function Community() {
 
         try {
           let scheduledFor: string | null = null;
+          let status: "pending" | "waiting_for_post" = "waiting_for_post";
 
           if (nextPost?.scheduled_at) {
             const postTime = new Date(nextPost.scheduled_at);
@@ -454,6 +455,7 @@ export default function Community() {
               ? subMinutes(postTime, 15 + Math.floor(i / 2) * 5) 
               : addMinutes(postTime, 15 + Math.floor(i / 2) * 5);
             scheduledFor = targetTime.toISOString();
+            status = "pending";
           }
 
           // Add to reply queue
@@ -464,7 +466,7 @@ export default function Community() {
               ig_comment_id: comment.ig_comment_id,
               comment_id: comment.id,
               reply_text: replyText,
-              status: "pending",
+              status,
               scheduled_for: scheduledFor,
             });
 
@@ -550,6 +552,8 @@ export default function Community() {
       }
 
       // Add to reply queue with scheduling
+      // If no post scheduled, use waiting_for_post status (trigger will activate on post schedule)
+      const status = scheduledFor ? "pending" : "waiting_for_post";
       const { error: queueError } = await supabase
         .from("comment_reply_queue")
         .insert({
@@ -557,7 +561,7 @@ export default function Community() {
           ig_comment_id: comment.ig_comment_id,
           comment_id: comment.id,
           reply_text: replyText,
-          status: scheduledFor ? "pending" : "pending",
+          status,
           scheduled_for: scheduledFor,
         });
       
@@ -569,7 +573,9 @@ export default function Community() {
         .update({ is_replied: true, ai_reply_suggestion: replyText })
         .eq("id", comment.id);
       
-      toast.success(`✅ Geplant für ${schedulingInfo}`);
+      toast.success(scheduledFor 
+        ? `✅ Geplant für ${schedulingInfo}` 
+        : `⏳ Wartet auf nächsten Post`);
       
       // Remove from local state
       setGeneratedReplies(prev => {
