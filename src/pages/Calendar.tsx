@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Post, Asset } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Calendar as CalendarIcon, Clock, Image as ImageIcon, Recycle } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, Clock, Recycle, X, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { format, startOfWeek, endOfWeek, addDays, isSameDay } from "date-fns";
@@ -23,12 +23,15 @@ export default function CalendarPage() {
   const [currentWeekStart, setCurrentWeekStart] = useState(
     startOfWeek(new Date(), { weekStartsOn: 1 })
   );
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [selectedPost, setSelectedPost] = useState<(Post & { assets?: Asset[] }) | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("12:00");
   const [editCaption, setEditCaption] = useState("");
+  const [postAssets, setPostAssets] = useState<Asset[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) loadPosts();
@@ -64,9 +67,10 @@ export default function CalendarPage() {
     return posts.filter((post) => post.status === "APPROVED" && !post.scheduled_at);
   };
 
-  const openScheduleDialog = (post: Post) => {
+  const openScheduleDialog = (post: Post & { assets?: Asset[] }) => {
     setSelectedPost(post);
     setEditCaption(post.caption || "");
+    setPostAssets(post.assets || []);
     if (post.scheduled_at) {
       const date = new Date(post.scheduled_at);
       setScheduleDate(format(date, "yyyy-MM-dd"));
@@ -76,6 +80,73 @@ export default function CalendarPage() {
       setScheduleTime("12:00");
     }
     setDialogOpen(true);
+  };
+
+  const handleDeleteAsset = async (asset: Asset) => {
+    try {
+      // Delete from storage
+      const { error: storageError } = await supabase.storage
+        .from("post-assets")
+        .remove([asset.storage_path]);
+
+      if (storageError) throw storageError;
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from("assets")
+        .delete()
+        .eq("id", asset.id);
+
+      if (dbError) throw dbError;
+
+      setPostAssets((prev) => prev.filter((a) => a.id !== asset.id));
+      toast.success("Bild gelöscht");
+    } catch (error: any) {
+      toast.error("Fehler beim Löschen: " + error.message);
+    }
+  };
+
+  const handleAddImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedPost || !user) return;
+
+    setUploadingImage(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `${user.id}/${selectedPost.id}/${crypto.randomUUID()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("post-assets")
+        .upload(path, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("post-assets")
+        .getPublicUrl(path);
+
+      const { data: newAsset, error: dbError } = await supabase
+        .from("assets")
+        .insert({
+          user_id: user.id,
+          post_id: selectedPost.id,
+          storage_path: path,
+          public_url: urlData.publicUrl,
+          source: "upload",
+        })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
+      setPostAssets((prev) => [...prev, newAsset as Asset]);
+      toast.success("Bild hinzugefügt");
+    } catch (error: any) {
+      toast.error("Fehler beim Hochladen: " + error.message);
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleSchedule = async () => {
@@ -271,6 +342,49 @@ export default function CalendarPage() {
 
           {selectedPost && (
             <div className="space-y-4">
+              {/* Images Section */}
+              <div className="space-y-2">
+                <Label>Bilder</Label>
+                <div className="flex flex-wrap gap-2">
+                  {postAssets.map((asset) => (
+                    <div key={asset.id} className="relative group">
+                      <img
+                        src={asset.public_url || ""}
+                        alt=""
+                        className="w-20 h-20 object-cover rounded-lg border border-border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAsset(asset)}
+                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingImage}
+                    className="w-20 h-20 border-2 border-dashed border-border rounded-lg flex items-center justify-center hover:border-primary/50 transition-colors"
+                  >
+                    {uploadingImage ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Plus className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAddImage}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Caption */}
               <div className="space-y-2">
                 <StatusBadge status={selectedPost.status} />
                 <Label htmlFor="caption">Caption</Label>
