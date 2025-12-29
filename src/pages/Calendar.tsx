@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Post, Asset } from "@/types/database";
 import { toast } from "sonner";
-import { Loader2, Calendar as CalendarIcon, Clock, Recycle, X, Plus, GripVertical, ImageIcon } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, Clock, Recycle, X, Plus, GripVertical, ImageIcon, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { format, startOfWeek, endOfWeek, addDays, isSameDay } from "date-fns";
@@ -34,6 +34,7 @@ export default function CalendarPage() {
   const [saving, setSaving] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [collaborators, setCollaborators] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -275,6 +276,41 @@ export default function CalendarPage() {
     }
   };
 
+  const handleDeletePost = async () => {
+    if (!selectedPost) return;
+
+    setDeleting(true);
+    try {
+      // Delete associated assets first
+      for (const asset of postAssets) {
+        await supabase.storage
+          .from("post-assets")
+          .remove([asset.storage_path]);
+        
+        await supabase
+          .from("assets")
+          .delete()
+          .eq("id", asset.id);
+      }
+
+      // Delete the post
+      const { error } = await supabase
+        .from("posts")
+        .delete()
+        .eq("id", selectedPost.id);
+
+      if (error) throw error;
+
+      toast.success("Post gelöscht");
+      setDialogOpen(false);
+      loadPosts();
+    } catch (error: any) {
+      toast.error("Fehler beim Löschen: " + error.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <GlobalLayout>
@@ -340,8 +376,8 @@ export default function CalendarPage() {
                 </span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <div className="grid grid-cols-7 gap-1 sm:gap-2 min-w-[500px]">
+            <CardContent>
+              <div className="grid grid-cols-7 gap-2 sm:gap-3">
                 {weekDays.map((day) => {
                   const dayPosts = getPostsForDay(day);
                   const isToday = isSameDay(day, new Date());
@@ -349,43 +385,46 @@ export default function CalendarPage() {
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`min-h-[140px] sm:min-h-[200px] p-1.5 sm:p-2 rounded-lg border ${
-                        isToday ? "border-primary bg-primary/5" : "border-border"
+                      className={`min-h-[120px] sm:min-h-[160px] p-2 sm:p-3 rounded-xl border-2 ${
+                        isToday ? "border-primary bg-primary/5" : "border-border/50"
                       }`}
                     >
-                      <div className="text-center mb-1 sm:mb-2">
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
+                      <div className="text-center mb-2">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
                           {format(day, "EEE", { locale: de })}
                         </p>
                         <p
-                          className={`text-sm sm:text-lg font-semibold ${
+                          className={`text-xl sm:text-2xl font-bold ${
                             isToday ? "text-primary" : ""
                           }`}
                         >
                           {format(day, "d")}
                         </p>
                       </div>
-                      <div className="space-y-1 sm:space-y-2">
+                      <div className="space-y-1.5">
                         {dayPosts.map((post) => (
                           <div
                             key={post.id}
                             onClick={() => openScheduleDialog(post)}
-                            className="p-1.5 sm:p-2 rounded bg-muted hover:bg-muted/80 cursor-pointer transition-colors"
+                            className="p-2 rounded-lg bg-muted/60 hover:bg-muted cursor-pointer transition-colors"
                           >
-                            <div className="flex items-center gap-1 mb-1">
-                              <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-muted-foreground" />
-                              <span className="text-[10px] sm:text-xs text-muted-foreground">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                              <span className="text-xs text-muted-foreground">
                                 {post.scheduled_at &&
                                   format(new Date(post.scheduled_at), "HH:mm")}
                               </span>
-                              {post.remixed_from_id && (
-                                <span className="text-[10px] sm:text-xs bg-amber-500/20 text-amber-600 px-1 rounded">
-                                  ♻️
-                                </span>
-                              )}
                             </div>
-                            <StatusBadge status={post.status} className="mb-1 text-[10px]" />
-                            <p className="text-[10px] sm:text-xs line-clamp-2">{post.caption}</p>
+                            <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                              post.status === "PUBLISHED" 
+                                ? "bg-emerald-500/20 text-emerald-600" 
+                                : post.status === "SCHEDULED"
+                                ? "bg-primary/20 text-primary"
+                                : "bg-muted-foreground/20 text-muted-foreground"
+                            }`}>
+                              {post.status === "PUBLISHED" ? "Veröff." : post.status === "SCHEDULED" ? "Geplant" : post.status}
+                            </span>
+                            <p className="text-xs line-clamp-2 mt-1">{post.caption}</p>
                           </div>
                         ))}
                       </div>
@@ -582,20 +621,35 @@ export default function CalendarPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2">
-                {selectedPost.status === "SCHEDULED" && (
-                  <Button
-                    variant="outline"
-                    onClick={handleUnschedule}
-                    disabled={saving}
-                    className="flex-1"
-                  >
-                    Planung aufheben
+              <div className="flex flex-col gap-2 pt-2">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  {selectedPost.status === "SCHEDULED" && (
+                    <Button
+                      variant="outline"
+                      onClick={handleUnschedule}
+                      disabled={saving || deleting}
+                      className="flex-1"
+                    >
+                      Planung aufheben
+                    </Button>
+                  )}
+                  <Button onClick={handleSchedule} disabled={saving || deleting} className="flex-1">
+                    {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {selectedPost.status === "SCHEDULED" ? "Aktualisieren" : "Planen"}
                   </Button>
-                )}
-                <Button onClick={handleSchedule} disabled={saving} className="flex-1">
-                  {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {selectedPost.status === "SCHEDULED" ? "Aktualisieren" : "Planen"}
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={handleDeletePost}
+                  disabled={saving || deleting}
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                >
+                  {deleting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-2 h-4 w-4" />
+                  )}
+                  Post löschen
                 </Button>
               </div>
             </div>
