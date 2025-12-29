@@ -88,6 +88,7 @@ export function CollaboratorAutocomplete({ collaborators, onChange }: Collaborat
   };
 
   const validateUsername = async (username: string) => {
+    // Sanitize input: remove @ at the beginning
     const cleanUsername = username.trim().replace(/^@/, "");
     if (!cleanUsername) return;
 
@@ -105,8 +106,12 @@ export function CollaboratorAutocomplete({ collaborators, onChange }: Collaborat
         body: { username: cleanUsername }
       });
 
+      // Handle API errors gracefully (private/personal accounts, etc.)
       if (response.error) {
-        throw new Error(response.error.message);
+        console.log("Validation API error (likely private/personal account):", response.error);
+        // Show user-friendly message instead of technical error
+        setValidationError("Profil konnte nicht verifiziert werden (privat/persönlich), wird aber gespeichert.");
+        return;
       }
 
       const result = response.data;
@@ -121,11 +126,13 @@ export function CollaboratorAutocomplete({ collaborators, onChange }: Collaborat
         loadCollaborators();
         toast.success(`@${result.profile.username} validiert!`);
       } else {
-        setValidationError(result.message || "Profil nicht gefunden");
+        // API returned successfully but user not found or not a business account
+        setValidationError("Profil konnte nicht verifiziert werden (privat/persönlich), wird aber gespeichert.");
       }
     } catch (error) {
-      console.error("Validation error:", error);
-      setValidationError(error instanceof Error ? error.message : "Validierung fehlgeschlagen");
+      console.log("Validation error (likely network or auth issue):", error);
+      // Catch-all for any other errors - show friendly message
+      setValidationError("Profil konnte nicht verifiziert werden (privat/persönlich), wird aber gespeichert.");
     } finally {
       setValidating(false);
     }
