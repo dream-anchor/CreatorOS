@@ -42,7 +42,6 @@ function GenerationIndicator({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Don't show on community page (it has its own indicator)
   if (!isGenerating || !progress || location.pathname === "/community") {
     return null;
   }
@@ -57,7 +56,6 @@ function GenerationIndicator({ onNavigate }: { onNavigate?: () => void }) {
         onNavigate?.();
       }}
     >
-      {/* Row 1: Icon + Label */}
       <div className="flex items-center gap-2.5 mb-2">
         <div className="w-7 h-7 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0">
           <Brain className="h-3.5 w-3.5 text-primary animate-pulse" />
@@ -67,49 +65,24 @@ function GenerationIndicator({ onNavigate }: { onNavigate?: () => void }) {
         </span>
       </div>
       
-      {/* Row 2: Progress info + Cancel */}
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-muted-foreground">
           {progress.current} / {progress.total}
         </span>
         <div className="flex items-center gap-1.5">
-          {/* Mini progress ring */}
           <div className="relative w-6 h-6">
             <svg className="w-6 h-6 -rotate-90">
-              <circle
-                cx="12"
-                cy="12"
-                r="9"
-                stroke="currentColor"
-                strokeWidth="2"
-                fill="none"
-                className="text-muted"
-              />
-              <circle
-                cx="12"
-                cy="12"
-                r="9"
-                stroke="currentColor"
-                strokeWidth="2"
-                fill="none"
-                strokeDasharray={56.5}
-                strokeDashoffset={56.5 - (56.5 * percentage) / 100}
-                className="text-primary transition-all duration-300"
-              />
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" fill="none" className="text-muted" />
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" fill="none"
+                strokeDasharray={56.5} strokeDashoffset={56.5 - (56.5 * percentage) / 100}
+                className="text-primary transition-all duration-300" />
             </svg>
             <span className="absolute inset-0 flex items-center justify-center text-[7px] font-medium">
               {percentage}%
             </span>
           </div>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-5 w-5 hover:bg-primary/10"
-            onClick={(e) => {
-              e.stopPropagation();
-              cancelGeneration();
-            }}
-          >
+          <Button size="icon" variant="ghost" className="h-5 w-5 hover:bg-primary/10"
+            onClick={(e) => { e.stopPropagation(); cancelGeneration(); }}>
             <X className="h-3 w-3" />
           </Button>
         </div>
@@ -118,43 +91,64 @@ function GenerationIndicator({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-function UserProfile() {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
+interface UserData {
+  email: string | null;
+  displayName: string | null;
+  igUsername: string | null;
+  igProfilePicUrl: string | null;
+}
+
+function UserProfileHeader() {
+  const [userData, setUserData] = useState<UserData>({
+    email: null,
+    displayName: null,
+    igUsername: null,
+    igProfilePicUrl: null,
+  });
 
   useEffect(() => {
-    const fetchUser = async () => {
+    const fetchUserData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUserEmail(user.email || null);
-        // Try to get display name from profile
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("display_name")
-          .eq("id", user.id)
-          .maybeSingle();
-        setDisplayName(profile?.display_name || null);
-      }
+      if (!user) return;
+
+      // Fetch profile and meta_connection in parallel
+      const [profileRes, metaRes] = await Promise.all([
+        supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
+        supabase.from("meta_connections").select("ig_username").eq("user_id", user.id).maybeSingle(),
+      ]);
+
+      setUserData({
+        email: user.email || null,
+        displayName: profileRes.data?.display_name || null,
+        igUsername: metaRes.data?.ig_username || null,
+        igProfilePicUrl: null, // Could fetch from IG API if needed
+      });
     };
-    fetchUser();
+    fetchUserData();
   }, []);
 
-  const name = displayName || userEmail?.split("@")[0] || "User";
-  const handle = userEmail ? `@${userEmail.split("@")[0]}` : "";
+  const name = userData.displayName || userData.igUsername || userData.email?.split("@")[0] || "User";
+  const handle = userData.igUsername ? `@${userData.igUsername}` : userData.email ? `@${userData.email.split("@")[0]}` : "";
 
   return (
-    <div className="px-5 py-6 flex flex-col items-center text-center border-b border-border/20">
-      {/* Avatar with decorative ring */}
-      <div className="relative mb-3">
-        <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-primary via-accent to-primary opacity-60 blur-sm" />
-        <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center ring-4 ring-card">
-          <User className="h-7 w-7 text-primary" />
+    <div className="px-5 py-5 flex items-center gap-4 border-b border-border/15">
+      {/* Logo + Avatar combination like reference */}
+      <div className="relative">
+        {/* Logo background blob */}
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-primary/5 flex items-center justify-center">
+          <Sparkles className="h-6 w-6 text-primary/70" />
         </div>
-        {/* Online indicator */}
-        <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full ring-2 ring-card" />
+        {/* Avatar overlapping */}
+        <div className="absolute -right-2 -bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center ring-3 ring-card shadow-lg">
+          <User className="h-4 w-4 text-primary" />
+        </div>
       </div>
-      <h3 className="font-semibold text-foreground text-base tracking-tight">{name}</h3>
-      <p className="text-xs text-muted-foreground">{handle}</p>
+      
+      {/* Name and handle */}
+      <div className="flex-1 min-w-0">
+        <h3 className="font-semibold text-foreground text-sm tracking-tight truncate">{name}</h3>
+        <p className="text-xs text-muted-foreground truncate">{handle}</p>
+      </div>
     </div>
   );
 }
@@ -172,21 +166,21 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <>
-      {/* User Profile */}
-      <UserProfile />
+      {/* User Profile Header with Logo */}
+      <UserProfileHeader />
 
       {/* Navigation */}
-      <nav className="flex-1 py-5 px-3.5 space-y-1">
+      <nav className="flex-1 py-4 px-3 space-y-0.5">
         {navItems.map((item) => (
           <Link
             key={item.name}
             to={item.href}
             onClick={onNavigate}
             className={cn(
-              "flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-200",
+              "flex items-center gap-3 px-4 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200",
               isActive(item.href)
                 ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
             )}
           >
             <item.icon className="h-[18px] w-[18px]" />
@@ -195,20 +189,20 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </nav>
       
-      {/* Generation Indicator - above footer */}
-      <div className="px-3.5">
+      {/* Generation Indicator */}
+      <div className="px-3">
         <GenerationIndicator onNavigate={onNavigate} />
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border/20 p-4 pt-5 space-y-2">
-        <div className="flex items-center justify-between px-3">
+      <div className="border-t border-border/15 p-4 space-y-1">
+        <div className="flex items-center justify-between px-3 py-1.5">
           <span className="text-xs text-muted-foreground/70">Theme</span>
           <ThemeToggle />
         </div>
         <button
           onClick={handleSignOut}
-          className="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-medium text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground transition-all duration-200"
+          className="flex w-full items-center gap-3 rounded-2xl px-4 py-2 text-sm font-medium text-muted-foreground/70 hover:bg-muted/30 hover:text-foreground transition-all duration-200"
         >
           <LogOut className="h-[18px] w-[18px]" />
           Abmelden
@@ -224,10 +218,12 @@ export function GlobalLayout({ children, hideBottomChat = false }: GlobalLayoutP
   return (
     <div className="min-h-screen flex bg-background">
       {/* Mobile Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-card/90 backdrop-blur-2xl border-b border-border/20 flex items-center justify-between px-4 lg:hidden">
+      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-card/90 backdrop-blur-2xl border-b border-border/15 flex items-center justify-between px-4 lg:hidden">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary via-primary/80 to-accent flex items-center justify-center shadow-md shadow-primary/15">
-            <Sparkles className="h-4 w-4 text-white" />
+          <div className="relative">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary/20 to-accent/10 flex items-center justify-center">
+              <Sparkles className="h-4 w-4 text-primary" />
+            </div>
           </div>
           <h1 className="font-bold text-foreground tracking-tight">CreatorOS</h1>
         </div>
@@ -246,8 +242,8 @@ export function GlobalLayout({ children, hideBottomChat = false }: GlobalLayoutP
         </Sheet>
       </header>
 
-      {/* Desktop Sidebar - Hidden on mobile */}
-      <aside className="hidden lg:flex fixed left-0 top-0 z-40 h-screen w-60 xl:w-64 bg-card/95 backdrop-blur-2xl border-r border-border/20 flex-col">
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:flex fixed left-0 top-0 z-40 h-screen w-60 xl:w-64 bg-card/95 backdrop-blur-2xl border-r border-border/15 flex-col">
         <NavContent />
       </aside>
 
@@ -256,7 +252,7 @@ export function GlobalLayout({ children, hideBottomChat = false }: GlobalLayoutP
         {children}
       </main>
 
-      {/* Gradient Fade - Visual fade effect at bottom for better chat readability */}
+      {/* Gradient Fade */}
       {!hideBottomChat && (
         <div 
           className="fixed bottom-0 left-0 lg:left-60 xl:left-64 right-0 h-24 lg:h-32 z-40 pointer-events-none bg-gradient-to-t from-background via-background/90 to-transparent"
@@ -264,7 +260,7 @@ export function GlobalLayout({ children, hideBottomChat = false }: GlobalLayoutP
         />
       )}
 
-      {/* Bottom Chat Bar - conditionally rendered */}
+      {/* Bottom Chat Bar */}
       {!hideBottomChat && <BottomChat />}
     </div>
   );

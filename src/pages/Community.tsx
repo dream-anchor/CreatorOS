@@ -23,6 +23,7 @@ import {
   EyeOff,
   Ban,
   ExternalLink,
+  X,
 } from "lucide-react";
 import {
   Tooltip,
@@ -687,47 +688,24 @@ export default function Community() {
 
   return (
     <GlobalLayout>
-      <div className="p-4 sm:p-6 max-w-5xl mx-auto pb-40">
-        {/* Header with Model Selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto pb-40">
+        {/* Clean Header */}
+        <div className="flex items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
-              </div>
-              Community
-            </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1 sm:mt-2 ml-10 sm:ml-[52px]">
-              {comments.length} offene Kommentare
+            <h1 className="text-2xl font-bold text-foreground">Community</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {comments.length} Kommentare warten auf Antwort
             </p>
           </div>
           
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2">
             <ReplyQueueIndicator onQueueChange={() => refetch()} />
-            <AiModelSelector
-              selectedModel={selectedModel}
-              onModelChange={handleModelChange}
-              disabled={isGenerating}
-              isGenerating={isGenerating}
-              generationProgress={progress}
-            />
-            {/* Generate button - shows when model selected but no replies generated yet */}
-            {selectedModel && Object.keys(generatedReplies).length === 0 && comments.length > 0 && !isGenerating && (
-              <Button
-                onClick={() => handleGenerateAllReplies(selectedModel)}
-                size="sm"
-                className="gap-2 rounded-xl h-9 sm:h-10"
-              >
-                <Sparkles className="h-4 w-4" />
-                <span className="hidden sm:inline">Generieren</span>
-              </Button>
-            )}
             <Button
               onClick={handleFetchComments}
               disabled={isRefetching}
               variant="outline"
               size="sm"
-              className="gap-2 rounded-xl h-9 sm:h-10"
+              className="gap-2 rounded-2xl"
             >
               <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
               <span className="hidden sm:inline">Sync</span>
@@ -735,163 +713,50 @@ export default function Community() {
           </div>
         </div>
 
-        {/* Generation Progress Bar - Shows during generation */}
-        {isGenerating && progress && (
-          <Card className="mb-4 sm:mb-6 border-primary/50 bg-gradient-to-r from-primary/5 to-accent/5 rounded-2xl overflow-hidden">
-            <CardContent className="py-4 sm:py-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
-                    <Brain className="h-5 w-5 sm:h-6 sm:w-6 text-primary animate-pulse" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground text-sm sm:text-base">
-                      Generiere Antworten...
-                    </h3>
-                    <p className="text-xs sm:text-sm text-muted-foreground">
-                      {progress.current} von {progress.total} verarbeitet
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  onClick={cancelGeneration}
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 rounded-xl"
-                >
-                  <Ban className="h-4 w-4" />
-                  Abbrechen
-                </Button>
-              </div>
-              {/* Progress bar */}
-              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                <div 
-                  className="bg-gradient-to-r from-primary to-accent h-full rounded-full transition-all duration-300"
-                  style={{ 
-                    width: `${(progress.current / progress.total) * 100}%` 
-                  }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground mt-2 text-center">
-                {Math.round((progress.current / progress.total) * 100)}% — 
-                Batch {Math.ceil(progress.current / 10)} von {Math.ceil(progress.total / 10)}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Send All Button - Shows when there are replies ready */}
-        {commentsWithReplies.length > 0 && !isGenerating && (
-          <Card className="mb-4 sm:mb-6 border-primary/50 bg-gradient-to-r from-primary/10 to-accent/10 rounded-2xl">
-            <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 sm:py-5">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
-                  <Send className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-foreground text-sm sm:text-base">
-                    {commentsWithReplies.length} Antwort{commentsWithReplies.length !== 1 ? "en" : ""} bereit
-                  </h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground">
-                    {isSendingAll && sendProgress 
-                      ? `Sende ${sendProgress.current}/${sendProgress.total}...`
-                      : "Alle Antworten werden optimal getimed"}
-                  </p>
-                </div>
-              </div>
-              <Button
-                onClick={handleSendAllReplies}
-                disabled={isSendingAll}
-                size="lg"
-                className="gap-2 rounded-xl w-full sm:w-auto"
-              >
-                {isSendingAll ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Sende...
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Alle {commentsWithReplies.length} senden
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* No Model Selected Prompt */}
-        {noModelSelected && comments.length > 0 && (
-          <Card className="mb-4 sm:mb-6 border-primary/50 bg-primary/5 rounded-2xl">
-            <CardContent className="flex items-start sm:items-center gap-3 sm:gap-4 py-4 sm:py-5">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
-                <AlertCircle className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-foreground text-sm sm:text-base">KI-Modell auswählen</h3>
-                <p className="text-xs sm:text-sm text-muted-foreground">
-                  Wähle oben ein Modell für Smart Replies.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Rules Config Panel */}
-        <div className="mb-4 sm:mb-6">
-          <RulesConfigPanel
-            emojiNogoTerms={emojiNogoTerms}
-            blacklistTopics={blacklistTopics}
-            onAddEmojiNogoTerms={handleAddEmojiNogoTerms}
-            onRemoveEmojiNogoTerm={handleRemoveEmojiNogoTerm}
-            onAddBlacklistTopics={handleAddBlacklistTopics}
-            onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
+        {/* Compact Action Bar */}
+        <div className="flex flex-wrap items-center gap-3 mb-6 p-4 rounded-2xl bg-card border border-border/30">
+          <AiModelSelector
+            selectedModel={selectedModel}
+            onModelChange={handleModelChange}
+            disabled={isGenerating}
+            isGenerating={isGenerating}
+            generationProgress={progress}
           />
+          {commentsWithReplies.length > 0 && !isGenerating && (
+            <Button onClick={handleSendAllReplies} disabled={isSendingAll} size="sm" className="gap-2 rounded-2xl ml-auto">
+              {isSendingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {commentsWithReplies.length} senden
+            </Button>
+          )}
         </div>
 
-        {/* Statistics Card */}
-        <Card className="mb-4 sm:mb-6 rounded-2xl border-border/50 bg-muted/30">
-          <CardContent className="py-4 px-5">
-            <div className="flex flex-wrap items-center gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Gesamt:</span>
-                <span className="font-semibold text-foreground">{stats.total}</span>
+        {/* Generation Progress - Inline */}
+        {isGenerating && progress && (
+          <div className="mb-6 p-4 rounded-2xl bg-primary/5 border border-primary/20">
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <div className="flex items-center gap-3">
+                <Brain className="h-5 w-5 text-primary animate-pulse" />
+                <span className="text-sm font-medium">{progress.current} / {progress.total} generiert</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <span className="text-muted-foreground">Mit KI-Antwort:</span>
-                <span className="font-semibold text-primary">{stats.withReply}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-500" />
-                <span className="text-muted-foreground">Ohne Antwort:</span>
-                <span className="font-semibold text-amber-500">{stats.withoutReply}</span>
-              </div>
-              {stats.negativeCount > 0 && (
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-destructive" />
-                  <span className="text-muted-foreground">Negativ/Kritisch:</span>
-                  <span className="font-semibold text-destructive">{stats.negativeCount}</span>
-                </div>
-              )}
-              {allComments.length > displayLimit && (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <span>•</span>
-                  <span>Zeige {displayLimit} von {allComments.length}</span>
-                </div>
-              )}
+              <Button onClick={cancelGeneration} variant="ghost" size="sm" className="gap-2">
+                <X className="h-4 w-4" /> Abbrechen
+              </Button>
             </div>
-          </CardContent>
-        </Card>
+            <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+              <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${(progress.current / progress.total) * 100}%` }} />
+            </div>
+          </div>
+        )}
 
-        {/* Negative/Critical comments dialog + Filtered count info */}
-        <div className="flex flex-wrap items-center gap-4 mb-4">
+        {/* Quick Stats & Filters */}
+        <div className="flex flex-wrap items-center gap-3 mb-6 text-sm">
+          <span className="text-muted-foreground">{stats.total} gesamt</span>
+          <span className="text-muted-foreground">•</span>
+          <span className="text-primary font-medium">{stats.withReply} mit Antwort</span>
           {negativeComments.length > 0 && (
             <NegativeCommentsDialog
               negativeComments={negativeComments}
-              triggerText={`${negativeComments.length} negative/kritische Kommentar(e)`}
+              triggerText={`${negativeComments.length} negativ`}
               replyTexts={replyTexts}
               onReplyTextChange={handleReplyTextChange}
               onSendReply={handleSendReply}
@@ -907,105 +772,74 @@ export default function Community() {
               filteredComments={filteredComments}
               blacklistTopics={blacklistTopics}
               onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
-              triggerText={`${filteredComments.length} Kommentar(e) durch Themen-Filter ausgeblendet`}
+              triggerText={`${filteredComments.length} gefiltert`}
             />
           )}
         </div>
 
         {/* Empty State */}
         {comments.length === 0 ? (
-          <Card className="border-dashed border-2 rounded-2xl">
-            <CardContent className="flex flex-col items-center justify-center py-12 sm:py-20 px-4">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-4 sm:mb-6">
-                <MessageCircle className="h-8 w-8 sm:h-10 sm:w-10 text-primary" />
-              </div>
-              <h2 className="text-lg sm:text-xl font-semibold mb-2 text-center">Keine offenen Kommentare</h2>
-              <p className="text-muted-foreground text-center text-sm max-w-md mb-4 sm:mb-6">
-                Alle Kommentare bearbeitet oder noch keine von Instagram geladen.
-              </p>
-              <Button onClick={handleFetchComments} size="default" className="gap-2 rounded-xl">
-                <RefreshCw className="h-4 w-4" />
-                Kommentare abrufen
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="text-center py-16">
+            <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
+              <MessageCircle className="h-7 w-7 text-muted-foreground" />
+            </div>
+            <h2 className="text-lg font-semibold mb-2">Keine offenen Kommentare</h2>
+            <p className="text-muted-foreground text-sm mb-6">Alle bearbeitet oder noch keine geladen.</p>
+            <Button onClick={handleFetchComments} variant="outline" className="gap-2 rounded-2xl">
+              <RefreshCw className="h-4 w-4" /> Kommentare laden
+            </Button>
+          </div>
         ) : (
-          /* Comments grouped by Post */
-          <div className="space-y-6">
-            {commentsByPost.map((group) => {
+          /* Posts Feed - Like reference design */
+          <div className="space-y-4">
+            {commentsByPost.map((group, groupIndex) => {
               const { post, comments: groupComments } = group;
-              const caption = post?.caption || "";
-              const isLongCaption = caption.length > 300;
+              const isOdd = groupIndex % 2 === 1;
 
               return (
-                <Card 
+                <div 
                   key={group.igMediaId} 
-                  className="overflow-hidden rounded-2xl border-border/50"
+                  className={cn(
+                    "rounded-3xl p-5 transition-all",
+                    isOdd ? "bg-amber-50/50 dark:bg-amber-950/10" : "bg-blue-50/50 dark:bg-blue-950/10"
+                  )}
                 >
-                  {/* Post Header - Full Context */}
-                  <div className="bg-muted/30 border-b border-border/30">
-                    <div className="flex gap-4 p-5">
-                      {/* Post Image */}
-                      <div className="flex-shrink-0">
-                        {post?.original_media_url ? (
-                          <img
-                            src={post.original_media_url}
-                            alt="Post"
-                            className="w-28 h-28 sm:w-36 sm:h-36 rounded-xl object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = "/placeholder.svg";
-                            }}
-                          />
-                        ) : (
-                          <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-xl bg-muted flex items-center justify-center">
-                            <ImageIcon className="h-10 w-10 text-muted-foreground" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Post Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <Badge variant="secondary" className="gap-1.5 rounded-lg">
-                            <MessageCircle className="h-3 w-3" />
-                            {groupComments.length} Kommentar{groupComments.length !== 1 ? "e" : ""}
-                          </Badge>
-                          
-                          {post?.original_ig_permalink && (
-                            <a
-                              href={post.original_ig_permalink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                              <span className="hidden sm:inline">Auf Instagram öffnen</span>
-                            </a>
-                          )}
+                  {/* Post Header with Avatar */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      {post?.original_media_url ? (
+                        <img src={post.original_media_url} alt="" className="w-11 h-11 rounded-full object-cover ring-2 ring-white shadow-sm" />
+                      ) : (
+                        <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center ring-2 ring-white">
+                          <ImageIcon className="h-5 w-5 text-muted-foreground" />
                         </div>
-
-                        {/* Caption */}
-                        <div className="text-sm text-foreground">
-                          {isLongCaption ? (
-                            <details className="group">
-                              <summary className="cursor-pointer list-none">
-                                <span className="whitespace-pre-wrap">{caption.slice(0, 300)}...</span>
-                                <span className="text-primary hover:underline text-xs ml-1 group-open:hidden">
-                                  Mehr anzeigen
-                                </span>
-                              </summary>
-                              <span className="whitespace-pre-wrap">{caption.slice(300)}</span>
-                              <span className="text-primary hover:underline text-xs ml-1 block mt-1">
-                                Weniger anzeigen
-                              </span>
-                            </details>
-                          ) : (
-                            <p className="whitespace-pre-wrap">{caption || "Kein Caption"}</p>
-                          )}
-                        </div>
+                      )}
+                      <div>
+                        <p className="font-semibold text-foreground text-sm">Post</p>
+                        <p className="text-xs text-muted-foreground">
+                          {groupComments.length} Kommentar{groupComments.length !== 1 ? "e" : ""}
+                        </p>
                       </div>
                     </div>
+                    {post?.original_ig_permalink && (
+                      <a href={post.original_ig_permalink} target="_blank" rel="noopener noreferrer"
+                        className="p-2 rounded-full hover:bg-white/50 transition-colors">
+                        <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                      </a>
+                    )}
                   </div>
+
+                  {/* Caption */}
+                  {post?.caption && (
+                    <p className="text-sm text-foreground mb-4 line-clamp-3">{post.caption}</p>
+                  )}
+
+                  {/* Post Image */}
+                  {post?.original_media_url && (
+                    <div className="mb-4 rounded-2xl overflow-hidden">
+                      <img src={post.original_media_url} alt="Post" className="w-full max-h-64 object-cover" />
+                    </div>
+                  )}
 
                   {/* Comments List */}
                   <div className="divide-y divide-border/30">
@@ -1146,7 +980,7 @@ export default function Community() {
                       );
                     })}
                   </div>
-                </Card>
+                </div>
               );
             })}
 
