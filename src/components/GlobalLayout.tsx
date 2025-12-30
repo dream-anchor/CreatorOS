@@ -38,7 +38,7 @@ const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: Home },
   { name: "Community", href: "/community", icon: MessageCircle },
   { name: "Planung", href: "/calendar", icon: CalendarClock },
-  { name: "Bilder", href: "/media", icon: ImageIcon },
+  { name: "Medien", href: "/media", icon: ImageIcon },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: Settings },
 ];

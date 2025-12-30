@@ -110,10 +110,21 @@ serve(async (req) => {
         const comments = commentsData.data || [];
 
         for (const comment of comments) {
-          // Check if I've replied to this comment
-          const hasMyReply = comment.replies?.data?.some(
-            (reply: InstagramComment) => reply.from?.id === igUserId || reply.username === connection.ig_username
-          );
+          // Check if I've replied to this comment and collect all reply usernames
+          const repliedByUsernames: string[] = [];
+          let hasMyReply = false;
+          
+          if (comment.replies?.data) {
+            for (const reply of comment.replies.data as InstagramComment[]) {
+              const replyUsername = reply.username || reply.from?.username;
+              if (replyUsername) {
+                repliedByUsernames.push(replyUsername.toLowerCase());
+              }
+              if (reply.from?.id === igUserId || reply.username === connection.ig_username) {
+                hasMyReply = true;
+              }
+            }
+          }
 
           if (hasMyReply) {
             myRepliedCommentIds.add(comment.id);
@@ -137,6 +148,7 @@ serve(async (req) => {
               comment_text: commentText,
               comment_timestamp: commentTimestamp,
               is_replied: hasMyReply || false,
+              replied_by_usernames: repliedByUsernames,
             });
           }
         }
