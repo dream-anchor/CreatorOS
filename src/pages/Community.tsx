@@ -11,15 +11,10 @@ import {
   MessageCircle,
   RefreshCw,
   Loader2,
-  Sparkles,
-  Trash2,
   Send,
   User,
-  Clock,
   Image as ImageIcon,
   Brain,
-  AlertCircle,
-  AlertTriangle,
   EyeOff,
   Ban,
   ExternalLink,
@@ -688,33 +683,46 @@ export default function Community() {
 
   return (
     <GlobalLayout>
-      <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto pb-40">
-        {/* Clean Header */}
-        <div className="flex items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Community</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {comments.length} Kommentare warten auf Antwort
-            </p>
+      <div className="p-3 sm:p-4 lg:p-6 max-w-3xl mx-auto pb-32">
+        {/* Compact Header */}
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold text-foreground">Community</h1>
+            <Badge variant="secondary" className="text-xs">{comments.length} offen</Badge>
+            {negativeComments.length > 0 && (
+              <NegativeCommentsDialog
+                negativeComments={negativeComments}
+                triggerText={`${negativeComments.length} negativ`}
+                replyTexts={replyTexts}
+                onReplyTextChange={handleReplyTextChange}
+                onSendReply={handleSendReply}
+                onHideComment={(comment) => handleHideComment(comment.id)}
+                onBlockUser={(comment) => handleBlockUser(comment.id, comment.commenter_username)}
+                sendingReply={sendingReply}
+                hidingComment={hidingComment}
+                blockingUser={blockingUser}
+              />
+            )}
+            {filteredComments.length > 0 && (
+              <FilteredCommentsDialog
+                filteredComments={filteredComments}
+                blacklistTopics={blacklistTopics}
+                onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
+                triggerText={`${filteredComments.length} gefiltert`}
+              />
+            )}
           </div>
           
           <div className="flex items-center gap-2">
             <ReplyQueueIndicator onQueueChange={() => refetch()} />
-            <Button
-              onClick={handleFetchComments}
-              disabled={isRefetching}
-              variant="outline"
-              size="sm"
-              className="gap-2 rounded-2xl"
-            >
+            <Button onClick={handleFetchComments} disabled={isRefetching} variant="ghost" size="icon" className="h-8 w-8 rounded-xl">
               <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
-              <span className="hidden sm:inline">Sync</span>
             </Button>
           </div>
         </div>
 
         {/* Compact Action Bar */}
-        <div className="flex flex-wrap items-center gap-3 mb-6 p-4 rounded-2xl bg-card border border-border/30">
+        <div className="flex items-center gap-2 mb-4 p-2.5 rounded-xl bg-card/50 border border-border/20">
           <AiModelSelector
             selectedModel={selectedModel}
             onModelChange={handleModelChange}
@@ -722,257 +730,127 @@ export default function Community() {
             isGenerating={isGenerating}
             generationProgress={progress}
           />
+          {isGenerating && progress && (
+            <div className="flex items-center gap-2 flex-1 ml-2">
+              <div className="flex-1 bg-muted rounded-full h-1 overflow-hidden">
+                <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${(progress.current / progress.total) * 100}%` }} />
+              </div>
+              <span className="text-xs text-muted-foreground whitespace-nowrap">{progress.current}/{progress.total}</span>
+              <Button onClick={cancelGeneration} variant="ghost" size="icon" className="h-6 w-6 rounded-lg">
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
           {commentsWithReplies.length > 0 && !isGenerating && (
-            <Button onClick={handleSendAllReplies} disabled={isSendingAll} size="sm" className="gap-2 rounded-2xl ml-auto">
-              {isSendingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            <Button onClick={handleSendAllReplies} disabled={isSendingAll} size="sm" className="gap-1.5 rounded-xl h-8 ml-auto">
+              {isSendingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
               {commentsWithReplies.length} senden
             </Button>
           )}
         </div>
 
-        {/* Generation Progress - Inline */}
-        {isGenerating && progress && (
-          <div className="mb-6 p-4 rounded-2xl bg-primary/5 border border-primary/20">
-            <div className="flex items-center justify-between gap-4 mb-3">
-              <div className="flex items-center gap-3">
-                <Brain className="h-5 w-5 text-primary animate-pulse" />
-                <span className="text-sm font-medium">{progress.current} / {progress.total} generiert</span>
-              </div>
-              <Button onClick={cancelGeneration} variant="ghost" size="sm" className="gap-2">
-                <X className="h-4 w-4" /> Abbrechen
-              </Button>
-            </div>
-            <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-              <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${(progress.current / progress.total) * 100}%` }} />
-            </div>
-          </div>
-        )}
-
-        {/* Quick Stats & Filters */}
-        <div className="flex flex-wrap items-center gap-3 mb-6 text-sm">
-          <span className="text-muted-foreground">{stats.total} gesamt</span>
-          <span className="text-muted-foreground">•</span>
-          <span className="text-primary font-medium">{stats.withReply} mit Antwort</span>
-          {negativeComments.length > 0 && (
-            <NegativeCommentsDialog
-              negativeComments={negativeComments}
-              triggerText={`${negativeComments.length} negativ`}
-              replyTexts={replyTexts}
-              onReplyTextChange={handleReplyTextChange}
-              onSendReply={handleSendReply}
-              onHideComment={(comment) => handleHideComment(comment.id)}
-              onBlockUser={(comment) => handleBlockUser(comment.id, comment.commenter_username)}
-              sendingReply={sendingReply}
-              hidingComment={hidingComment}
-              blockingUser={blockingUser}
-            />
-          )}
-          {filteredComments.length > 0 && (
-            <FilteredCommentsDialog
-              filteredComments={filteredComments}
-              blacklistTopics={blacklistTopics}
-              onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
-              triggerText={`${filteredComments.length} gefiltert`}
-            />
-          )}
-        </div>
-
         {/* Empty State */}
         {comments.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
-              <MessageCircle className="h-7 w-7 text-muted-foreground" />
+          <div className="text-center py-12">
+            <div className="w-12 h-12 rounded-xl bg-muted/50 flex items-center justify-center mx-auto mb-3">
+              <MessageCircle className="h-5 w-5 text-muted-foreground" />
             </div>
-            <h2 className="text-lg font-semibold mb-2">Keine offenen Kommentare</h2>
-            <p className="text-muted-foreground text-sm mb-6">Alle bearbeitet oder noch keine geladen.</p>
-            <Button onClick={handleFetchComments} variant="outline" className="gap-2 rounded-2xl">
-              <RefreshCw className="h-4 w-4" /> Kommentare laden
+            <p className="text-sm text-muted-foreground mb-4">Keine offenen Kommentare</p>
+            <Button onClick={handleFetchComments} variant="outline" size="sm" className="gap-2 rounded-xl">
+              <RefreshCw className="h-3.5 w-3.5" /> Laden
             </Button>
           </div>
         ) : (
-          /* Posts Feed - Like reference design */
-          <div className="space-y-4">
+          /* Compact Posts Feed */
+          <div className="space-y-3">
             {commentsByPost.map((group, groupIndex) => {
               const { post, comments: groupComments } = group;
-              const isOdd = groupIndex % 2 === 1;
 
               return (
-                <div 
-                  key={group.igMediaId} 
-                  className={cn(
-                    "rounded-3xl p-5 transition-all",
-                    isOdd ? "bg-amber-50/50 dark:bg-amber-950/10" : "bg-blue-50/50 dark:bg-blue-950/10"
-                  )}
-                >
-                  {/* Post Header with Avatar */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      {post?.original_media_url ? (
-                        <img src={post.original_media_url} alt="" className="w-11 h-11 rounded-full object-cover ring-2 ring-white shadow-sm" />
-                      ) : (
-                        <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center ring-2 ring-white">
-                          <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                        </div>
-                      )}
-                      <div>
-                        <p className="font-semibold text-foreground text-sm">Post</p>
-                        <p className="text-xs text-muted-foreground">
-                          {groupComments.length} Kommentar{groupComments.length !== 1 ? "e" : ""}
-                        </p>
+                <div key={group.igMediaId} className="rounded-2xl bg-card/50 border border-border/20 overflow-hidden">
+                  {/* Compact Post Header */}
+                  <div className="flex items-center gap-3 p-3 bg-muted/30 border-b border-border/20">
+                    {post?.original_media_url ? (
+                      <img src={post.original_media_url} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
+                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
                       </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-muted-foreground line-clamp-1">
+                        {post?.caption || "Post"}
+                      </p>
                     </div>
+                    <Badge variant="secondary" className="text-xs shrink-0">{groupComments.length}</Badge>
                     {post?.original_ig_permalink && (
-                      <a href={post.original_ig_permalink} target="_blank" rel="noopener noreferrer"
-                        className="p-2 rounded-full hover:bg-white/50 transition-colors">
-                        <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                      <a href={post.original_ig_permalink} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
                       </a>
                     )}
                   </div>
 
-                  {/* Caption */}
-                  {post?.caption && (
-                    <p className="text-sm text-foreground mb-4 line-clamp-3">{post.caption}</p>
-                  )}
-
-                  {/* Post Image */}
-                  {post?.original_media_url && (
-                    <div className="mb-4 rounded-2xl overflow-hidden">
-                      <img src={post.original_media_url} alt="Post" className="w-full max-h-64 object-cover" />
-                    </div>
-                  )}
-
-                  {/* Comments List */}
-                  <div className="divide-y divide-border/30">
+                  {/* Compact Comments List */}
+                  <div className="divide-y divide-border/15">
                     {groupComments.map((comment) => {
                       const generatedReply = generatedReplies[comment.id];
                       const hasReply = !!replyTexts[comment.id]?.trim();
 
                       return (
-                        <div key={comment.id} className="p-5">
-                          <div className="flex items-start gap-4">
-                            {/* Avatar */}
-                            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                              <User className="h-4 w-4 text-primary" />
+                        <div key={comment.id} className="p-3">
+                          {/* Comment Header - inline */}
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary/15 to-accent/15 flex items-center justify-center shrink-0">
+                              <User className="h-3 w-3 text-primary/70" />
                             </div>
+                            <span className="font-medium text-foreground text-xs">@{comment.commenter_username || "?"}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {formatDistanceToNow(new Date(comment.comment_timestamp), { addSuffix: true, locale: de })}
+                            </span>
+                          </div>
 
-                            {/* Content */}
-                            <div className="flex-1 min-w-0">
-                              {/* Header */}
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="font-semibold text-foreground text-sm">
-                                  @{comment.commenter_username || "Unbekannt"}
-                                </span>
-                                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  {formatDistanceToNow(new Date(comment.comment_timestamp), {
-                                    addSuffix: true,
-                                    locale: de,
-                                  })}
-                                </span>
-                              </div>
+                          {/* Comment Text - compact */}
+                          <p className="text-sm text-foreground/90 mb-2 pl-8">"{comment.comment_text}"</p>
 
-                              {/* Fan Comment */}
-                              <div className="text-sm text-foreground bg-muted/40 rounded-xl p-3 mb-3 border border-border/30">
-                                "{comment.comment_text}"
-                              </div>
-
-                              {/* AI Reply Section - PROMINENT */}
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <Sparkles className="h-4 w-4 text-primary" />
-                                  <span className="text-sm font-medium text-foreground">Deine Antwort</span>
-                                  {(generatedReply || comment.ai_reply_suggestion) && (
-                                    <Badge variant="secondary" className="text-xs gap-1 rounded-lg">
-                                      <Brain className="h-3 w-3" />
-                                      {generatedReply 
-                                        ? AI_MODELS.find((m) => m.id === generatedReply.model)?.name || "KI"
-                                        : "KI-generiert"
-                                      }
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="relative">
-                                  <Textarea
-                                    placeholder="Antwort eingeben oder per KI generieren lassen..."
-                                    value={replyTexts[comment.id] || ""}
-                                    onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
-                                    disabled={isGenerating}
-                                    className={cn(
-                                      "min-h-[100px] resize-none rounded-xl text-sm",
-                                      hasReply 
-                                        ? "border-primary/50 bg-primary/5 focus:border-primary focus:bg-primary/10" 
-                                        : "border-border/50 focus:border-primary/50"
-                                    )}
-                                  />
-                                </div>
-
-                                {/* Actions */}
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleSendReply(comment)}
-                                    disabled={sendingReply === comment.id || !hasReply}
-                                    className="gap-2 rounded-xl h-9"
-                                  >
-                                    {sendingReply === comment.id ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Send className="h-4 w-4" />
-                                    )}
-                                    Senden
-                                  </Button>
-
-                                  {/* Moderation Icons */}
-                                  <div className="flex items-center gap-1 ml-auto">
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            onClick={() => handleHideComment(comment.id)}
-                                            disabled={hidingComment === comment.id}
-                                            className="text-muted-foreground hover:text-amber-500 rounded-xl h-8 w-8 p-0"
-                                          >
-                                            {hidingComment === comment.id ? (
-                                              <Loader2 className="h-3 w-3 animate-spin" />
-                                            ) : (
-                                              <EyeOff className="h-3 w-3" />
-                                            )}
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>Kommentar ausblenden</p>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            onClick={() =>
-                                              handleBlockUser(comment.id, comment.commenter_username)
-                                            }
-                                            disabled={blockingUser === comment.id}
-                                            className="text-muted-foreground hover:text-destructive rounded-xl h-8 w-8 p-0"
-                                          >
-                                            {blockingUser === comment.id ? (
-                                              <Loader2 className="h-3 w-3 animate-spin" />
-                                            ) : (
-                                              <Ban className="h-3 w-3" />
-                                            )}
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>Absender blockieren</p>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  </div>
-                                </div>
+                          {/* Reply Input - compact */}
+                          <div className="pl-8">
+                            <Textarea
+                              placeholder="Antwort..."
+                              value={replyTexts[comment.id] || ""}
+                              onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
+                              disabled={isGenerating}
+                              rows={2}
+                              className={cn(
+                                "min-h-[60px] resize-none rounded-lg text-xs py-2",
+                                hasReply ? "border-primary/40 bg-primary/5" : "border-border/30"
+                              )}
+                            />
+                            
+                            {/* Compact Actions */}
+                            <div className="flex items-center gap-1.5 mt-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleSendReply(comment)}
+                                disabled={sendingReply === comment.id || !hasReply}
+                                className="gap-1 rounded-lg h-7 text-xs px-2.5"
+                              >
+                                {sendingReply === comment.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                                Senden
+                              </Button>
+                              
+                              {(generatedReply || comment.ai_reply_suggestion) && (
+                                <Badge variant="outline" className="text-[10px] gap-1 h-5 px-1.5">
+                                  <Brain className="h-2.5 w-2.5" /> KI
+                                </Badge>
+                              )}
+                              
+                              <div className="flex items-center gap-0.5 ml-auto">
+                                <Button size="icon" variant="ghost" onClick={() => handleHideComment(comment.id)} disabled={hidingComment === comment.id} className="h-6 w-6 rounded-md text-muted-foreground hover:text-amber-500">
+                                  {hidingComment === comment.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <EyeOff className="h-3 w-3" />}
+                                </Button>
+                                <Button size="icon" variant="ghost" onClick={() => handleBlockUser(comment.id, comment.commenter_username)} disabled={blockingUser === comment.id} className="h-6 w-6 rounded-md text-muted-foreground hover:text-destructive">
+                                  {blockingUser === comment.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
+                                </Button>
                               </div>
                             </div>
                           </div>
@@ -984,19 +862,11 @@ export default function Community() {
               );
             })}
 
-            {/* Load More Button */}
+            {/* Load More */}
             {allComments.length > displayLimit && (
-              <div className="mt-6 text-center">
-                <Button
-                  variant="outline"
-                  onClick={() => setDisplayLimit(prev => prev + 50)}
-                  className="gap-2 rounded-xl"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Weitere {Math.min(50, allComments.length - displayLimit)} laden
-                  <Badge variant="secondary" className="ml-1">
-                    {allComments.length - displayLimit} übrig
-                  </Badge>
+              <div className="text-center pt-2">
+                <Button variant="ghost" size="sm" onClick={() => setDisplayLimit(prev => prev + 50)} className="gap-1.5 rounded-lg text-xs">
+                  +{Math.min(50, allComments.length - displayLimit)} mehr
                 </Button>
               </div>
             )}
