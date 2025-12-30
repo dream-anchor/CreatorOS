@@ -40,11 +40,111 @@ export default function CalendarPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [dialogDragActive, setDialogDragActive] = useState(false);
+  const globalDragCounterRef = useRef(0);
 
   // Emit event when dialog opens/closes so BottomChat can disable global drop
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('calendar-dialog-state', { detail: { open: dialogOpen } }));
+    // Reset drag state when dialog closes
+    if (!dialogOpen) {
+      setDialogDragActive(false);
+      globalDragCounterRef.current = 0;
+    }
   }, [dialogOpen]);
+
+  // Global drag handlers when dialog is open - listen to window events
+  useEffect(() => {
+    if (!dialogOpen) return;
+
+    const handleGlobalDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      globalDragCounterRef.current++;
+      if (e.dataTransfer?.types.includes('Files')) {
+        setDialogDragActive(true);
+      }
+    };
+
+    const handleGlobalDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    const handleGlobalDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      globalDragCounterRef.current--;
+      if (globalDragCounterRef.current === 0) {
+        setDialogDragActive(false);
+      }
+    };
+
+    const handleGlobalDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      globalDragCounterRef.current = 0;
+      setDialogDragActive(false);
+
+      if (!selectedPost || !user || selectedPost.status === "PUBLISHED") return;
+
+      const files = Array.from(e.dataTransfer?.files || []);
+      const imageFiles = files.filter(f => f.type.startsWith('image/'));
+
+      if (imageFiles.length === 0) {
+        if (files.length > 0) {
+          toast.error("Bitte nur Bilder hochladen (JPG, PNG, etc.)");
+        }
+        return;
+      }
+
+      setUploadingImage(true);
+      try {
+        for (const file of imageFiles) {
+          const ext = file.name.split(".").pop();
+          const path = `${user.id}/${selectedPost.id}/${crypto.randomUUID()}.${ext}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from("post-assets")
+            .upload(path, file);
+
+          if (uploadError) throw uploadError;
+
+          const { data: urlData } = supabase.storage
+            .from("post-assets")
+            .getPublicUrl(path);
+
+          const { data: newAsset, error: dbError } = await supabase
+            .from("assets")
+            .insert({
+              user_id: user.id,
+              post_id: selectedPost.id,
+              storage_path: path,
+              public_url: urlData.publicUrl,
+              source: "upload",
+            })
+            .select()
+            .single();
+
+          if (dbError) throw dbError;
+
+          setPostAssets((prev) => [...prev, newAsset as Asset]);
+        }
+        toast.success(`${imageFiles.length} Bild(er) hinzugefügt`);
+      } catch (error: any) {
+        toast.error("Fehler beim Hochladen: " + error.message);
+      } finally {
+        setUploadingImage(false);
+      }
+    };
+
+    window.addEventListener('dragenter', handleGlobalDragEnter);
+    window.addEventListener('dragover', handleGlobalDragOver);
+    window.addEventListener('dragleave', handleGlobalDragLeave);
+    window.addEventListener('drop', handleGlobalDrop);
+
+    return () => {
+      window.removeEventListener('dragenter', handleGlobalDragEnter);
+      window.removeEventListener('dragover', handleGlobalDragOver);
+      window.removeEventListener('dragleave', handleGlobalDragLeave);
+      window.removeEventListener('drop', handleGlobalDrop);
+    };
+  }, [dialogOpen, selectedPost, user]);
 
   useEffect(() => {
     if (user) loadPosts();
@@ -175,85 +275,6 @@ export default function CalendarPage() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
-
-  // Dialog drag & drop handlers for adding images
-  const handleDialogDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer?.types.includes('Files')) {
-      setDialogDragActive(true);
-    }
-  }, []);
-
-  const handleDialogDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Only deactivate if leaving the dialog area entirely
-    const rect = dialogRef.current?.getBoundingClientRect();
-    if (rect) {
-      const { clientX, clientY } = e;
-      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
-        setDialogDragActive(false);
-      }
-    }
-  }, []);
-
-  const handleDialogDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDialogDragActive(false);
-
-    if (!selectedPost || !user || selectedPost.status === "PUBLISHED") return;
-
-    const files = Array.from(e.dataTransfer?.files || []);
-    const imageFiles = files.filter(f => f.type.startsWith('image/'));
-
-    if (imageFiles.length === 0) {
-      if (files.length > 0) {
-        toast.error("Bitte nur Bilder hochladen (JPG, PNG, etc.)");
-      }
-      return;
-    }
-
-    setUploadingImage(true);
-    try {
-      for (const file of imageFiles) {
-        const ext = file.name.split(".").pop();
-        const path = `${user.id}/${selectedPost.id}/${crypto.randomUUID()}.${ext}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("post-assets")
-          .upload(path, file);
-
-        if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase.storage
-          .from("post-assets")
-          .getPublicUrl(path);
-
-        const { data: newAsset, error: dbError } = await supabase
-          .from("assets")
-          .insert({
-            user_id: user.id,
-            post_id: selectedPost.id,
-            storage_path: path,
-            public_url: urlData.publicUrl,
-            source: "upload",
-          })
-          .select()
-          .single();
-
-        if (dbError) throw dbError;
-
-        setPostAssets((prev) => [...prev, newAsset as Asset]);
-      }
-      toast.success(`${imageFiles.length} Bild(er) hinzugefügt`);
-    } catch (error: any) {
-      toast.error("Fehler beim Hochladen: " + error.message);
-    } finally {
-      setUploadingImage(false);
-    }
-  }, [selectedPost, user]);
 
   // Drag and drop handlers for reordering
   const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
@@ -654,19 +675,8 @@ export default function CalendarPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent 
           ref={dialogRef}
-          className={`max-w-lg sm:max-w-xl max-h-[90vh] overflow-y-auto transition-all ${dialogDragActive ? 'ring-2 ring-primary ring-offset-2' : ''}`}
-          onDragOver={handleDialogDragOver}
-          onDragLeave={handleDialogDragLeave}
-          onDrop={handleDialogDrop}
+          className="max-w-lg sm:max-w-xl max-h-[90vh] overflow-y-auto"
         >
-          {/* Drag overlay */}
-          {dialogDragActive && selectedPost?.status !== "PUBLISHED" && (
-            <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-sm flex items-center justify-center rounded-lg pointer-events-none">
-              <div className="border-2 border-dashed border-primary rounded-xl p-8 bg-background/90">
-                <p className="text-lg font-semibold text-primary text-center">📸 Bild hier ablegen</p>
-              </div>
-            </div>
-          )}
           
           <DialogHeader>
             <DialogTitle>
@@ -912,6 +922,20 @@ export default function CalendarPage() {
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* Global Drag Overlay when dialog is open */}
+      {dialogOpen && dialogDragActive && selectedPost?.status !== "PUBLISHED" && (
+        <div className="fixed inset-0 z-[100] bg-primary/10 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="border-2 border-dashed border-primary rounded-3xl p-12 bg-background/80 shadow-2xl">
+            <p className="text-xl font-semibold text-primary text-center">
+              📸 Bild hier ablegen
+            </p>
+            <p className="text-sm text-muted-foreground text-center mt-2">
+              Wird zum Post hinzugefügt
+            </p>
+          </div>
+        </div>
+      )}
       </div>
     </GlobalLayout>
   );
