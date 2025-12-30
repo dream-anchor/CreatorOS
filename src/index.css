@@ -4,137 +4,137 @@
 
 @layer base {
   :root {
-    /* 2026 Light Mode - Clean & Airy */
-    --background: 0 0% 99%;
-    --background-secondary: 220 14% 96%;
-    --foreground: 220 20% 10%;
+    /* Modern Soft UI - Light Mode */
+    --background: 220 20% 98%;
+    --background-secondary: 220 16% 96%;
+    --foreground: 220 20% 14%;
 
-    /* Card - Subtle elevation */
+    /* Card - Soft elevation */
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+    --card-foreground: 220 20% 14%;
 
     /* Popover */
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
+    --popover-foreground: 220 20% 14%;
 
-    /* Primary - Electric Indigo */
-    --primary: 245 85% 60%;
+    /* Primary - Soft Blue */
+    --primary: 230 70% 55%;
     --primary-foreground: 0 0% 100%;
 
     /* Secondary */
-    --secondary: 220 15% 94%;
-    --secondary-foreground: 220 20% 25%;
+    --secondary: 220 16% 94%;
+    --secondary-foreground: 220 20% 30%;
 
     /* Muted */
-    --muted: 220 15% 96%;
-    --muted-foreground: 220 10% 45%;
+    --muted: 220 16% 95%;
+    --muted-foreground: 220 10% 50%;
 
-    /* Accent - Vibrant Magenta */
-    --accent: 330 85% 60%;
+    /* Accent - Warm Coral/Pink */
+    --accent: 350 75% 60%;
     --accent-foreground: 0 0% 100%;
 
     /* Destructive */
-    --destructive: 0 72% 51%;
+    --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
 
     /* Border & Input */
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 245 85% 60%;
+    --border: 220 14% 90%;
+    --input: 220 14% 92%;
+    --ring: 230 70% 55%;
 
-    /* Radius - More rounded for 2026 */
-    --radius: 1rem;
+    /* Radius - Softer, more rounded */
+    --radius: 1.25rem;
 
     /* Status colors */
-    --status-idea: 280 75% 55%;
-    --status-draft: 220 80% 55%;
-    --status-review: 45 95% 50%;
-    --status-approved: 160 75% 42%;
-    --status-scheduled: 200 95% 50%;
-    --status-published: 160 80% 38%;
-    --status-failed: 0 85% 50%;
-    --status-rejected: 0 65% 45%;
+    --status-idea: 280 65% 55%;
+    --status-draft: 220 70% 55%;
+    --status-review: 45 90% 50%;
+    --status-approved: 160 65% 45%;
+    --status-scheduled: 200 85% 50%;
+    --status-published: 160 70% 40%;
+    --status-failed: 0 75% 50%;
+    --status-rejected: 0 60% 48%;
 
     /* Sidebar */
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 10% 40%;
-    --sidebar-primary: 245 85% 60%;
+    --sidebar-foreground: 220 10% 45%;
+    --sidebar-primary: 230 70% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 245 85% 60%;
+    --sidebar-accent: 230 70% 55%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 245 85% 60%;
+    --sidebar-border: 220 14% 92%;
+    --sidebar-ring: 230 70% 55%;
 
     /* Custom tokens */
-    --success: 160 75% 40%;
+    --success: 160 65% 42%;
     --success-foreground: 0 0% 100%;
-    --warning: 45 95% 50%;
-    --warning-foreground: 220 20% 10%;
-    --info: 200 95% 50%;
+    --warning: 45 90% 50%;
+    --warning-foreground: 220 20% 14%;
+    --info: 200 85% 50%;
     --info-foreground: 0 0% 100%;
 
-    /* Glow Effects */
-    --glow-primary: 0 8px 32px hsl(245 85% 60% / 0.15);
-    --glow-accent: 0 8px 32px hsl(330 85% 60% / 0.12);
+    /* Glow Effects - Softer */
+    --glow-primary: 0 8px 40px hsl(230 70% 55% / 0.12);
+    --glow-accent: 0 8px 40px hsl(350 75% 60% / 0.10);
   }
 
   .dark {
-    /* 2026 Dark Mode - Deep & Immersive */
-    --background: 240 15% 6%;
-    --background-secondary: 240 15% 8%;
-    --foreground: 0 0% 96%;
+    /* Modern Soft UI - Dark Mode */
+    --background: 240 15% 7%;
+    --background-secondary: 240 15% 9%;
+    --foreground: 0 0% 95%;
 
     /* Glass Card */
-    --card: 240 15% 9%;
-    --card-foreground: 0 0% 96%;
+    --card: 240 15% 10%;
+    --card-foreground: 0 0% 95%;
 
     /* Popover */
-    --popover: 240 15% 10%;
-    --popover-foreground: 0 0% 96%;
+    --popover: 240 15% 11%;
+    --popover-foreground: 0 0% 95%;
 
-    /* Primary - Electric Cyan */
-    --primary: 185 100% 55%;
-    --primary-foreground: 240 15% 6%;
+    /* Primary - Soft Cyan */
+    --primary: 190 90% 55%;
+    --primary-foreground: 240 15% 7%;
 
     /* Secondary */
-    --secondary: 240 15% 14%;
-    --secondary-foreground: 0 0% 96%;
+    --secondary: 240 15% 15%;
+    --secondary-foreground: 0 0% 95%;
 
     /* Muted */
-    --muted: 240 15% 12%;
-    --muted-foreground: 240 5% 55%;
+    --muted: 240 15% 13%;
+    --muted-foreground: 240 5% 58%;
 
-    /* Accent - Neon Magenta */
-    --accent: 315 90% 60%;
+    /* Accent - Soft Pink */
+    --accent: 330 80% 60%;
     --accent-foreground: 0 0% 100%;
 
     /* Destructive */
-    --destructive: 0 80% 55%;
+    --destructive: 0 75% 55%;
     --destructive-foreground: 0 0% 100%;
 
     /* Border & Input */
-    --border: 240 15% 18%;
-    --input: 240 15% 14%;
-    --ring: 185 100% 55%;
+    --border: 240 12% 20%;
+    --input: 240 12% 16%;
+    --ring: 190 90% 55%;
 
     /* Status colors */
-    --status-review: 45 95% 55%;
-    --status-scheduled: 200 95% 55%;
-    --status-published: 160 80% 45%;
+    --status-review: 45 90% 55%;
+    --status-scheduled: 200 85% 55%;
+    --status-published: 160 70% 48%;
 
     /* Sidebar - Glass effect */
-    --sidebar-background: 240 15% 7%;
-    --sidebar-foreground: 240 5% 65%;
-    --sidebar-primary: 185 100% 55%;
-    --sidebar-primary-foreground: 240 15% 6%;
-    --sidebar-accent: 240 15% 14%;
-    --sidebar-accent-foreground: 0 0% 96%;
-    --sidebar-border: 240 15% 14%;
-    --sidebar-ring: 185 100% 55%;
+    --sidebar-background: 240 15% 8%;
+    --sidebar-foreground: 240 5% 62%;
+    --sidebar-primary: 190 90% 55%;
+    --sidebar-primary-foreground: 240 15% 7%;
+    --sidebar-accent: 240 15% 16%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 240 12% 16%;
+    --sidebar-ring: 190 90% 55%;
 
-    /* Glow Effects */
-    --glow-primary: 0 0 50px hsl(185 100% 55% / 0.25);
-    --glow-accent: 0 0 50px hsl(315 90% 60% / 0.2);
+    /* Glow Effects - Softer */
+    --glow-primary: 0 0 50px hsl(190 90% 55% / 0.20);
+    --glow-accent: 0 0 50px hsl(330 80% 60% / 0.15);
   }
 }
 
@@ -157,16 +157,16 @@
   .dark body {
     background: linear-gradient(
       145deg,
-      hsl(250 20% 5%) 0%,
-      hsl(240 18% 6%) 50%,
-      hsl(230 15% 7%) 100%
+      hsl(245 18% 6%) 0%,
+      hsl(240 16% 7%) 50%,
+      hsl(235 14% 8%) 100%
     );
   }
 
   /* Modern Headlines */
   h1, h2, h3 {
     font-family: 'Inter', system-ui, sans-serif;
-    letter-spacing: -0.025em;
+    letter-spacing: -0.02em;
     font-weight: 600;
   }
 
@@ -188,89 +188,87 @@
 }
 
 @layer components {
-  /* Modern Card */
+  /* Modern Soft Card */
   .glass-card {
     @apply rounded-2xl bg-card;
-    border: 1px solid hsl(var(--border));
+    border: 1px solid hsl(var(--border) / 0.6);
     box-shadow: 
-      0 1px 3px hsl(220 25% 12% / 0.04),
-      0 4px 12px hsl(220 25% 12% / 0.03);
-    transition: all 0.2s ease;
+      0 2px 8px hsl(220 20% 20% / 0.04),
+      0 8px 24px hsl(220 20% 20% / 0.03);
+    transition: all 0.25s ease;
   }
 
   .glass-card:hover {
     box-shadow: 
-      0 2px 8px hsl(220 25% 12% / 0.06),
-      0 8px 24px hsl(220 25% 12% / 0.05);
-    border-color: hsl(var(--border));
+      0 4px 12px hsl(220 20% 20% / 0.06),
+      0 12px 32px hsl(220 20% 20% / 0.05);
   }
 
   .dark .glass-card {
-    background: hsl(250 30% 8% / 0.6);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid hsl(260 30% 25% / 0.3);
+    background: hsl(245 25% 10% / 0.7);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid hsl(250 25% 25% / 0.25);
     box-shadow: 
-      0 8px 32px hsl(250 30% 3% / 0.4),
-      inset 0 1px 0 hsl(260 30% 40% / 0.1);
+      0 8px 32px hsl(240 25% 4% / 0.35),
+      inset 0 1px 0 hsl(250 25% 40% / 0.08);
   }
 
   .dark .glass-card:hover {
-    border-color: hsl(260 30% 35% / 0.4);
+    border-color: hsl(250 25% 30% / 0.35);
     box-shadow: 
-      0 12px 40px hsl(250 30% 3% / 0.5),
-      inset 0 1px 0 hsl(260 30% 45% / 0.15);
+      0 12px 40px hsl(240 25% 4% / 0.45),
+      inset 0 1px 0 hsl(250 25% 45% / 0.12);
   }
 
-  /* Glass Input */
+  /* Soft Input */
   .glass-input {
     @apply rounded-xl bg-input;
-    border: 1px solid hsl(var(--border));
-    transition: all 0.2s ease;
+    border: 1px solid hsl(var(--border) / 0.7);
+    transition: all 0.25s ease;
   }
 
   .glass-input:focus {
-    border-color: hsl(var(--primary));
-    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+    border-color: hsl(var(--primary) / 0.5);
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.08);
   }
 
   .dark .glass-input {
-    background: hsl(260 30% 10% / 0.5);
-    backdrop-filter: blur(10px);
-    border: 1px solid hsl(260 30% 25% / 0.3);
+    background: hsl(250 25% 12% / 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid hsl(250 25% 25% / 0.25);
   }
 
   .dark .glass-input:focus {
-    border-color: hsl(200 100% 60% / 0.5);
-    box-shadow: 0 0 0 3px hsl(200 100% 60% / 0.1), var(--glow-primary);
+    border-color: hsl(190 90% 55% / 0.4);
+    box-shadow: 0 0 0 3px hsl(190 90% 55% / 0.08);
   }
 
-  /* Glass Button */
+  /* Soft Button */
   .glass-button {
     @apply rounded-xl px-6 py-3 font-medium;
-    background: hsl(var(--primary) / 0.08);
-    border: 1px solid hsl(var(--primary) / 0.2);
+    background: hsl(var(--primary) / 0.06);
+    border: 1px solid hsl(var(--primary) / 0.15);
     color: hsl(var(--primary));
-    transition: all 0.2s ease;
+    transition: all 0.25s ease;
   }
 
   .glass-button:hover {
-    background: hsl(var(--primary) / 0.12);
-    border-color: hsl(var(--primary) / 0.3);
+    background: hsl(var(--primary) / 0.10);
+    border-color: hsl(var(--primary) / 0.25);
     transform: translateY(-1px);
   }
 
   .dark .glass-button {
-    background: linear-gradient(135deg, hsl(200 100% 50% / 0.2), hsl(280 80% 50% / 0.15));
-    backdrop-filter: blur(10px);
-    border: 1px solid hsl(200 100% 60% / 0.3);
+    background: linear-gradient(135deg, hsl(190 90% 50% / 0.15), hsl(280 70% 50% / 0.10));
+    backdrop-filter: blur(12px);
+    border: 1px solid hsl(190 90% 55% / 0.25);
     color: hsl(220 20% 95%);
   }
 
   .dark .glass-button:hover {
-    background: linear-gradient(135deg, hsl(200 100% 50% / 0.3), hsl(280 80% 50% / 0.25));
-    border-color: hsl(200 100% 60% / 0.5);
-    box-shadow: var(--glow-primary);
+    background: linear-gradient(135deg, hsl(190 90% 50% / 0.25), hsl(280 70% 50% / 0.18));
+    border-color: hsl(190 90% 55% / 0.40);
   }
 
   /* Gradient Text */
@@ -287,61 +285,61 @@
   }
   
   .status-idea {
-    background: hsl(var(--status-idea) / 0.12);
+    background: hsl(var(--status-idea) / 0.10);
     color: hsl(var(--status-idea));
-    border: 1px solid hsl(var(--status-idea) / 0.25);
+    border: 1px solid hsl(var(--status-idea) / 0.20);
   }
   
   .status-draft {
-    background: hsl(var(--status-draft) / 0.12);
+    background: hsl(var(--status-draft) / 0.10);
     color: hsl(var(--status-draft));
-    border: 1px solid hsl(var(--status-draft) / 0.25);
+    border: 1px solid hsl(var(--status-draft) / 0.20);
   }
   
   .status-review {
-    background: hsl(var(--status-review) / 0.12);
+    background: hsl(var(--status-review) / 0.10);
     color: hsl(var(--status-review));
-    border: 1px solid hsl(var(--status-review) / 0.25);
+    border: 1px solid hsl(var(--status-review) / 0.20);
   }
   
   .status-approved {
-    background: hsl(var(--status-approved) / 0.12);
+    background: hsl(var(--status-approved) / 0.10);
     color: hsl(var(--status-approved));
-    border: 1px solid hsl(var(--status-approved) / 0.25);
+    border: 1px solid hsl(var(--status-approved) / 0.20);
   }
   
   .status-scheduled {
-    background: hsl(var(--status-scheduled) / 0.12);
+    background: hsl(var(--status-scheduled) / 0.10);
     color: hsl(var(--status-scheduled));
-    border: 1px solid hsl(var(--status-scheduled) / 0.25);
+    border: 1px solid hsl(var(--status-scheduled) / 0.20);
   }
   
   .status-published {
-    background: hsl(var(--status-published) / 0.12);
+    background: hsl(var(--status-published) / 0.10);
     color: hsl(var(--status-published));
-    border: 1px solid hsl(var(--status-published) / 0.25);
+    border: 1px solid hsl(var(--status-published) / 0.20);
   }
   
   .status-failed {
-    background: hsl(var(--status-failed) / 0.12);
+    background: hsl(var(--status-failed) / 0.10);
     color: hsl(var(--status-failed));
-    border: 1px solid hsl(var(--status-failed) / 0.25);
+    border: 1px solid hsl(var(--status-failed) / 0.20);
   }
   
   .status-rejected {
-    background: hsl(var(--status-rejected) / 0.12);
+    background: hsl(var(--status-rejected) / 0.10);
     color: hsl(var(--status-rejected));
-    border: 1px solid hsl(var(--status-rejected) / 0.25);
+    border: 1px solid hsl(var(--status-rejected) / 0.20);
   }
 
   /* Sidebar */
   .sidebar-gradient {
     background: hsl(var(--sidebar-background));
-    border-right: 1px solid hsl(var(--sidebar-border));
+    border-right: 1px solid hsl(var(--sidebar-border) / 0.5);
   }
 
   .dark .sidebar-gradient {
-    background: linear-gradient(180deg, hsl(250 30% 6% / 0.95), hsl(250 30% 4% / 0.98));
+    background: linear-gradient(180deg, hsl(245 25% 7% / 0.95), hsl(245 25% 5% / 0.98));
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
   }
@@ -382,10 +380,10 @@
 
   @keyframes glow {
     from {
-      box-shadow: 0 0 20px hsl(var(--primary) / 0.2);
+      box-shadow: 0 0 20px hsl(var(--primary) / 0.15);
     }
     to {
-      box-shadow: 0 0 40px hsl(var(--primary) / 0.4);
+      box-shadow: 0 0 40px hsl(var(--primary) / 0.30);
     }
   }
 
@@ -396,8 +394,8 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
 
   .scrollbar-thin::-webkit-scrollbar-track {
@@ -406,10 +404,10 @@
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: hsl(var(--border));
-    border-radius: 3px;
+    border-radius: 4px;
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.3);
+    background: hsl(var(--muted-foreground) / 0.25);
   }
 }
