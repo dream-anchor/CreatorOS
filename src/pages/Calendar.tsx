@@ -568,11 +568,22 @@ export default function CalendarPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Post planen</DialogTitle>
+            <DialogTitle>
+              {selectedPost?.status === "PUBLISHED" ? "Post ansehen" : "Post planen"}
+            </DialogTitle>
           </DialogHeader>
 
-          {selectedPost && (
+          {selectedPost && (() => {
+            const isPublished = selectedPost.status === "PUBLISHED";
+            return (
             <div className="space-y-4">
+              {/* Published Notice */}
+              {isPublished && (
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-700 dark:text-emerald-400">
+                  Dieser Post wurde bereits veröffentlicht und kann nicht mehr bearbeitet werden.
+                </div>
+              )}
+              
               {/* Images Section */}
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
@@ -584,28 +595,30 @@ export default function CalendarPage() {
                   <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border rounded-lg bg-muted/30">
                     <ImageIcon className="h-8 w-8 text-muted-foreground mb-2" />
                     <p className="text-sm text-muted-foreground mb-3">Keine Bilder vorhanden</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingImage}
-                    >
-                      {uploadingImage ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <Plus className="h-4 w-4 mr-2" />
-                      )}
-                      Bild hinzufügen
-                    </Button>
+                    {!isPublished && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingImage}
+                      >
+                        {uploadingImage ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Plus className="h-4 w-4 mr-2" />
+                        )}
+                        Bild hinzufügen
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                     {postAssets.map((asset, index) => (
                       <div
                         key={asset.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, index)}
-                        onDragOver={(e) => handleDragOver(e, index)}
+                        draggable={!isPublished}
+                        onDragStart={(e) => !isPublished && handleDragStart(e, index)}
+                        onDragOver={(e) => !isPublished && handleDragOver(e, index)}
                         onDragEnd={handleDragEnd}
                         className={`relative group aspect-square rounded-lg overflow-hidden border-2 transition-all ${
                           draggedIndex === index
@@ -614,9 +627,11 @@ export default function CalendarPage() {
                         }`}
                       >
                         {/* Drag Handle */}
-                        <div className="absolute top-1 left-1 z-10 bg-background/80 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
-                          <GripVertical className="h-3 w-3 text-muted-foreground" />
-                        </div>
+                        {!isPublished && (
+                          <div className="absolute top-1 left-1 z-10 bg-background/80 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+                            <GripVertical className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                        )}
                         
                         {/* Position indicator */}
                         <div className="absolute top-1 right-1 z-10 bg-background/80 rounded px-1.5 py-0.5 text-[10px] font-medium">
@@ -634,60 +649,66 @@ export default function CalendarPage() {
                         />
                         
                         {/* Delete button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteAsset(asset);
-                          }}
-                          className="absolute bottom-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/90"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
+                        {!isPublished && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAsset(asset);
+                            }}
+                            className="absolute bottom-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/90"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
 
                         {/* Mobile reorder buttons */}
-                        <div className="absolute bottom-1 left-1 flex gap-1 sm:hidden">
-                          {index > 0 && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveAsset(index, index - 1);
-                              }}
-                              className="bg-background/80 rounded px-1.5 py-0.5 text-[10px]"
-                            >
-                              ←
-                            </button>
-                          )}
-                          {index < postAssets.length - 1 && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveAsset(index, index + 1);
-                              }}
-                              className="bg-background/80 rounded px-1.5 py-0.5 text-[10px]"
-                            >
-                              →
-                            </button>
-                          )}
-                        </div>
+                        {!isPublished && (
+                          <div className="absolute bottom-1 left-1 flex gap-1 sm:hidden">
+                            {index > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveAsset(index, index - 1);
+                                }}
+                                className="bg-background/80 rounded px-1.5 py-0.5 text-[10px]"
+                              >
+                                ←
+                              </button>
+                            )}
+                            {index < postAssets.length - 1 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveAsset(index, index + 1);
+                                }}
+                                className="bg-background/80 rounded px-1.5 py-0.5 text-[10px]"
+                              >
+                                →
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                     
                     {/* Add Image Button */}
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingImage}
-                      className="aspect-square border-2 border-dashed border-border rounded-lg flex items-center justify-center hover:border-primary/50 hover:bg-muted/50 transition-all"
-                    >
-                      {uploadingImage ? (
-                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                      ) : (
-                        <Plus className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </button>
+                    {!isPublished && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingImage}
+                        className="aspect-square border-2 border-dashed border-border rounded-lg flex items-center justify-center hover:border-primary/50 hover:bg-muted/50 transition-all"
+                      >
+                        {uploadingImage ? (
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Plus className="h-5 w-5 text-muted-foreground" />
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
                 
@@ -699,13 +720,12 @@ export default function CalendarPage() {
                   className="hidden"
                 />
                 
-                {postAssets.length > 1 && (
+                {postAssets.length > 1 && !isPublished && (
                   <p className="text-xs text-muted-foreground">
                     Ziehe Bilder um die Reihenfolge zu ändern
                   </p>
                 )}
               </div>
-
               {/* Caption */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -718,15 +738,19 @@ export default function CalendarPage() {
                   onChange={(e) => setEditCaption(e.target.value)}
                   rows={4}
                   className="resize-none"
+                  disabled={isPublished}
                 />
               </div>
 
               {/* Collaborators */}
-              <CollaboratorAutocomplete
-                collaborators={collaborators}
-                onChange={setCollaborators}
-              />
+              {!isPublished && (
+                <CollaboratorAutocomplete
+                  collaborators={collaborators}
+                  onChange={setCollaborators}
+                />
+              )}
 
+              {!isPublished && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="date">Datum</Label>
@@ -747,7 +771,9 @@ export default function CalendarPage() {
                   />
                 </div>
               </div>
+              )}
 
+              {!isPublished && (
               <div className="flex flex-col gap-2 pt-2">
                 <div className="flex flex-col sm:flex-row gap-2">
                   {selectedPost.status === "SCHEDULED" && (
@@ -779,8 +805,10 @@ export default function CalendarPage() {
                   Post löschen
                 </Button>
               </div>
+              )}
             </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
       </div>
