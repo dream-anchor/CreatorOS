@@ -13,7 +13,6 @@ import {
   ImageIcon,
   BarChart3,
   Settings,
-  Sparkles,
   Menu,
   LogOut,
   Brain,
@@ -22,6 +21,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import creatorOSLogo from "@/assets/CreatorOS-Logo.webp";
 
 interface GlobalLayoutProps {
   children: ReactNode;
@@ -98,7 +98,7 @@ interface UserData {
   igProfilePicUrl: string | null;
 }
 
-function UserProfileHeader() {
+function useUserData() {
   const [userData, setUserData] = useState<UserData>({
     email: null,
     displayName: null,
@@ -111,7 +111,6 @@ function UserProfileHeader() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Fetch profile and meta_connection in parallel
       const [profileRes, metaRes] = await Promise.all([
         supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
         supabase.from("meta_connections").select("ig_username, profile_picture_url").eq("user_id", user.id).maybeSingle(),
@@ -127,36 +126,41 @@ function UserProfileHeader() {
     fetchUserData();
   }, []);
 
+  return userData;
+}
+
+function LogoHeader() {
+  return (
+    <div className="px-5 py-4 border-b border-border/15">
+      <div className="flex items-center gap-3">
+        <img src={creatorOSLogo} alt="CreatorOS" className="w-10 h-10 rounded-xl" />
+        <span className="font-bold text-foreground tracking-tight">CreatorOS</span>
+      </div>
+    </div>
+  );
+}
+
+function UserProfileFooter({ userData }: { userData: UserData }) {
   const name = userData.displayName || userData.igUsername || userData.email?.split("@")[0] || "User";
   const handle = userData.igUsername ? `@${userData.igUsername}` : userData.email ? `@${userData.email.split("@")[0]}` : "";
 
   return (
-    <div className="px-5 py-5 flex items-center gap-4 border-b border-border/15">
-      {/* Logo + Avatar combination like reference */}
-      <div className="relative">
-        {/* Logo background blob */}
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-primary/5 flex items-center justify-center">
-          <Sparkles className="h-6 w-6 text-primary/70" />
-        </div>
-        {/* Avatar overlapping - real profile pic or fallback */}
-        <div className="absolute -right-2 -bottom-2 w-10 h-10 rounded-full ring-3 ring-card shadow-lg overflow-hidden">
-          {userData.igProfilePicUrl ? (
-            <img 
-              src={userData.igProfilePicUrl} 
-              alt="Profile" 
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="w-full h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-              <User className="h-4 w-4 text-primary" />
-            </div>
-          )}
-        </div>
+    <div className="px-4 py-3 flex items-center gap-3 border-b border-border/15">
+      <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 ring-2 ring-border/20">
+        {userData.igProfilePicUrl ? (
+          <img 
+            src={userData.igProfilePicUrl} 
+            alt="Profile" 
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+            <User className="h-4 w-4 text-primary" />
+          </div>
+        )}
       </div>
-      
-      {/* Name and handle */}
       <div className="flex-1 min-w-0">
-        <h3 className="font-semibold text-foreground text-sm tracking-tight truncate">{name}</h3>
+        <p className="text-sm font-medium text-foreground truncate">{name}</p>
         <p className="text-xs text-muted-foreground truncate">{handle}</p>
       </div>
     </div>
@@ -166,6 +170,7 @@ function UserProfileHeader() {
 function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const userData = useUserData();
   const isActive = (href: string) => location.pathname === href;
 
   const handleSignOut = async () => {
@@ -176,8 +181,8 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <>
-      {/* User Profile Header with Logo */}
-      <UserProfileHeader />
+      {/* Logo Header */}
+      <LogoHeader />
 
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 space-y-0.5">
@@ -204,19 +209,22 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
         <GenerationIndicator onNavigate={onNavigate} />
       </div>
 
-      {/* Footer */}
-      <div className="border-t border-border/15 p-4 space-y-1">
-        <div className="flex items-center justify-between px-3 py-1.5">
-          <span className="text-xs text-muted-foreground/70">Theme</span>
-          <ThemeToggle />
+      {/* Footer: User Profile, Theme & Sign Out */}
+      <div className="border-t border-border/15 mt-auto">
+        <UserProfileFooter userData={userData} />
+        <div className="p-3 space-y-1">
+          <div className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-muted/30 transition-colors">
+            <span className="text-sm text-foreground">Theme</span>
+            <ThemeToggle />
+          </div>
+          <button
+            onClick={handleSignOut}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/30 transition-all duration-200"
+          >
+            <LogOut className="h-4 w-4" />
+            Abmelden
+          </button>
         </div>
-        <button
-          onClick={handleSignOut}
-          className="flex w-full items-center gap-3 rounded-2xl px-4 py-2 text-sm font-medium text-muted-foreground/70 hover:bg-muted/30 hover:text-foreground transition-all duration-200"
-        >
-          <LogOut className="h-[18px] w-[18px]" />
-          Abmelden
-        </button>
       </div>
     </>
   );
@@ -230,11 +238,7 @@ export function GlobalLayout({ children, hideBottomChat = false }: GlobalLayoutP
       {/* Mobile Header */}
       <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-card/90 backdrop-blur-2xl border-b border-border/15 flex items-center justify-between px-4 lg:hidden">
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary/20 to-accent/10 flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-primary" />
-            </div>
-          </div>
+          <img src={creatorOSLogo} alt="CreatorOS" className="w-9 h-9 rounded-xl" />
           <h1 className="font-bold text-foreground tracking-tight">CreatorOS</h1>
         </div>
         
