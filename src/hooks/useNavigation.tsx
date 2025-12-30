@@ -69,20 +69,31 @@ export const intentRouteMap: Record<string, string> = {
 };
 
 // Parse user message for navigation intent
+// Conservative approach: only navigate for short, explicit commands
 export function parseNavigationIntent(message: string): string | null {
-  const lowerMessage = message.toLowerCase();
+  const trimmed = message.trim();
+  const lowerMessage = trimmed.toLowerCase();
   
-  // Check for navigation patterns
-  const patterns = [
-    /(?:zeig|öffne|geh zu|navigiere zu|show|open|go to)\s+(?:mir\s+)?(?:die\s+)?(.+)/i,
-    /(?:lass uns|ich will|ich möchte)\s+(.+?)\s+(?:sehen|checken|prüfen|anschauen)/i,
+  // Tokenize: split on non-alphanumeric (incl. German chars)
+  const tokens = lowerMessage.split(/[^a-z0-9äöüß]+/).filter(Boolean);
+  const wordCount = tokens.length;
+  
+  // GUARD: If message is long/content-rich, never navigate
+  // This prevents AI prompts from being hijacked
+  if (trimmed.length > 80 || wordCount > 10) {
+    return null;
+  }
+  
+  // Check for explicit navigation patterns (verbs + target)
+  const explicitPatterns = [
+    /^(?:zeig|öffne|geh zu|navigiere zu|show|open|go to)\s+(?:mir\s+)?(?:die\s+)?(.+)$/i,
+    /^(?:zur?|to)\s+(.+)$/i,
   ];
 
-  for (const pattern of patterns) {
+  for (const pattern of explicitPatterns) {
     const match = lowerMessage.match(pattern);
     if (match) {
       const intent = match[1].trim();
-      // Look up in intent map
       for (const [key, route] of Object.entries(intentRouteMap)) {
         if (intent.includes(key)) {
           return route;
@@ -91,10 +102,14 @@ export function parseNavigationIntent(message: string): string | null {
     }
   }
 
-  // Direct keyword matching
-  for (const [key, route] of Object.entries(intentRouteMap)) {
-    if (lowerMessage.includes(key)) {
-      return route;
+  // Direct keyword matching - ONLY for very short messages (≤ 3 words)
+  // and the token must exactly match a key
+  if (wordCount <= 3) {
+    for (const [key, route] of Object.entries(intentRouteMap)) {
+      // Exact token match (not substring)
+      if (tokens.includes(key)) {
+        return route;
+      }
     }
   }
 

@@ -243,37 +243,41 @@ export function CoPilotSidebar({ collapsed, onToggleCollapse }: CoPilotSidebarPr
       return;
     }
 
-    // Check for navigation intent
-    const navRoute = parseNavigationIntent(trimmedInput);
-    if (navRoute) {
-      navigate(navRoute);
-      
-      // If navigating to community, also fetch comments
-      if (navRoute === "/community") {
-        await handleGetComments();
+    // Only check navigation for short messages (guard against long AI prompts)
+    const wordCount = trimmedInput.split(/\s+/).filter(Boolean).length;
+    
+    if (wordCount <= 5) {
+      const navRoute = parseNavigationIntent(trimmedInput);
+      if (navRoute) {
+        navigate(navRoute);
+        
+        // If navigating to community, also fetch comments
+        if (navRoute === "/community") {
+          await handleGetComments();
+          return;
+        }
+
+        const routeNames: Record<string, string> = {
+          "/dashboard": "Dashboard",
+          "/community": "Community",
+          "/calendar": "Planung",
+          "/media": "Bilder",
+          "/analytics": "Analytics",
+          "/settings": "Einstellungen",
+          "/generator": "Content erstellen",
+          "/review": "Review",
+        };
+
+        const navMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `🚀 Ich hab **${routeNames[navRoute] || navRoute}** für dich geöffnet!`,
+          navigatedTo: navRoute,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, navMessage]);
         return;
       }
-
-      const routeNames: Record<string, string> = {
-        "/dashboard": "Dashboard",
-        "/community": "Community",
-        "/calendar": "Planung",
-        "/media": "Bilder",
-        "/analytics": "Analytics",
-        "/settings": "Einstellungen",
-        "/generator": "Content erstellen",
-        "/review": "Review",
-      };
-
-      const navMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: `🚀 Ich hab **${routeNames[navRoute] || navRoute}** für dich geöffnet!`,
-        navigatedTo: navRoute,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, navMessage]);
-      return;
     }
 
     // Regular AI chat
