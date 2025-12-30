@@ -1,93 +1,117 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import {
-  TrendingUp,
-  Heart,
-  MessageCircle,
-  Eye,
-  Users,
-  BarChart3,
-  Loader2,
-} from "lucide-react";
-import { format, subDays } from "date-fns";
+import { Loader2, BarChart3, AlertCircle } from "lucide-react";
+import { subDays, format } from "date-fns";
 import { de } from "date-fns/locale";
+import { toast } from "sonner";
 
-interface AnalyticsData {
-  totalPosts: number;
-  totalLikes: number;
-  totalComments: number;
-  totalReach: number;
-  avgEngagementRate: number;
-  topPerformingDay: string | null;
+import { FollowerChart } from "@/components/analytics/FollowerChart";
+import { ReachChart } from "@/components/analytics/ReachChart";
+import { EngagementChart } from "@/components/analytics/EngagementChart";
+import { StatsOverview } from "@/components/analytics/StatsOverview";
+import { DateRangeSelector } from "@/components/analytics/DateRangeSelector";
+
+interface DailyStats {
+  id: string;
+  date: string;
+  follower_count: number;
+  follower_delta: number;
+  impressions_day: number;
+  reach_day: number;
+  profile_views: number;
+  website_clicks: number;
+  email_contacts: number;
+  accounts_engaged: number;
+  total_interactions: number;
+  likes_day: number;
+  comments_day: number;
+  shares_day: number;
+  saves_day: number;
+  posts_count: number;
 }
 
 export default function AnalyticsPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [analytics, setAnalytics] = useState<AnalyticsData>({
-    totalPosts: 0,
-    totalLikes: 0,
-    totalComments: 0,
-    totalReach: 0,
-    avgEngagementRate: 0,
-    topPerformingDay: null,
-  });
+  const [syncing, setSyncing] = useState(false);
+  const [dailyStats, setDailyStats] = useState<DailyStats[]>([]);
+  const [selectedRange, setSelectedRange] = useState<"7" | "30" | "90">("30");
+  const [hasConnection, setHasConnection] = useState(true);
 
   useEffect(() => {
-    if (user) loadAnalytics();
-  }, [user]);
+    if (user) {
+      loadStats();
+      checkConnection();
+    }
+  }, [user, selectedRange]);
 
-  const loadAnalytics = async () => {
+  const checkConnection = async () => {
+    const { data } = await supabase
+      .from("meta_connections")
+      .select("id")
+      .eq("user_id", user?.id)
+      .maybeSingle();
+    setHasConnection(!!data);
+  };
+
+  const loadStats = async () => {
     try {
-      // Get all published posts
-      const { data: posts } = await supabase
-        .from("posts")
+      const startDate = subDays(new Date(), parseInt(selectedRange));
+      
+      const { data, error } = await supabase
+        .from("daily_account_stats")
         .select("*")
-        .eq("status", "PUBLISHED")
-        .eq("user_id", user?.id);
+        .eq("user_id", user?.id)
+        .gte("date", format(startDate, "yyyy-MM-dd"))
+        .order("date", { ascending: true });
 
-      if (posts) {
-        const totalLikes = posts.reduce((sum, p) => sum + (p.likes_count || 0), 0);
-        const totalComments = posts.reduce((sum, p) => sum + (p.comments_count || 0), 0);
-        const totalReach = posts.reduce((sum, p) => sum + (p.reach_count || 0), 0);
-        
-        const engagementRates = posts
-          .filter(p => p.engagement_rate)
-          .map(p => p.engagement_rate || 0);
-        const avgEngagementRate = engagementRates.length > 0 
-          ? engagementRates.reduce((a, b) => a + b, 0) / engagementRates.length 
-          : 0;
-
-        // Find top performing day
-        const dayPerformance: Record<string, number> = {};
-        posts.forEach(post => {
-          if (post.published_at) {
-            const day = format(new Date(post.published_at), 'EEEE', { locale: de });
-            const engagement = (post.likes_count || 0) + (post.comments_count || 0) * 2;
-            dayPerformance[day] = (dayPerformance[day] || 0) + engagement;
-          }
-        });
-        
-        const topDay = Object.entries(dayPerformance).sort((a, b) => b[1] - a[1])[0];
-
-        setAnalytics({
-          totalPosts: posts.length,
-          totalLikes,
-          totalComments,
-          totalReach,
-          avgEngagementRate,
-          topPerformingDay: topDay ? topDay[0] : null,
-        });
-      }
+      if (error) throw error;
+      setDailyStats(data || []);
     } catch (error) {
-      console.error("Error loading analytics:", error);
+      console.error("Error loading stats:", error);
+      toast.error("Fehler beim Laden der Analytics");
     } finally {
       setLoading(false);
     }
   };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await supabase.functions.invoke("fetch-daily-insights", {
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      toast.success("Analytics erfolgreich synchronisiert!");
+      await loadStats();
+    } catch (error) {
+      console.error("Sync error:", error);
+      toast.error("Fehler beim Synchronisieren der Analytics");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const todayStats = useMemo(() => {
+    if (dailyStats.length === 0) return null;
+    return dailyStats[dailyStats.length - 1];
+  }, [dailyStats]);
+
+  const lastSyncDate = useMemo(() => {
+    if (!todayStats) return null;
+    return todayStats.date;
+  }, [todayStats]);
 
   if (loading) {
     return (
@@ -99,115 +123,92 @@ export default function AnalyticsPage() {
     );
   }
 
-  const stats = [
-    {
-      title: "Veröffentlichte Posts",
-      value: analytics.totalPosts,
-      icon: BarChart3,
-      color: "text-primary",
-      bgColor: "bg-primary/10",
-    },
-    {
-      title: "Gesamt Likes",
-      value: analytics.totalLikes.toLocaleString(),
-      icon: Heart,
-      color: "text-rose-500",
-      bgColor: "bg-rose-500/10",
-    },
-    {
-      title: "Gesamt Kommentare",
-      value: analytics.totalComments.toLocaleString(),
-      icon: MessageCircle,
-      color: "text-cyan-500",
-      bgColor: "bg-cyan-500/10",
-    },
-    {
-      title: "Reichweite",
-      value: analytics.totalReach.toLocaleString(),
-      icon: Eye,
-      color: "text-violet-500",
-      bgColor: "bg-violet-500/10",
-    },
-  ];
+  if (!hasConnection) {
+    return (
+      <GlobalLayout>
+        <div className="p-4 sm:p-6 lg:p-8">
+          <Card className="glass-card border-dashed max-w-2xl mx-auto">
+            <CardContent className="flex flex-col items-center justify-center py-16 px-4 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-4">
+                <AlertCircle className="h-8 w-8 text-amber-500" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Instagram nicht verbunden</h3>
+              <p className="text-muted-foreground text-sm max-w-md mb-4">
+                Um Analytics zu sehen, verbinde zuerst deinen Instagram Business Account 
+                in den Einstellungen.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </GlobalLayout>
+    );
+  }
 
   return (
     <GlobalLayout>
-      <div className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6">
-      <div className="space-y-4 sm:space-y-6 max-w-6xl">
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          {stats.map((stat) => (
-            <Card key={stat.title} className="glass-card">
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs sm:text-sm text-muted-foreground truncate">{stat.title}</p>
-                    <p className="text-xl sm:text-3xl font-bold mt-1">{stat.value}</p>
-                  </div>
-                  <div className={`p-2 sm:p-3 rounded-xl ${stat.bgColor} flex-shrink-0`}>
-                    <stat.icon className={`h-4 w-4 sm:h-6 sm:w-6 ${stat.color}`} />
-                  </div>
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <div className="space-y-6 max-w-7xl">
+          {/* Header with Date Range and Sync */}
+          <div className="flex flex-col gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold">Analytics</h1>
+              <p className="text-muted-foreground text-sm mt-1">
+                Dein Instagram-Wachstum im Überblick
+              </p>
+            </div>
+            <DateRangeSelector
+              selectedRange={selectedRange}
+              onRangeChange={setSelectedRange}
+              onSync={handleSync}
+              isSyncing={syncing}
+              lastSyncDate={lastSyncDate}
+            />
+          </div>
+
+          {dailyStats.length === 0 ? (
+            <Card className="glass-card border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                  <BarChart3 className="h-8 w-8 text-primary" />
                 </div>
+                <h3 className="text-lg font-semibold mb-2">Noch keine Daten vorhanden</h3>
+                <p className="text-muted-foreground text-sm max-w-md mb-4">
+                  Klicke auf "Jetzt synchronisieren" um deine Instagram-Statistiken 
+                  abzurufen. Danach werden die Daten täglich automatisch aktualisiert.
+                </p>
               </CardContent>
             </Card>
-          ))}
-        </div>
+          ) : (
+            <>
+              {/* Today's Stats Overview */}
+              <StatsOverview todayStats={todayStats} />
 
-        {/* Insights */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-          <Card className="glass-card">
-            <CardHeader className="pb-2 sm:pb-4">
-              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
-                <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                Engagement Rate
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-6 sm:py-8">
-                <p className="text-3xl sm:text-5xl font-bold text-primary">
-                  {analytics.avgEngagementRate.toFixed(2)}%
-                </p>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-2">
-                  Durchschnittliche Engagement Rate
-                </p>
+              {/* Charts Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                <FollowerChart data={dailyStats} />
+                <ReachChart data={dailyStats} />
               </div>
-            </CardContent>
-          </Card>
 
-          <Card className="glass-card">
-            <CardHeader className="pb-2 sm:pb-4">
-              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
-                <Users className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                Bester Tag
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-6 sm:py-8">
-                <p className="text-3xl sm:text-5xl font-bold text-primary">
-                  {analytics.topPerformingDay || "—"}
-                </p>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-2">
-                  Tag mit dem höchsten Engagement
-                </p>
+              <div className="grid grid-cols-1 gap-4 sm:gap-6">
+                <EngagementChart data={dailyStats} />
               </div>
-            </CardContent>
-          </Card>
-        </div>
 
-        {/* Coming Soon */}
-        <Card className="glass-card border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-10 sm:py-16 px-4">
-            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-3 sm:mb-4">
-              <BarChart3 className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
-            </div>
-            <h3 className="text-base sm:text-lg font-semibold mb-2">Erweiterte Analytics</h3>
-            <p className="text-muted-foreground text-center text-xs sm:text-sm max-w-md">
-              Detaillierte Wachstumskurven und Performance-Vergleiche 
-              werden bald verfügbar sein.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+              {/* Coming Soon */}
+              <Card className="glass-card border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-10 sm:py-12 px-4">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-3">
+                    <BarChart3 className="h-6 w-6 text-primary" />
+                  </div>
+                  <h3 className="text-base sm:text-lg font-semibold mb-2">Erweiterte Analytics</h3>
+                  <p className="text-muted-foreground text-center text-xs sm:text-sm max-w-md">
+                    Post-Performance-Vergleiche, beste Posting-Zeiten und KI-gestützte 
+                    Wachstumsempfehlungen werden bald verfügbar sein.
+                  </p>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
       </div>
     </GlobalLayout>
   );

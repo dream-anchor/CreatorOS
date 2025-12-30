@@ -139,13 +139,28 @@ async function fetchInsightsForUser(
   const accountData = await accountRes.json();
   console.log("[fetch-daily-insights] Account data:", accountData);
 
-  // 2. Fetch insights (impressions, reach, profile_views)
-  // Note: These metrics require a Business/Creator account
+  // 2. Get yesterday's follower count for delta calculation
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+  const { data: yesterdayStats } = await supabase
+    .from("daily_account_stats")
+    .select("follower_count")
+    .eq("user_id", userId)
+    .eq("date", yesterdayStr)
+    .maybeSingle();
+
+  const followerDelta = yesterdayStats 
+    ? (accountData.followers_count || 0) - (yesterdayStats.follower_count || 0)
+    : 0;
+
+  // 3. Fetch insights (impressions, reach, profile_views)
   let insightsData: any = {};
   
   try {
-    // Fetch lifetime metrics that are available
-    const insightsUrl = `https://graph.instagram.com/v22.0/${igUserId}/insights?metric=impressions,reach,profile_views,website_clicks,email_contacts&period=day&access_token=${accessToken}`;
+    // Fetch daily metrics
+    const insightsUrl = `https://graph.instagram.com/v22.0/${igUserId}/insights?metric=impressions,reach,profile_views,website_clicks,email_contacts,accounts_engaged,total_interactions&period=day&access_token=${accessToken}`;
     const insightsRes = await fetch(insightsUrl);
     
     if (insightsRes.ok) {
@@ -164,13 +179,51 @@ async function fetchInsightsForUser(
     } else {
       const insightsError = await insightsRes.json();
       console.warn("[fetch-daily-insights] Insights API error (non-fatal):", insightsError);
-      // Continue without insights - not all accounts have access
     }
   } catch (insightsErr) {
     console.warn("[fetch-daily-insights] Insights fetch failed (non-fatal):", insightsErr);
   }
 
-  // 3. Count today's posts and stories
+  // 4. Fetch engagement breakdown from recent media
+  let likesDay = 0;
+  let commentsDay = 0;
+  let savesDay = 0;
+  let sharesDay = 0;
+
+  try {
+    // Get today's published posts
+    const { data: todayPosts } = await supabase
+      .from("posts")
+      .select("ig_media_id, likes_count, comments_count, saved_count")
+      .eq("user_id", userId)
+      .eq("status", "PUBLISHED")
+      .gte("published_at", `${today}T00:00:00`)
+      .lte("published_at", `${today}T23:59:59`);
+
+    if (todayPosts) {
+      for (const post of todayPosts) {
+        likesDay += post.likes_count || 0;
+        commentsDay += post.comments_count || 0;
+        savesDay += post.saved_count || 0;
+      }
+    }
+
+    // Also try to get shares from Instagram API for recent media
+    const mediaUrl = `https://graph.instagram.com/v22.0/${igUserId}/media?fields=id,shares&limit=10&access_token=${accessToken}`;
+    const mediaRes = await fetch(mediaUrl);
+    if (mediaRes.ok) {
+      const mediaData = await mediaRes.json();
+      if (mediaData.data) {
+        for (const media of mediaData.data) {
+          sharesDay += media.shares?.count || 0;
+        }
+      }
+    }
+  } catch (engagementErr) {
+    console.warn("[fetch-daily-insights] Engagement breakdown failed (non-fatal):", engagementErr);
+  }
+
+  // 5. Count today's posts and stories
   let postsToday = 0;
   try {
     const { count } = await supabase
@@ -186,23 +239,30 @@ async function fetchInsightsForUser(
     // Ignore
   }
 
-  // 4. Prepare stats object
+  // 6. Prepare stats object with all metrics
   const stats = {
     user_id: userId,
     date: today,
     follower_count: accountData.followers_count || 0,
+    follower_delta: followerDelta,
     impressions_day: insightsData.impressions || 0,
     reach_day: insightsData.reach || 0,
     profile_views: insightsData.profile_views || 0,
     website_clicks: insightsData.website_clicks || 0,
     email_contacts: insightsData.email_contacts || 0,
+    accounts_engaged: insightsData.accounts_engaged || 0,
+    total_interactions: insightsData.total_interactions || 0,
+    likes_day: likesDay,
+    comments_day: commentsDay,
+    shares_day: sharesDay,
+    saves_day: savesDay,
     posts_count: postsToday,
     stories_count: 0, // Stories API requires different endpoint
   };
 
   console.log("[fetch-daily-insights] Saving stats:", stats);
 
-  // 5. Upsert into daily_account_stats
+  // 7. Upsert into daily_account_stats
   const { error: upsertError } = await supabase
     .from("daily_account_stats")
     .upsert(stats, { 
@@ -215,7 +275,7 @@ async function fetchInsightsForUser(
     throw new Error(`Database error: ${upsertError.message}`);
   }
 
-  // 6. Log the event
+  // 8. Log the event
   await supabase.from("logs").insert({
     user_id: userId,
     event_type: "DAILY_INSIGHTS_TRACKED",
@@ -223,8 +283,10 @@ async function fetchInsightsForUser(
     details: {
       date: today,
       follower_count: stats.follower_count,
+      follower_delta: stats.follower_delta,
       impressions: stats.impressions_day,
-      reach: stats.reach_day
+      reach: stats.reach_day,
+      accounts_engaged: stats.accounts_engaged
     }
   });
 
@@ -232,10 +294,17 @@ async function fetchInsightsForUser(
     date: today,
     stats: {
       followers: stats.follower_count,
+      follower_delta: stats.follower_delta,
       impressions: stats.impressions_day,
       reach: stats.reach_day,
       profile_views: stats.profile_views,
-      website_clicks: stats.website_clicks
+      website_clicks: stats.website_clicks,
+      accounts_engaged: stats.accounts_engaged,
+      total_interactions: stats.total_interactions,
+      likes: stats.likes_day,
+      comments: stats.comments_day,
+      saves: stats.saves_day,
+      shares: stats.shares_day
     }
   };
 }
