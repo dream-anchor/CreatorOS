@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { GlobalLayout } from "@/components/GlobalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -416,58 +416,65 @@ export default function TopicsPage() {
 
   if (loading) {
     return (
-      <AppLayout title="Themen">
+      <GlobalLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </AppLayout>
+      </GlobalLayout>
     );
   }
 
   return (
-    <AppLayout
-      title="Themen"
-      description="Verwalte deine Content-Themen und Ideen"
-      actions={
-        <div className="flex gap-2">
-          <Dialog open={csvDialogOpen} onOpenChange={setCsvDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Upload className="mr-2 h-4 w-4" />
-                CSV Import
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>CSV Import</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Format: Titel;Beschreibung;Keywords (kommagetrennt)
-                </p>
-                <Textarea
-                  placeholder="Thema 1;Beschreibung;keyword1, keyword2
+    <GlobalLayout>
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <div className="space-y-6 max-w-7xl">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold">Themen</h1>
+              <p className="text-muted-foreground text-sm mt-1">
+                Verwalte deine Content-Themen und Ideen
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Dialog open={csvDialogOpen} onOpenChange={setCsvDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    <Upload className="mr-2 h-4 w-4" />
+                    CSV Import
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>CSV Import</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Format: Titel;Beschreibung;Keywords (kommagetrennt)
+                    </p>
+                    <Textarea
+                      placeholder="Thema 1;Beschreibung;keyword1, keyword2
 Thema 2;Andere Beschreibung;keyword3"
-                  value={csvInput}
-                  onChange={(e) => setCsvInput(e.target.value)}
-                  className="min-h-[200px] font-mono text-sm"
-                />
-                <Button onClick={handleCsvImport} disabled={saving} className="w-full">
-                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Importieren
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-          <Button onClick={() => openDialog()}>
-            <Plus className="mr-2 h-4 w-4" />
-            Neues Thema
-          </Button>
-        </div>
-      }
-    >
-      {topics.length === 0 ? (
-        <Card className="glass-card">
+                      value={csvInput}
+                      onChange={(e) => setCsvInput(e.target.value)}
+                      className="min-h-[200px] font-mono text-sm"
+                    />
+                    <Button onClick={handleCsvImport} disabled={saving} className="w-full">
+                      {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Importieren
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <Button onClick={() => openDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Neues Thema
+              </Button>
+            </div>
+          </div>
+
+          {topics.length === 0 ? (
+            <Card className="glass-card">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <p className="text-muted-foreground mb-4">Noch keine Themen erstellt</p>
             <Button onClick={() => openDialog()}>
@@ -549,6 +556,8 @@ Thema 2;Andere Beschreibung;keyword3"
           ))}
         </div>
       )}
+        </div>
+      </div>
 
       {/* Topic Wizard Dialog */}
       <Dialog open={wizardOpen} onOpenChange={(open) => {
@@ -950,6 +959,6 @@ Thema 2;Andere Beschreibung;keyword3"
           </div>
         </DialogContent>
       </Dialog>
-    </AppLayout>
+    </GlobalLayout>
   );
 }

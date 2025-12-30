@@ -341,6 +341,8 @@ serve(async (req) => {
       : '';
     const writingStyle = brand?.writing_style ? `- Schreibstil: ${brand.writing_style}` : '';
     const examplePosts = brand?.example_posts ? `\n\nBEISPIEL-POSTS:\n${brand.example_posts}` : '';
+    const doList = brand?.do_list?.length > 0 ? `- DO (Immer beachten): ${brand.do_list.join(', ')}` : '';
+    const dontList = brand?.dont_list?.length > 0 ? `- DON'T (Niemals tun): ${brand.dont_list.join(', ')}` : '';
     const postTypeInstructions = postTypeInfo ? `\n\nPOST-TYP: ${postTypeInfo.name}\n${postTypeInfo.instruction}` : '';
     const contextSection = additional_context ? `\n\nZUSÄTZLICHER KONTEXT:\n${additional_context}` : '';
     const styleSystemPrompt = brand?.style_system_prompt ? `\n\nSTIL-INSTRUKTION:\n${brand.style_system_prompt}` : '';
@@ -378,6 +380,8 @@ ${postTypeInstructions}
 Brand Guidelines:
 - Tonalität: ${brand?.tone_style || 'Professionell und nahbar'}
 ${writingStyle}
+${doList}
+${dontList}
 - Sprache: ${brand?.language_primary || 'DE'}
 - Emoji-Level: ${brand?.emoji_level || 1}
 - Hashtags: ${brand?.hashtag_min || 8}-${brand?.hashtag_max || 20}
