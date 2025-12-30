@@ -8,6 +8,7 @@ import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useChatConversations, useChatMessages, ChatMessage as DbChatMessage } from "@/hooks/useChatConversations";
+import { AiModelSelector, AI_MODELS } from "@/components/community/AiModelSelector";
 
 interface Message {
   id: string;
@@ -72,6 +73,7 @@ export function ModernChatInterface() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingHint, setLoadingHint] = useState("Denke nach...");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
 
   // Sync DB messages to local state when conversation changes
   useEffect(() => {
@@ -245,7 +247,7 @@ export function ModernChatInterface() {
         .map(m => ({ role: m.role, content: m.content }));
 
       const { data, error } = await supabase.functions.invoke("copilot-chat", {
-        body: { messages: messageHistory },
+        body: { messages: messageHistory, model: selectedModel },
       });
 
       if (error) throw new Error(error.message);
@@ -286,8 +288,12 @@ export function ModernChatInterface() {
   return (
     <div className="flex flex-col h-full w-full">
       {/* Header - Minimal like ChatGPT */}
-      <div className="flex items-center justify-center py-3 border-b border-border/30">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
         <span className="text-sm font-medium text-foreground">Co-Pilot</span>
+        <AiModelSelector
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
+        />
       </div>
 
       {/* Loading state for conversation */}

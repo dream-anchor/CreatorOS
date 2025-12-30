@@ -2781,10 +2781,13 @@ serve(async (req) => {
       });
     }
 
-    const { messages } = await req.json();
+    const { messages, model: requestedModel } = await req.json();
     if (!messages || !Array.isArray(messages)) {
       throw new Error("messages array required");
     }
+
+    // Determine which model to use (requested -> default)
+    const selectedModel = requestedModel || 'google/gemini-2.5-flash';
 
     console.log(`[copilot] Processing chat for user ${user.id}, ${messages.length} messages`);
 
@@ -2971,7 +2974,7 @@ Du:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: selectedModel,
         messages: [
           { role: 'system', content: systemPrompt },
           ...messages
@@ -3149,7 +3152,7 @@ Du:
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
+          model: selectedModel,
           messages: followUpMessages
         }),
       });
