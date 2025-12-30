@@ -107,3 +107,6 @@ verify_jwt = false
 
 [functions.backfill-likes]
 verify_jwt = false
+
+[functions.refresh-instagram-token]
+verify_jwt = false
