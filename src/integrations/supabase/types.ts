@@ -439,46 +439,67 @@ export type Database = {
       }
       daily_account_stats: {
         Row: {
+          accounts_engaged: number | null
+          comments_day: number | null
           created_at: string
           date: string
           email_contacts: number | null
           follower_count: number | null
+          follower_delta: number | null
           id: string
           impressions_day: number | null
+          likes_day: number | null
           posts_count: number | null
           profile_views: number | null
           reach_day: number | null
+          saves_day: number | null
+          shares_day: number | null
           stories_count: number | null
+          total_interactions: number | null
           updated_at: string
           user_id: string
           website_clicks: number | null
         }
         Insert: {
+          accounts_engaged?: number | null
+          comments_day?: number | null
           created_at?: string
           date: string
           email_contacts?: number | null
           follower_count?: number | null
+          follower_delta?: number | null
           id?: string
           impressions_day?: number | null
+          likes_day?: number | null
           posts_count?: number | null
           profile_views?: number | null
           reach_day?: number | null
+          saves_day?: number | null
+          shares_day?: number | null
           stories_count?: number | null
+          total_interactions?: number | null
           updated_at?: string
           user_id: string
           website_clicks?: number | null
         }
         Update: {
+          accounts_engaged?: number | null
+          comments_day?: number | null
           created_at?: string
           date?: string
           email_contacts?: number | null
           follower_count?: number | null
+          follower_delta?: number | null
           id?: string
           impressions_day?: number | null
+          likes_day?: number | null
           posts_count?: number | null
           profile_views?: number | null
           reach_day?: number | null
+          saves_day?: number | null
+          shares_day?: number | null
           stories_count?: number | null
+          total_interactions?: number | null
           updated_at?: string
           user_id?: string
           website_clicks?: number | null
