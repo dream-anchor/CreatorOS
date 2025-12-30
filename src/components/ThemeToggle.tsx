@@ -14,7 +14,7 @@ export function ThemeToggle() {
       variant="ghost"
       size="icon"
       onClick={toggleTheme}
-      className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+      className="h-8 w-8 rounded-lg text-foreground hover:bg-muted/60 transition-all"
       title={theme === "dark" ? "Zum hellen Modus wechseln" : "Zum dunklen Modus wechseln"}
     >
       {theme === "dark" ? (
