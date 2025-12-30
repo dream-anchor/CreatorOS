@@ -51,6 +51,7 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+          warm: "hsl(var(--card-warm))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
@@ -143,8 +144,8 @@ export default {
           "75%": { transform: "translate(-30px, -15px) scale(1.02)" },
         },
         "glow-pulse": {
-          "0%, 100%": { boxShadow: "0 0 20px hsl(190 90% 55% / 0.15)" },
-          "50%": { boxShadow: "0 0 40px hsl(190 90% 55% / 0.30)" },
+          "0%, 100%": { boxShadow: "0 0 20px hsl(195 85% 55% / 0.12)" },
+          "50%": { boxShadow: "0 0 40px hsl(195 85% 55% / 0.25)" },
         },
       },
       animation: {
@@ -158,14 +159,14 @@ export default {
         "glow": "glow-pulse 2s ease-in-out infinite",
       },
       boxShadow: {
-        "glass": "0 8px 32px hsl(240 20% 4% / 0.30), inset 0 1px 0 hsl(250 25% 40% / 0.08)",
-        "glass-hover": "0 12px 40px hsl(240 20% 4% / 0.40), inset 0 1px 0 hsl(250 25% 45% / 0.12)",
-        "soft": "0 2px 8px hsl(220 20% 20% / 0.04), 0 8px 24px hsl(220 20% 20% / 0.03)",
-        "soft-lg": "0 4px 12px hsl(220 20% 20% / 0.06), 0 12px 32px hsl(220 20% 20% / 0.05)",
-        "glow-sm": "0 0 20px hsl(190 90% 55% / 0.15)",
-        "glow-md": "0 0 40px hsl(190 90% 55% / 0.25)",
-        "glow-lg": "0 0 60px hsl(190 90% 55% / 0.35)",
-        "glow-accent": "0 0 40px hsl(330 80% 60% / 0.20)",
+        "glass": "0 10px 35px hsl(235 25% 4% / 0.28), inset 0 1px 0 hsl(245 22% 40% / 0.06)",
+        "glass-hover": "0 14px 45px hsl(235 25% 4% / 0.38), inset 0 1px 0 hsl(245 22% 45% / 0.10)",
+        "soft": "0 2px 12px hsl(220 20% 20% / 0.03), 0 12px 32px hsl(220 20% 20% / 0.02)",
+        "soft-lg": "0 4px 16px hsl(220 20% 20% / 0.05), 0 16px 40px hsl(220 20% 20% / 0.04)",
+        "glow-sm": "0 0 20px hsl(195 85% 55% / 0.12)",
+        "glow-md": "0 0 40px hsl(195 85% 55% / 0.22)",
+        "glow-lg": "0 0 60px hsl(195 85% 55% / 0.32)",
+        "glow-accent": "0 0 40px hsl(335 75% 60% / 0.18)",
       },
     },
   },
