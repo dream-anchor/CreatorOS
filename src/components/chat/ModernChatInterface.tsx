@@ -121,28 +121,33 @@ export function ModernChatInterface() {
     };
     setMessages(prev => [...prev, userMessage]);
 
-    // Check for navigation intent
-    const navRoute = parseNavigationIntent(message);
-    if (navRoute) {
-      navigate(navRoute);
-      const routeNames: Record<string, string> = {
-        "/dashboard": "Dashboard",
-        "/community": "Community",
-        "/calendar": "Planung",
-        "/media": "Bilder",
-        "/analytics": "Analytics",
-        "/settings": "Einstellungen",
-        "/generator": "Content erstellen",
-        "/review": "Review",
-      };
-      setMessages(prev => [...prev, {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: `${routeNames[navRoute] || navRoute} geöffnet!`,
-        navigatedTo: navRoute,
-        timestamp: new Date(),
-      }]);
-      return;
+    // Only check navigation for short messages (guard against long AI prompts)
+    const trimmed = message.trim();
+    const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+    
+    if (wordCount <= 5) {
+      const navRoute = parseNavigationIntent(message);
+      if (navRoute) {
+        navigate(navRoute);
+        const routeNames: Record<string, string> = {
+          "/dashboard": "Dashboard",
+          "/community": "Community",
+          "/calendar": "Planung",
+          "/media": "Bilder",
+          "/analytics": "Analytics",
+          "/settings": "Einstellungen",
+          "/generator": "Content erstellen",
+          "/review": "Review",
+        };
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `${routeNames[navRoute] || navRoute} geöffnet!`,
+          navigatedTo: navRoute,
+          timestamp: new Date(),
+        }]);
+        return;
+      }
     }
 
     // Regular AI chat
