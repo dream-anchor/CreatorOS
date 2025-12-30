@@ -633,6 +633,7 @@ export type Database = {
           ig_username: string | null
           page_id: string | null
           page_name: string | null
+          profile_picture_url: string | null
           token_encrypted: string | null
           token_expires_at: string | null
           updated_at: string
@@ -645,6 +646,7 @@ export type Database = {
           ig_username?: string | null
           page_id?: string | null
           page_name?: string | null
+          profile_picture_url?: string | null
           token_encrypted?: string | null
           token_expires_at?: string | null
           updated_at?: string
@@ -657,6 +659,7 @@ export type Database = {
           ig_username?: string | null
           page_id?: string | null
           page_name?: string | null
+          profile_picture_url?: string | null
           token_encrypted?: string | null
           token_expires_at?: string | null
           updated_at?: string

@@ -114,14 +114,14 @@ function UserProfileHeader() {
       // Fetch profile and meta_connection in parallel
       const [profileRes, metaRes] = await Promise.all([
         supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
-        supabase.from("meta_connections").select("ig_username").eq("user_id", user.id).maybeSingle(),
+        supabase.from("meta_connections").select("ig_username, profile_picture_url").eq("user_id", user.id).maybeSingle(),
       ]);
 
       setUserData({
         email: user.email || null,
         displayName: profileRes.data?.display_name || null,
         igUsername: metaRes.data?.ig_username || null,
-        igProfilePicUrl: null, // Could fetch from IG API if needed
+        igProfilePicUrl: metaRes.data?.profile_picture_url || null,
       });
     };
     fetchUserData();
@@ -138,9 +138,19 @@ function UserProfileHeader() {
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-primary/5 flex items-center justify-center">
           <Sparkles className="h-6 w-6 text-primary/70" />
         </div>
-        {/* Avatar overlapping */}
-        <div className="absolute -right-2 -bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center ring-3 ring-card shadow-lg">
-          <User className="h-4 w-4 text-primary" />
+        {/* Avatar overlapping - real profile pic or fallback */}
+        <div className="absolute -right-2 -bottom-2 w-10 h-10 rounded-full ring-3 ring-card shadow-lg overflow-hidden">
+          {userData.igProfilePicUrl ? (
+            <img 
+              src={userData.igProfilePicUrl} 
+              alt="Profile" 
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+              <User className="h-4 w-4 text-primary" />
+            </div>
+          )}
         </div>
       </div>
       

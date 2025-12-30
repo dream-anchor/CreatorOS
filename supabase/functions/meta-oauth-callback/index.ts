@@ -109,12 +109,16 @@ serve(async (req) => {
 
     const igUserId = igData.instagram_business_account.id;
 
-    // Get IG username
+    // Get IG username and profile picture
+    console.log("[meta-oauth-callback] Getting Instagram profile info...");
     const igUserResponse = await fetch(
-      `https://graph.facebook.com/v20.0/${igUserId}?fields=username&access_token=${pageAccessToken}`
+      `https://graph.facebook.com/v20.0/${igUserId}?fields=username,profile_picture_url&access_token=${pageAccessToken}`
     );
     const igUserData = await igUserResponse.json();
     const igUsername = igUserData.username || null;
+    const profilePictureUrl = igUserData.profile_picture_url || null;
+    
+    console.log("[meta-oauth-callback] Profile picture URL:", profilePictureUrl ? "Found" : "Not found");
 
     // Save to database
     const supabase = createClient(
@@ -133,6 +137,7 @@ serve(async (req) => {
         page_name: pageName,
         ig_user_id: igUserId,
         ig_username: igUsername,
+        profile_picture_url: profilePictureUrl,
         token_encrypted: pageAccessToken, // In production, encrypt this!
         token_expires_at: expiresAt,
         connected_at: new Date().toISOString(),
