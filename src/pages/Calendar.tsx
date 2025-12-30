@@ -315,6 +315,12 @@ export default function CalendarPage() {
 
   // Drag & Drop handlers for moving posts between days
   const handlePostDragStart = (e: React.DragEvent, postId: string) => {
+    const post = posts.find(p => p.id === postId);
+    // Prevent dragging published posts
+    if (post?.status === "PUBLISHED") {
+      e.preventDefault();
+      return;
+    }
     setDraggedPost(postId);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", postId);
@@ -339,6 +345,13 @@ export default function CalendarPage() {
     
     const post = posts.find(p => p.id === draggedPost);
     if (!post) return;
+
+    // Prevent moving published posts
+    if (post.status === "PUBLISHED") {
+      toast.error("Veröffentlichte Posts können nicht verschoben werden");
+      setDraggedPost(null);
+      return;
+    }
 
     try {
       // Keep the same time, just change the date
@@ -503,19 +516,23 @@ export default function CalendarPage() {
                           </p>
                         </div>
                         <div className="space-y-2 max-h-[120px] lg:max-h-[150px] overflow-y-auto">
-                          {dayPosts.map((post) => (
+                          {dayPosts.map((post) => {
+                            const isPublished = post.status === "PUBLISHED";
+                            return (
                             <div
                               key={post.id}
-                              draggable
+                              draggable={!isPublished}
                               onDragStart={(e) => handlePostDragStart(e, post.id)}
                               onDragEnd={handlePostDragEnd}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openScheduleDialog(post);
                               }}
-                              className={`p-2 rounded-lg bg-muted/60 hover:bg-muted cursor-grab active:cursor-grabbing transition-all ${
-                                draggedPost === post.id ? "opacity-50" : ""
-                              }`}
+                              className={`p-2 rounded-lg bg-muted/60 hover:bg-muted transition-all ${
+                                isPublished 
+                                  ? "cursor-pointer" 
+                                  : "cursor-grab active:cursor-grabbing"
+                              } ${draggedPost === post.id ? "opacity-50" : ""}`}
                             >
                               <div className="flex items-center gap-1 mb-1">
                                 <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -535,7 +552,8 @@ export default function CalendarPage() {
                               </span>
                               <p className="text-xs line-clamp-2 mt-1 leading-tight">{post.caption}</p>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     );
