@@ -12,6 +12,7 @@ import {
   Lightbulb, Star, ArrowRight, ArrowLeft, Recycle, TrendingUp, MessageSquare, 
   Flame, BookmarkCheck, Eye, Zap
 } from "lucide-react";
+import { AiModelSelector, AI_MODELS } from "@/components/community/AiModelSelector";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -104,6 +105,9 @@ export default function GeneratorPage() {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [remixInfo, setRemixInfo] = useState<any>(null);
 
+  // Model Selection
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+
   useEffect(() => {
     if (user) loadTopics();
   }, [user]);
@@ -163,7 +167,8 @@ export default function GeneratorPage() {
           topic_id: selectedTopicId,
           post_type: selectedPostType,
           post_structure: postType?.structure,
-          additional_context: additionalContext
+          additional_context: additionalContext,
+          model: selectedModel,
         },
       });
 
@@ -197,7 +202,8 @@ export default function GeneratorPage() {
       const { data, error } = await supabase.functions.invoke("generate-draft", {
         body: { 
           remix_mode: true,
-          remix_post_id: selectedRemixPost.id
+          remix_post_id: selectedRemixPost.id,
+          model: selectedModel,
         },
       });
 
@@ -279,10 +285,16 @@ export default function GeneratorPage() {
           {wizardStep === "mode" && (
             <Card className="glass-card border-primary/20">
               <CardHeader>
+            <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-primary" />
                   Was möchtest du erstellen?
                 </CardTitle>
+                <AiModelSelector
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
+                />
+              </div>
                 <CardDescription>
                   Wähle zwischen neuem Content oder dem Remaster eines Erfolgs-Posts
                 </CardDescription>

@@ -294,7 +294,9 @@ serve(async (req) => {
       // Remix mode parameters
       remix_mode,
       remix_post_id,
-      get_remix_candidates
+      get_remix_candidates,
+      // Model selection
+      model: requestedModel,
     } = await req.json();
 
     // If requesting remix candidates, return top performing posts
@@ -307,7 +309,7 @@ serve(async (req) => {
 
     // For remix mode without topic_id
     if (remix_mode && remix_post_id) {
-      return await handleRemixMode(supabase, user, remix_post_id, lovableApiKey);
+      return await handleRemixMode(supabase, user, remix_post_id, lovableApiKey, requestedModel);
     }
 
     if (!topic_id) throw new Error('topic_id required');
@@ -393,7 +395,8 @@ ${outputFormat}`;
 Beschreibung: ${topic.description || 'Keine'}
 Keywords: ${topic.keywords?.join(', ') || 'Keine'}${contextSection}`;
 
-    const selectedModel = brand?.ai_model || 'google/gemini-2.5-flash';
+    // Use requested model, then brand default, then fallback
+    const selectedModel = requestedModel || brand?.ai_model || 'google/gemini-2.5-flash';
     console.log(`Using AI model: ${selectedModel}`);
 
     // Generate text content
@@ -544,7 +547,7 @@ Focus on environment, objects, atmosphere, textures.
 });
 
 // Handle Remix Mode
-async function handleRemixMode(supabase: any, user: any, remixPostId: string, lovableApiKey: string) {
+async function handleRemixMode(supabase: any, user: any, remixPostId: string, lovableApiKey: string, requestedModel?: string) {
   console.log(`Remix mode for post ${remixPostId}`);
   
   // Get the original post
@@ -632,7 +635,8 @@ Antworte mit diesem JSON:
   "mood": "Stimmung"
 }`;
 
-  const selectedModel = brand?.ai_model || 'google/gemini-2.5-flash';
+  // Use requested model, then brand default, then fallback
+  const selectedModel = requestedModel || brand?.ai_model || 'google/gemini-2.5-flash';
 
   const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',

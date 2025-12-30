@@ -47,6 +47,7 @@ interface Comment {
   ig_media_id: string;
   sentiment_score: number | null;
   is_critical: boolean | null;
+  replied_by_usernames: string[] | null;
   post?: {
     id: string;
     caption: string | null;
@@ -147,7 +148,8 @@ export default function Community() {
           ig_comment_id, 
           ig_media_id,
           sentiment_score,
-          is_critical
+          is_critical,
+          replied_by_usernames
         `)
         .eq("is_replied", false)
         .eq("is_hidden", false)
@@ -191,11 +193,17 @@ export default function Community() {
     staleTime: 30000,
   });
 
-  // Filter comments based on blacklist topics (check post caption) and separate negative comments
-  const { filteredComments, negativeComments, allComments } = useMemo(() => {
+  // Filter comments based on blacklist topics (check post caption), answered_by and separate negative comments
+  const { filteredComments, negativeComments, answeredByIgnoredComments, allComments } = useMemo(() => {
     const filtered: Comment[] = [];
     const negative: Comment[] = [];
+    const answeredByIgnored: Comment[] = [];
     const visible: Comment[] = [];
+    
+    // Create a set of ignored usernames (lowercase for case-insensitive comparison)
+    const ignoredUsernames = new Set(
+      answeredByIgnoreAccounts.map(a => a.username.toLowerCase())
+    );
     
     rawComments.forEach(comment => {
       const caption = comment.post?.caption?.toLowerCase() || "";
@@ -203,7 +211,14 @@ export default function Community() {
         caption.includes(topic.topic.toLowerCase())
       );
       
-      if (isBlacklisted) {
+      // Check if already answered by an ignored account
+      const hasBeenAnsweredByIgnored = comment.replied_by_usernames?.some(
+        username => ignoredUsernames.has(username.toLowerCase())
+      ) || false;
+      
+      if (hasBeenAnsweredByIgnored) {
+        answeredByIgnored.push(comment);
+      } else if (isBlacklisted) {
         filtered.push(comment);
       } else {
         // Check if negative/critical - sentiment_score < 0.3 or is_critical = true
@@ -218,8 +233,8 @@ export default function Community() {
       }
     });
     
-    return { filteredComments: filtered, negativeComments: negative, allComments: visible };
-  }, [rawComments, blacklistTopics]);
+    return { filteredComments: filtered, negativeComments: negative, answeredByIgnoredComments: answeredByIgnored, allComments: visible };
+  }, [rawComments, blacklistTopics, answeredByIgnoreAccounts]);
 
   // Display only up to displayLimit comments
   const comments = useMemo(() => {
@@ -233,8 +248,9 @@ export default function Community() {
                       negativeComments.filter(c => c.ai_reply_suggestion).length;
     const withoutReply = total - withReply;
     const negativeCount = negativeComments.length;
-    return { total, withReply, withoutReply, negativeCount };
-  }, [allComments, negativeComments]);
+    const answeredByIgnoredCount = answeredByIgnoredComments.length;
+    return { total, withReply, withoutReply, negativeCount, answeredByIgnoredCount };
+  }, [allComments, negativeComments, answeredByIgnoredComments]);
 
   // Group comments by post
   const commentsByPost = useMemo(() => {
