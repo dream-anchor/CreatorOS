@@ -50,15 +50,15 @@ function GenerationIndicator({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div 
-      className="mt-2 p-2.5 rounded-xl bg-primary/10 border border-primary/20 cursor-pointer hover:bg-primary/15 transition-colors"
+      className="mt-3 p-3 rounded-2xl bg-primary/8 border border-primary/15 cursor-pointer hover:bg-primary/12 transition-all duration-200"
       onClick={() => {
         navigate("/community");
         onNavigate?.();
       }}
     >
       {/* Row 1: Icon + Label */}
-      <div className="flex items-center gap-2 mb-2">
-        <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+      <div className="flex items-center gap-2.5 mb-2">
+        <div className="w-7 h-7 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0">
           <Brain className="h-3.5 w-3.5 text-primary animate-pulse" />
         </div>
         <span className="text-xs font-medium text-foreground">
@@ -103,7 +103,7 @@ function GenerationIndicator({ onNavigate }: { onNavigate?: () => void }) {
           <Button
             size="icon"
             variant="ghost"
-            className="h-5 w-5"
+            className="h-5 w-5 hover:bg-primary/10"
             onClick={(e) => {
               e.stopPropagation();
               cancelGeneration();
@@ -131,18 +131,18 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
       {/* Logo */}
-      <div className="h-16 sm:h-20 px-4 sm:px-5 flex items-center gap-3 border-b border-border/30">
-        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center shadow-lg">
+      <div className="h-18 sm:h-20 px-5 sm:px-6 flex items-center gap-3.5 border-b border-border/20">
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-primary via-primary/80 to-accent flex items-center justify-center shadow-lg shadow-primary/15">
           <Sparkles className="h-5 w-5 text-white" />
         </div>
         <div>
-          <h1 className="font-bold text-base sm:text-lg text-foreground">CreatorOS</h1>
+          <h1 className="font-bold text-base sm:text-lg text-foreground tracking-tight">CreatorOS</h1>
           <p className="text-[10px] sm:text-[11px] text-muted-foreground">Instagram Agent</p>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 space-y-1">
+      <nav className="flex-1 py-5 px-3.5 space-y-1.5">
         {navItems.map((item) => (
           <Link
             key={item.name}
@@ -151,32 +151,32 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
             className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200",
               isActive(item.href)
-                ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                : "text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
             )}
           >
-            <item.icon className="h-5 w-5" />
+            <item.icon className="h-[18px] w-[18px]" />
             {item.name}
           </Link>
         ))}
       </nav>
       
       {/* Generation Indicator - above footer */}
-      <div className="px-3">
+      <div className="px-3.5">
         <GenerationIndicator onNavigate={onNavigate} />
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border/30 p-4 space-y-2">
-        <div className="flex items-center justify-between px-2">
-          <span className="text-xs text-muted-foreground">Theme</span>
+      <div className="border-t border-border/20 p-4 pt-5 space-y-2">
+        <div className="flex items-center justify-between px-2.5">
+          <span className="text-xs text-muted-foreground/80">Theme</span>
           <ThemeToggle />
         </div>
         <button
           onClick={handleSignOut}
-          className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-all"
+          className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground/80 hover:bg-muted/50 hover:text-foreground transition-all duration-200"
         >
-          <LogOut className="h-5 w-5" />
+          <LogOut className="h-[18px] w-[18px]" />
           Abmelden
         </button>
       </div>
@@ -190,21 +190,21 @@ export function GlobalLayout({ children, hideBottomChat = false }: GlobalLayoutP
   return (
     <div className="min-h-screen flex bg-background">
       {/* Mobile Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-card/95 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 lg:hidden">
+      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-card/90 backdrop-blur-2xl border-b border-border/30 flex items-center justify-between px-4 lg:hidden">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center shadow-md">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary via-primary/80 to-accent flex items-center justify-center shadow-md shadow-primary/15">
             <Sparkles className="h-4 w-4 text-white" />
           </div>
-          <h1 className="font-bold text-foreground">CreatorOS</h1>
+          <h1 className="font-bold text-foreground tracking-tight">CreatorOS</h1>
         </div>
         
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-10 w-10">
+            <Button variant="ghost" size="icon" className="h-10 w-10 hover:bg-muted/50">
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-64 p-0 bg-card/95 backdrop-blur-xl">
+          <SheetContent side="left" className="w-64 p-0 bg-card/95 backdrop-blur-2xl">
             <div className="flex flex-col h-full">
               <NavContent onNavigate={() => setMobileMenuOpen(false)} />
             </div>
@@ -213,7 +213,7 @@ export function GlobalLayout({ children, hideBottomChat = false }: GlobalLayoutP
       </header>
 
       {/* Desktop Sidebar - Hidden on mobile */}
-      <aside className="hidden lg:flex fixed left-0 top-0 z-40 h-screen w-56 xl:w-60 bg-card/80 backdrop-blur-2xl border-r border-border/50 flex-col">
+      <aside className="hidden lg:flex fixed left-0 top-0 z-40 h-screen w-56 xl:w-60 bg-card/90 backdrop-blur-2xl border-r border-border/30 flex-col">
         <NavContent />
       </aside>
 

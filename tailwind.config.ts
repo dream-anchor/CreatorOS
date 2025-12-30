@@ -14,8 +14,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'Space Grotesk', 'system-ui', 'sans-serif'],
-        display: ['Space Grotesk', 'Inter', 'sans-serif'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'SF Mono', 'monospace'],
       },
       colors: {
@@ -94,9 +94,9 @@ export default {
         },
       },
       borderRadius: {
-        "3xl": "1.5rem",
-        "2xl": "1rem",
-        xl: "0.875rem",
+        "3xl": "1.75rem",
+        "2xl": "1.25rem",
+        xl: "1rem",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
@@ -107,6 +107,9 @@ export default {
       },
       backdropBlur: {
         xs: "2px",
+      },
+      transitionDuration: {
+        '250': '250ms',
       },
       keyframes: {
         "accordion-down": {
@@ -140,8 +143,8 @@ export default {
           "75%": { transform: "translate(-30px, -15px) scale(1.02)" },
         },
         "glow-pulse": {
-          "0%, 100%": { boxShadow: "0 0 20px hsl(200 100% 60% / 0.2)" },
-          "50%": { boxShadow: "0 0 40px hsl(200 100% 60% / 0.4)" },
+          "0%, 100%": { boxShadow: "0 0 20px hsl(190 90% 55% / 0.15)" },
+          "50%": { boxShadow: "0 0 40px hsl(190 90% 55% / 0.30)" },
         },
       },
       animation: {
@@ -155,12 +158,14 @@ export default {
         "glow": "glow-pulse 2s ease-in-out infinite",
       },
       boxShadow: {
-        "glass": "0 8px 32px hsl(250 30% 3% / 0.4), inset 0 1px 0 hsl(260 30% 40% / 0.1)",
-        "glass-hover": "0 12px 40px hsl(250 30% 3% / 0.5), inset 0 1px 0 hsl(260 30% 45% / 0.15)",
-        "glow-sm": "0 0 20px hsl(200 100% 60% / 0.2)",
-        "glow-md": "0 0 40px hsl(200 100% 60% / 0.3)",
-        "glow-lg": "0 0 60px hsl(200 100% 60% / 0.4)",
-        "glow-accent": "0 0 40px hsl(280 80% 60% / 0.25)",
+        "glass": "0 8px 32px hsl(240 20% 4% / 0.30), inset 0 1px 0 hsl(250 25% 40% / 0.08)",
+        "glass-hover": "0 12px 40px hsl(240 20% 4% / 0.40), inset 0 1px 0 hsl(250 25% 45% / 0.12)",
+        "soft": "0 2px 8px hsl(220 20% 20% / 0.04), 0 8px 24px hsl(220 20% 20% / 0.03)",
+        "soft-lg": "0 4px 12px hsl(220 20% 20% / 0.06), 0 12px 32px hsl(220 20% 20% / 0.05)",
+        "glow-sm": "0 0 20px hsl(190 90% 55% / 0.15)",
+        "glow-md": "0 0 40px hsl(190 90% 55% / 0.25)",
+        "glow-lg": "0 0 60px hsl(190 90% 55% / 0.35)",
+        "glow-accent": "0 0 40px hsl(330 80% 60% / 0.20)",
       },
     },
   },
