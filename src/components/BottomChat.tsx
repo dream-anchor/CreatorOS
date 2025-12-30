@@ -51,6 +51,7 @@ export function BottomChat() {
   const [isDragging, setIsDragging] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const dragCounterRef = useRef(0);
+  const calendarDialogOpenRef = useRef(false);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -60,9 +61,29 @@ export function BottomChat() {
     scrollToBottom();
   }, [messages, isLoading, scrollToBottom]);
 
+  // Listen for calendar dialog state changes
+  useEffect(() => {
+    const handleCalendarDialogState = (e: CustomEvent<{ open: boolean }>) => {
+      calendarDialogOpenRef.current = e.detail.open;
+      // If dialog opens while dragging, reset drag state
+      if (e.detail.open) {
+        setIsDragging(false);
+        dragCounterRef.current = 0;
+      }
+    };
+
+    window.addEventListener('calendar-dialog-state', handleCalendarDialogState as EventListener);
+    return () => {
+      window.removeEventListener('calendar-dialog-state', handleCalendarDialogState as EventListener);
+    };
+  }, []);
+
   // Global drag & drop handler
   useEffect(() => {
     const handleDragEnter = (e: DragEvent) => {
+      // Don't handle if calendar dialog is open
+      if (calendarDialogOpenRef.current) return;
+      
       e.preventDefault();
       dragCounterRef.current++;
       if (e.dataTransfer?.types.includes('Files')) {
@@ -71,10 +92,15 @@ export function BottomChat() {
     };
 
     const handleDragOver = (e: DragEvent) => {
+      // Don't handle if calendar dialog is open
+      if (calendarDialogOpenRef.current) return;
       e.preventDefault();
     };
 
     const handleDragLeave = (e: DragEvent) => {
+      // Don't handle if calendar dialog is open
+      if (calendarDialogOpenRef.current) return;
+      
       e.preventDefault();
       dragCounterRef.current--;
       if (dragCounterRef.current === 0) {
@@ -83,6 +109,9 @@ export function BottomChat() {
     };
 
     const handleDrop = (e: DragEvent) => {
+      // Don't handle if calendar dialog is open - let calendar handle it
+      if (calendarDialogOpenRef.current) return;
+      
       e.preventDefault();
       dragCounterRef.current = 0;
       setIsDragging(false);
