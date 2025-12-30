@@ -1,11 +1,12 @@
 import { ReactNode, useState, useEffect } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BottomChat } from "@/components/BottomChat";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useGenerationContext } from "@/contexts/GenerationContext";
+import { useChatConversations } from "@/hooks/useChatConversations";
 import {
   Home,
   MessageCircle,
@@ -18,9 +19,14 @@ import {
   Brain,
   X,
   User,
+  MessageSquare,
+  MessageSquarePlus,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import creatorOSLogo from "@/assets/CreatorOS-Logo.webp";
 
 interface GlobalLayoutProps {
@@ -170,13 +176,39 @@ function UserProfileFooter({ userData }: { userData: UserData }) {
 function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const userData = useUserData();
+  const { conversations, createConversation, deleteConversation, loading: chatsLoading } = useChatConversations();
+  const [chatsOpen, setChatsOpen] = useState(true);
   const isActive = (href: string) => location.pathname === href;
+
+  const activeConversationId = searchParams.get("chat");
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     toast.success("Erfolgreich abgemeldet");
     navigate("/login");
+  };
+
+  const handleNewChat = async () => {
+    const id = await createConversation("Neuer Chat");
+    if (id) {
+      navigate(`/dashboard?chat=${id}`);
+      onNavigate?.();
+    }
+  };
+
+  const handleSelectChat = (id: string) => {
+    navigate(`/dashboard?chat=${id}`);
+    onNavigate?.();
+  };
+
+  const handleDeleteChat = async (id: string) => {
+    await deleteConversation(id);
+    // If we deleted the active chat, clear the param
+    if (activeConversationId === id) {
+      navigate("/dashboard");
+    }
   };
 
   return (
@@ -185,7 +217,7 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
       <LogoHeader />
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 space-y-0.5">
+      <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
         {navItems.map((item) => (
           <Link
             key={item.name}
@@ -202,6 +234,61 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
             {item.name}
           </Link>
         ))}
+
+        {/* Chat History Section */}
+        <Collapsible open={chatsOpen} onOpenChange={setChatsOpen} className="mt-4">
+          <CollapsibleTrigger className="flex items-center justify-between w-full px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors">
+            <span className="flex items-center gap-2">
+              <MessageSquare className="h-3.5 w-3.5" />
+              Chats
+            </span>
+            {chatsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-0.5 mt-1">
+            {/* New Chat Button */}
+            <button
+              onClick={handleNewChat}
+              className="flex items-center gap-3 px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all duration-200 w-full"
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+              Neuer Chat
+            </button>
+
+            {/* Recent Chats */}
+            {chatsLoading ? (
+              <div className="px-4 py-2 text-xs text-muted-foreground">Lade...</div>
+            ) : conversations.length === 0 ? (
+              <div className="px-4 py-2 text-xs text-muted-foreground">Noch keine Chats</div>
+            ) : (
+              conversations.slice(0, 8).map((conv) => (
+                <div
+                  key={conv.id}
+                  className={cn(
+                    "group flex items-center gap-2 px-4 py-2 rounded-xl text-sm cursor-pointer transition-all duration-200",
+                    activeConversationId === conv.id
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                  )}
+                  onClick={() => handleSelectChat(conv.id)}
+                >
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate flex-1 text-left">
+                    {conv.title || "Neuer Chat"}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteChat(conv.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-all"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))
+            )}
+          </CollapsibleContent>
+        </Collapsible>
       </nav>
       
       {/* Generation Indicator */}

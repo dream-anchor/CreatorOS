@@ -391,6 +391,27 @@ const TOOLS = [
         required: ["transformation", "scene"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_image",
+      description: "Generiert ein Bild basierend auf einer Textbeschreibung mit AI und speichert es in der Medienbibliothek. NUTZE DIES wenn der User generell ein Bild erstellen will (ohne Personalisierung/Gesicht). Für Bilder MIT dem User-Gesicht nutze generate_personalized_image oder generate_parody_image stattdessen.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: {
+            type: "string",
+            description: "Detaillierte Beschreibung des gewünschten Bildes. Sei spezifisch über Stil, Farben, Komposition, Beleuchtung. WICHTIG: Keine urheberrechtlich geschützten Namen verwenden!"
+          },
+          style_hint: {
+            type: "string",
+            description: "Optionaler Stilhinweis (z.B. 'cinematic', 'illustration', 'photorealistic', 'noir', 'retro')"
+          }
+        },
+        required: ["prompt"]
+      }
+    }
   }
 ];
 
@@ -2150,6 +2171,156 @@ const SAFETY_REWRITE_STRATEGIES = [
   })
 ];
 
+// Tool: Generate a generic image using Lovable AI (without personalization)
+async function executeGenerateImage(supabase: any, userId: string, params: any) {
+  const { prompt, style_hint } = params;
+  
+  const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  console.log(`[copilot] 🎨 Generating image with prompt: ${prompt?.substring(0, 100)}...`);
+
+  if (!lovableApiKey) {
+    return {
+      error: 'LOVABLE_API_KEY ist nicht konfiguriert',
+      success: false
+    };
+  }
+
+  if (!prompt) {
+    return {
+      error: 'Kein Prompt für die Bildgenerierung angegeben',
+      success: false
+    };
+  }
+
+  try {
+    // Build enhanced prompt
+    let enhancedPrompt = prompt;
+    if (style_hint) {
+      enhancedPrompt = `${prompt}. Style: ${style_hint}. Ultra high resolution, professional quality.`;
+    } else {
+      enhancedPrompt = `${prompt}. Ultra high resolution, professional quality.`;
+    }
+
+    // Call Lovable AI image generation
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-image-preview',
+        messages: [
+          { role: 'user', content: enhancedPrompt }
+        ],
+        modalities: ['image', 'text']
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[copilot] Image generation failed:', response.status, errorText);
+      return {
+        error: `Bildgenerierung fehlgeschlagen (Status ${response.status})`,
+        success: false
+      };
+    }
+
+    const data = await response.json();
+    const imageData = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+
+    if (!imageData || !imageData.startsWith('data:image')) {
+      console.error('[copilot] No valid image in response');
+      return {
+        error: 'Keine gültige Bildantwort erhalten',
+        success: false
+      };
+    }
+
+    // Extract base64 data
+    const base64Match = imageData.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!base64Match) {
+      return {
+        error: 'Ungültiges Bildformat erhalten',
+        success: false
+      };
+    }
+
+    const imageFormat = base64Match[1];
+    const base64Data = base64Match[2];
+    
+    // Convert base64 to Uint8Array
+    const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+    
+    // Generate unique filename
+    const timestamp = Date.now();
+    const filename = `ai-generated-${timestamp}.${imageFormat === 'jpeg' ? 'jpg' : imageFormat}`;
+    const storagePath = `${userId}/${filename}`;
+
+    // Upload to storage
+    const storageSupabase = createClient(supabaseUrl, supabaseKey);
+    const { error: uploadError } = await storageSupabase.storage
+      .from('media-archive')
+      .upload(storagePath, binaryData, {
+        contentType: `image/${imageFormat}`,
+        upsert: false
+      });
+
+    if (uploadError) {
+      console.error('[copilot] Upload error:', uploadError);
+      return {
+        error: `Upload fehlgeschlagen: ${uploadError.message}`,
+        success: false
+      };
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = storageSupabase.storage
+      .from('media-archive')
+      .getPublicUrl(storagePath);
+
+    // Save to media_assets table
+    const { data: assetData, error: dbError } = await supabase
+      .from('media_assets')
+      .insert({
+        user_id: userId,
+        storage_path: storagePath,
+        public_url: publicUrl,
+        filename: filename,
+        ai_description: prompt.substring(0, 500),
+        ai_tags: ['ai-generated', style_hint || 'general'].filter(Boolean),
+        analyzed: true,
+        ai_usable: true
+      })
+      .select()
+      .single();
+
+    if (dbError) {
+      console.error('[copilot] DB insert error:', dbError);
+      // Still return success since image was uploaded
+    }
+
+    console.log(`[copilot] ✅ Image generated and saved: ${publicUrl}`);
+
+    return {
+      success: true,
+      public_url: publicUrl,
+      storage_path: storagePath,
+      media_asset_id: assetData?.id || null,
+      message: 'Bild erfolgreich generiert und in deiner Medienbibliothek gespeichert!'
+    };
+  } catch (error) {
+    console.error('[copilot] Image generation error:', error);
+    return {
+      error: `Bildgenerierung fehlgeschlagen: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`,
+      success: false
+    };
+  }
+}
+
 // Tool: Generate DALL-E 3 parody image with Universal Master Prompt Engine
 async function executeGenerateParodyImage(supabase: any, userId: string, params: any) {
   const { 
@@ -2764,12 +2935,19 @@ Die ID ist ZWINGEND erforderlich - ohne sie kann das System die Visual DNA nicht
 - Formuliere ALLE Zahlen und Daten als Fließtext
 - Bei Foto-Suche: Sage kurz "Referenzfoto gefunden!" und mache SOFORT weiter mit der Generierung
 
+⚠️ ANTI-HALLUZINATION REGEL (ABSOLUT KRITISCH):
+- Du darfst NIEMALS Bild-URLs erfinden oder halluzinieren!
+- Du darfst KEINE URLs mit storage.googleapis.com, googleusercontent.com oder ähnlichen Domains ausgeben, die du nicht von einem Tool erhalten hast!
+- Wenn ein User ein Bild will, MUSST du ein Bild-Tool aufrufen (generate_image, generate_parody_image, oder generate_personalized_image)
+- Zeige ein Bild NUR wenn ein Tool dir erfolgreich eine public_url zurückgegeben hat
+- Bei Fehler: Sage ehrlich "Die Bildgenerierung ist fehlgeschlagen" statt eine fake URL zu erfinden
+
 🖼️ BILD-AUSGABE:
-- Wenn generate_parody_image oder generate_personalized_image erfolgreich war:
-  - Zeige das Bild im Markdown-Format: ![Dein generiertes Bild](BILD_URL_HIER)
-  - Füge eine kurze, begeisterte Beschreibung hinzu
+- Wenn generate_image, generate_parody_image oder generate_personalized_image erfolgreich war:
+  - Das Frontend rendert Bilder automatisch aus den Tool-Ergebnissen - du musst KEIN Markdown-Bildformat verwenden
+  - Füge eine kurze, begeisterte Beschreibung des Bildes hinzu
   - Biete an: "Soll ich daraus einen Post planen?"
-- Die URL MUSS im Markdown-Bildformat sein, damit das Frontend es rendern kann!
+- WICHTIG: Das Frontend zeigt das Bild basierend auf der public_url im Tool-Ergebnis an!
 
 KONTEXT:
 - Sprache: ${brandRules?.language_primary || 'Deutsch'}
@@ -2928,6 +3106,9 @@ Du:
               break;
             case 'generate_parody_image':
               result = await executeGenerateParodyImage(supabase, user.id, params);
+              break;
+            case 'generate_image':
+              result = await executeGenerateImage(supabase, user.id, params);
               break;
             default:
               result = { error: `Unbekanntes Tool: ${funcName}` };
