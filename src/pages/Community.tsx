@@ -71,6 +71,11 @@ interface BlacklistTopic {
   topic: string;
 }
 
+interface AnsweredByIgnoreAccount {
+  id: string;
+  username: string;
+}
+
 export default function Community() {
   const queryClient = useQueryClient();
   const { isGenerating, progress, startGeneration, cancelGeneration } = useGenerationContext();
@@ -107,6 +112,19 @@ export default function Community() {
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as BlacklistTopic[];
+    },
+  });
+
+  // Fetch answered_by_ignore_accounts
+  const { data: answeredByIgnoreAccounts = [], refetch: refetchIgnoreAccounts } = useQuery({
+    queryKey: ['answered-by-ignore-accounts'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("answered_by_ignore_accounts")
+        .select("id, username")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as AnsweredByIgnoreAccount[];
     },
   });
 
@@ -321,6 +339,45 @@ export default function Community() {
       refetchBlacklist();
     } catch (err) {
       console.error("Remove blacklist topic error:", err);
+      toast.error("Fehler beim Entfernen");
+    }
+  };
+
+  // Handlers for answered_by_ignore_accounts
+  const handleAddAnsweredByIgnoreAccounts = async (usernames: string[]) => {
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) return;
+
+      const inserts = usernames.map(username => ({
+        user_id: user.user!.id,
+        username: username.toLowerCase(),
+      }));
+
+      const { error } = await supabase
+        .from("answered_by_ignore_accounts")
+        .insert(inserts);
+
+      if (error) throw error;
+      refetchIgnoreAccounts();
+      toast.success(`${usernames.length} Account(s) hinzugefügt`);
+    } catch (err) {
+      console.error("Add ignore account error:", err);
+      toast.error("Fehler beim Hinzufügen");
+    }
+  };
+
+  const handleRemoveAnsweredByIgnoreAccount = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("answered_by_ignore_accounts")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      refetchIgnoreAccounts();
+    } catch (err) {
+      console.error("Remove ignore account error:", err);
       toast.error("Fehler beim Entfernen");
     }
   };
@@ -685,6 +742,21 @@ export default function Community() {
   return (
     <GlobalLayout>
       <div className="p-3 sm:p-4 lg:p-6 max-w-3xl mx-auto pb-32">
+        {/* Rules Config Panel */}
+        <div className="mb-4">
+          <RulesConfigPanel
+            emojiNogoTerms={emojiNogoTerms}
+            blacklistTopics={blacklistTopics}
+            answeredByIgnoreAccounts={answeredByIgnoreAccounts}
+            onAddEmojiNogoTerms={handleAddEmojiNogoTerms}
+            onRemoveEmojiNogoTerm={handleRemoveEmojiNogoTerm}
+            onAddBlacklistTopics={handleAddBlacklistTopics}
+            onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
+            onAddAnsweredByIgnoreAccounts={handleAddAnsweredByIgnoreAccounts}
+            onRemoveAnsweredByIgnoreAccount={handleRemoveAnsweredByIgnoreAccount}
+          />
+        </div>
+
         {/* Compact Header */}
         <div className="flex items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-3">

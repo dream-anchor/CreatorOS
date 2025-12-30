@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      answered_by_ignore_accounts: {
+        Row: {
+          created_at: string
+          id: string
+          user_id: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          user_id: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          user_id?: string
+          username?: string
+        }
+        Relationships: []
+      }
       assets: {
         Row: {
           created_at: string
@@ -501,6 +522,7 @@ export type Database = {
           is_liked: boolean | null
           is_replied: boolean | null
           post_id: string | null
+          replied_by_usernames: string[] | null
           sentiment_score: number | null
           updated_at: string
           user_id: string
@@ -520,6 +542,7 @@ export type Database = {
           is_liked?: boolean | null
           is_replied?: boolean | null
           post_id?: string | null
+          replied_by_usernames?: string[] | null
           sentiment_score?: number | null
           updated_at?: string
           user_id: string
@@ -539,6 +562,7 @@ export type Database = {
           is_liked?: boolean | null
           is_replied?: boolean | null
           post_id?: string | null
+          replied_by_usernames?: string[] | null
           sentiment_score?: number | null
           updated_at?: string
           user_id?: string
