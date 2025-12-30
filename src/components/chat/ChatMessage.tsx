@@ -54,6 +54,27 @@ export function ChatMessage({ role, content, images, navigatedTo, uploadResult, 
           <div className="text-sm leading-relaxed text-foreground">
             <p className="whitespace-pre-wrap">{content}</p>
 
+            {/* AI Generated Images */}
+            {images && images.length > 0 && (
+              <div className="mt-4 flex gap-3 flex-wrap">
+                {images.map((url, idx) => (
+                  <a
+                    key={idx}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block group"
+                  >
+                    <img
+                      src={url}
+                      alt={`Generiertes Bild ${idx + 1}`}
+                      className="max-w-xs sm:max-w-sm rounded-xl shadow-lg border border-border/20 group-hover:scale-[1.02] transition-transform duration-200"
+                    />
+                  </a>
+                ))}
+              </div>
+            )}
+
             {/* Upload Result Link */}
             {uploadResult && (
               <Link

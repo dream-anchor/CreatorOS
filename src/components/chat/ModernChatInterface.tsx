@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -7,7 +7,7 @@ import { parseNavigationIntent } from "@/hooks/useNavigation";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import { useChatConversations, useChatMessages, ChatMessage as DbChatMessage } from "@/hooks/useChatConversations";
 
 interface Message {
   id: string;
@@ -24,14 +24,65 @@ interface Message {
   };
 }
 
+// Extract image URLs from tool results
+function extractImagesFromToolResults(toolResults: any[]): string[] {
+  const images: string[] = [];
+  
+  if (!Array.isArray(toolResults)) return images;
+  
+  for (const tr of toolResults) {
+    const result = tr.result;
+    if (!result) continue;
+    
+    // Check for public_url in various formats
+    if (result.public_url) {
+      images.push(result.public_url);
+    }
+    if (result.image_url) {
+      images.push(result.image_url);
+    }
+    if (result.generatedImageUrl) {
+      images.push(result.generatedImageUrl);
+    }
+  }
+  
+  return images;
+}
+
+// Convert DB message to local message format
+function dbToLocalMessage(dbMsg: DbChatMessage): Message {
+  return {
+    id: dbMsg.id,
+    role: dbMsg.role,
+    content: dbMsg.content || "",
+    timestamp: new Date(dbMsg.created_at),
+    images: dbMsg.attachments?.images || [],
+  };
+}
+
 export function ModernChatInterface() {
   const navigate = useNavigate();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const conversationId = searchParams.get("chat");
+  
+  const { createConversation } = useChatConversations();
+  const { messages: dbMessages, addMessage, loading: messagesLoading } = useChatMessages(conversationId);
+  
+  const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingHint, setLoadingHint] = useState("Denke nach...");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const hasMessages = messages.length > 0;
+  // Sync DB messages to local state when conversation changes
+  useEffect(() => {
+    if (dbMessages.length > 0) {
+      setLocalMessages(dbMessages.map(dbToLocalMessage));
+    } else if (!conversationId) {
+      setLocalMessages([]);
+    }
+  }, [dbMessages, conversationId]);
+
+  const hasMessages = localMessages.length > 0;
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -39,7 +90,22 @@ export function ModernChatInterface() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, scrollToBottom]);
+  }, [localMessages, isLoading, scrollToBottom]);
+
+  // Ensure we have a conversation before saving messages
+  const ensureConversation = useCallback(async (firstMessage: string): Promise<string | null> => {
+    if (conversationId) return conversationId;
+    
+    // Create new conversation with first few words as title
+    const title = firstMessage.slice(0, 50) + (firstMessage.length > 50 ? "..." : "");
+    const newId = await createConversation(title);
+    
+    if (newId) {
+      setSearchParams({ chat: newId });
+      return newId;
+    }
+    return null;
+  }, [conversationId, createConversation, setSearchParams]);
 
   const handleSmartUpload = async (rawText: string, files: File[], previewUrls: string[]) => {
     setIsLoading(true);
@@ -52,9 +118,15 @@ export function ModernChatInterface() {
       timestamp: new Date(),
       images: previewUrls,
     };
-    setMessages(prev => [...prev, userMessage]);
+    setLocalMessages(prev => [...prev, userMessage]);
 
     try {
+      // Ensure conversation exists
+      const convId = await ensureConversation(userMessage.content);
+      if (convId) {
+        await addMessage("user", userMessage.content, { images: previewUrls });
+      }
+
       const fileDataPromises = files.map(async (file) => {
         const buffer = await file.arrayBuffer();
         const base64 = btoa(
@@ -87,17 +159,24 @@ export function ModernChatInterface() {
         },
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setLocalMessages(prev => [...prev, assistantMessage]);
+      
+      // Save to DB
+      if (convId) {
+        await addMessage("assistant", assistantMessage.content);
+      }
+      
       toast.success("Post eingeplant!");
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(errorMsg);
-      setMessages(prev => [...prev, {
+      const errMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: `Fehler: ${errorMsg}`,
         timestamp: new Date(),
-      }]);
+      };
+      setLocalMessages(prev => [...prev, errMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -119,7 +198,7 @@ export function ModernChatInterface() {
       content: message,
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, userMessage]);
+    setLocalMessages(prev => [...prev, userMessage]);
 
     // Only check navigation for short messages (guard against long AI prompts)
     const trimmed = message.trim();
@@ -139,7 +218,7 @@ export function ModernChatInterface() {
           "/generator": "Content erstellen",
           "/review": "Review",
         };
-        setMessages(prev => [...prev, {
+        setLocalMessages(prev => [...prev, {
           id: crypto.randomUUID(),
           role: "assistant",
           content: `${routeNames[navRoute] || navRoute} geöffnet!`,
@@ -155,7 +234,13 @@ export function ModernChatInterface() {
     setLoadingHint("Denke nach...");
 
     try {
-      const messageHistory = messages
+      // Ensure conversation exists
+      const convId = await ensureConversation(message);
+      if (convId) {
+        await addMessage("user", message);
+      }
+
+      const messageHistory = localMessages
         .concat(userMessage)
         .map(m => ({ role: m.role, content: m.content }));
 
@@ -165,16 +250,29 @@ export function ModernChatInterface() {
 
       if (error) throw new Error(error.message);
 
-      setMessages(prev => [...prev, {
+      // Extract images from tool results
+      const toolImages = extractImagesFromToolResults(data?.tool_results || []);
+      
+      const assistantMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: data?.message || "Ich konnte keine Antwort generieren.",
         timestamp: new Date(),
-      }]);
+        images: toolImages.length > 0 ? toolImages : undefined,
+      };
+      
+      setLocalMessages(prev => [...prev, assistantMessage]);
+      
+      // Save to DB with images
+      if (convId) {
+        await addMessage("assistant", assistantMessage.content, {
+          images: toolImages,
+        });
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(errorMsg);
-      setMessages(prev => [...prev, {
+      setLocalMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: "assistant",
         content: `Fehler: ${errorMsg}`,
@@ -183,7 +281,7 @@ export function ModernChatInterface() {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, navigate]);
+  }, [localMessages, navigate, ensureConversation, addMessage]);
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -192,13 +290,17 @@ export function ModernChatInterface() {
         <span className="text-sm font-medium text-foreground">Co-Pilot</span>
       </div>
 
-      {/* Chat Area */}
-      {hasMessages ? (
+      {/* Loading state for conversation */}
+      {messagesLoading && conversationId ? (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : hasMessages ? (
         /* Messages view */
         <>
           <ScrollArea className="flex-1">
             <div className="max-w-3xl mx-auto px-4 py-4">
-              {messages.map((message) => (
+              {localMessages.map((message) => (
                 <ChatMessage
                   key={message.id}
                   role={message.role}
