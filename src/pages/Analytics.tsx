@@ -31,6 +31,7 @@ interface DailyStats {
   shares_day: number;
   saves_day: number;
   posts_count: number;
+  updated_at: string;
 }
 
 export default function AnalyticsPage() {
@@ -110,7 +111,8 @@ export default function AnalyticsPage() {
 
   const lastSyncDate = useMemo(() => {
     if (!todayStats) return null;
-    return todayStats.date;
+    // Use updated_at for accurate sync timestamp, fallback to date
+    return todayStats.updated_at || todayStats.date;
   }, [todayStats]);
 
   if (loading) {

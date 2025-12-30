@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { AppLayout } from "@/components/AppLayout";
+import { GlobalLayout } from "@/components/GlobalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -226,101 +226,111 @@ export default function BrandPage() {
 
   if (loading) {
     return (
-      <AppLayout title="Marke & Regeln">
+      <GlobalLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      </AppLayout>
+      </GlobalLayout>
     );
   }
 
   return (
-    <AppLayout
-      title="Marke & Regeln"
-      description="Definiere deinen Markenstil und Content-Richtlinien"
-      actions={<AutosaveStatus />}
-    >
-      <div className="space-y-6">
-        {/* Datenquelle Info-Box */}
-        <Card className="glass-card border-2 border-primary/30 bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Database className="h-5 w-5 text-primary" />
-              <CardTitle>Deine Stil-DNA</CardTitle>
-            </div>
-            <CardDescription>
-              Dein Schreibstil, automatisch aus deiner Post-Historie analysiert
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex-1 space-y-3">
-                {/* Data Source Info */}
-                <div className="flex items-center gap-2 text-sm">
-                  <Database className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Datenbasis:</span>
-                  <Badge variant="secondary" className="font-medium">
-                    {postCount} Posts aus deiner Historie
-                  </Badge>
-                </div>
-                
-                {/* Last Analysis Info */}
-                {formatLastAnalysisDate() && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Letztes Update:</span>
-                    <Badge variant="outline" className="font-normal">
-                      {formatLastAnalysisDate()}
-                    </Badge>
-                  </div>
-                )}
-                
-                {/* Status */}
-                {brand?.style_system_prompt && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                    <span className="text-success">Stil-Profil aktiv</span>
-                  </div>
-                )}
-                
-                {postCount === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    Importiere zuerst deine Posts in der Historie, um dein Stil-Profil zu erstellen.
-                  </p>
-                )}
-              </div>
-              
-              <Button 
-                variant="outline"
-                onClick={() => navigate("/content-library")}
-                className="shrink-0"
-              >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                Daten in Historie aktualisieren
-              </Button>
-            </div>
-
-            {/* Show System Prompt if exists */}
-            {brand?.style_system_prompt && (
-              <div className="mt-6 space-y-2">
-                <Label className="text-sm font-medium">Generierte System-Instruktion</Label>
-                <Textarea
-                  value={brand.style_system_prompt}
-                  onChange={(e) => setBrand(brand ? { ...brand, style_system_prompt: e.target.value } : null)}
-                  className="min-h-[150px] text-sm font-mono bg-muted/30"
-                  placeholder="Die System-Instruktion wird nach dem Import und der Analyse hier angezeigt..."
-                />
-                <p className="text-xs text-muted-foreground">
-                  Diese Instruktion wird automatisch vom Generator verwendet. Du kannst sie manuell anpassen.
+    <GlobalLayout>
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <div className="space-y-6 max-w-4xl">
+          {/* Header */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold">Marke & Regeln</h1>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Definiere deinen Markenstil und Content-Richtlinien
                 </p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <AutosaveStatus />
+            </div>
+          </div>
 
-        {/* Tone of Voice Section */}
-        <Card className="glass-card border-primary/20">
-          <CardHeader>
+          {/* Datenquelle Info-Box */}
+          <Card className="glass-card border-2 border-primary/30 bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Database className="h-5 w-5 text-primary" />
+                <CardTitle>Deine Stil-DNA</CardTitle>
+              </div>
+              <CardDescription>
+                Dein Schreibstil, automatisch aus deiner Post-Historie analysiert
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                <div className="flex-1 space-y-3">
+                  {/* Data Source Info */}
+                  <div className="flex items-center gap-2 text-sm">
+                    <Database className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Datenbasis:</span>
+                    <Badge variant="secondary" className="font-medium">
+                      {postCount} Posts aus deiner Historie
+                    </Badge>
+                  </div>
+                  
+                  {/* Last Analysis Info */}
+                  {formatLastAnalysisDate() && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Letztes Update:</span>
+                      <Badge variant="outline" className="font-normal">
+                        {formatLastAnalysisDate()}
+                      </Badge>
+                    </div>
+                  )}
+                  
+                  {/* Status */}
+                  {brand?.style_system_prompt && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      <span className="text-success">Stil-Profil aktiv</span>
+                    </div>
+                  )}
+                  
+                  {postCount === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      Importiere zuerst deine Posts in der Historie, um dein Stil-Profil zu erstellen.
+                    </p>
+                  )}
+                </div>
+                
+                <Button 
+                  variant="outline"
+                  onClick={() => navigate("/content-library")}
+                  className="shrink-0"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Daten in Historie aktualisieren
+                </Button>
+              </div>
+
+              {/* Show System Prompt if exists */}
+              {brand?.style_system_prompt && (
+                <div className="mt-6 space-y-2">
+                  <Label className="text-sm font-medium">Generierte System-Instruktion</Label>
+                  <Textarea
+                    value={brand.style_system_prompt}
+                    onChange={(e) => setBrand(brand ? { ...brand, style_system_prompt: e.target.value } : null)}
+                    className="min-h-[150px] text-sm font-mono bg-muted/30"
+                    placeholder="Die System-Instruktion wird nach dem Import und der Analyse hier angezeigt..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Diese Instruktion wird automatisch vom Generator verwendet. Du kannst sie manuell anpassen.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Tone of Voice Section */}
+          <Card className="glass-card border-primary/20">
+            <CardHeader>
             <div className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
               <CardTitle>Tone of Voice</CardTitle>
@@ -473,11 +483,11 @@ Beispiel 3:"
               </p>
             </div>
           </CardContent>
-        </Card>
+          </Card>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Tone & Style */}
-          <Card className="glass-card">
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Tone & Style */}
+            <Card className="glass-card">
             <CardHeader>
               <CardTitle>Tonalität & Stil</CardTitle>
             </CardHeader>
@@ -646,8 +656,9 @@ Beispiel 3:"
               </div>
             </CardContent>
           </Card>
+          </div>
         </div>
       </div>
-    </AppLayout>
+    </GlobalLayout>
   );
 }

@@ -420,7 +420,7 @@ serve(async (req) => {
     // Brand rules
     const { data: brandRules } = await supabase
       .from("brand_rules")
-      .select("tone_style, writing_style, language_primary, formality_mode")
+      .select("tone_style, writing_style, language_primary, formality_mode, do_list, dont_list")
       .eq("user_id", user.id)
       .maybeSingle();
 
@@ -445,6 +445,8 @@ serve(async (req) => {
     const writingStyle = brandRules?.writing_style || "";
     const language = brandRules?.language_primary || "DE";
     const formalityMode = brandRules?.formality_mode || "smart";
+    const doListStr = brandRules?.do_list?.length ? `\n- DO: ${brandRules.do_list.join(', ')}` : '';
+    const dontListStr = brandRules?.dont_list?.length ? `\n- DON'T: ${brandRules.dont_list.join(', ')}` : '';
 
     // Few-shot examples from actual sent replies
     const { data: pastReplies } = await supabase
@@ -493,7 +495,7 @@ Beispiel: Wenn jemand "Wow!" schreibt und auf dem Bild ist ein Hund → Antworte
 ========================================` : '';
 
     // System prompt (dynamic persona engine)
-    const systemPrompt = `ROLE: Du bist ICH (Antoine). Du bist kein Assistent und keine Marke.\n\nSTYLE-GUIDE (echte Beispiele von mir):\n${examplesBlock}\n\nANALYSE: Kopiere Vibe, Satzlänge, Kleinschreibung/Formatierung und Emoji-Nutzung dieser Beispiele so exakt wie möglich.\n\nREGELN (hart, niemals brechen):\n- Perspektive: IMMER 1. Person Singular (\"Ich\"). Niemals \"Wir/Uns/Unser\".\n- Keine Hashtags (#) – absolut verboten.\n- Keine Signaturen (z.B. \"LG\", \"Grüße\", \"Dein Team\", \"@support\", \"@team\").\n- Keine CTAs (\"Link in Bio\", \"schau mal vorbei\", \"mehr Infos\"), außer der Fan fragt explizit danach.\n- Schreibe kurz, natürlich, wie vom Handy (1–2 Sätze).${emojiConstraint}\n\nSPRACHE: ${language === "DE" ? "Deutsch" : language}\nTONALITÄT: ${toneStyle}${writingStyle ? `\nSTIL-HINWEIS: ${writingStyle}` : ""}\nFORMALITÄT: ${formalityInstruction}${toneInstruction}${visionSection}`;
+    const systemPrompt = `ROLE: Du bist ICH (Antoine). Du bist kein Assistent und keine Marke.\n\nSTYLE-GUIDE (echte Beispiele von mir):\n${examplesBlock}\n\nANALYSE: Kopiere Vibe, Satzlänge, Kleinschreibung/Formatierung und Emoji-Nutzung dieser Beispiele so exakt wie möglich.\n\nREGELN (hart, niemals brechen):\n- Perspektive: IMMER 1. Person Singular (\"Ich\"). Niemals \"Wir/Uns/Unser\".\n- Keine Hashtags (#) – absolut verboten.\n- Keine Signaturen (z.B. \"LG\", \"Grüße\", \"Dein Team\", \"@support\", \"@team\").\n- Keine CTAs (\"Link in Bio\", \"schau mal vorbei\", \"mehr Infos\"), außer der Fan fragt explizit danach.\n- Schreibe kurz, natürlich, wie vom Handy (1–2 Sätze).${doListStr}${dontListStr}${emojiConstraint}\n\nSPRACHE: ${language === "DE" ? "Deutsch" : language}\nTONALITÄT: ${toneStyle}${writingStyle ? `\nSTIL-HINWEIS: ${writingStyle}` : ""}\nFORMALITÄT: ${formalityInstruction}${toneInstruction}${visionSection}`;
 
     // User message (A/B context injection) - mention image if present
     const imageContextHint = validatedImageUrl ? "\n\nC) BILD (siehe beigefügtes Bild - beschreibe was du siehst und beziehe dich darauf!)" : "";
