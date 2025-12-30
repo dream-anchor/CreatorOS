@@ -210,16 +210,16 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       {/* Footer: User Profile, Theme & Sign Out */}
-      <div className="border-t border-border/15 mt-auto">
+      <div className="border-t border-border mt-auto bg-card/50">
         <UserProfileFooter userData={userData} />
-        <div className="p-3 space-y-1">
-          <div className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-muted/30 transition-colors">
-            <span className="text-sm text-foreground">Theme</span>
+        <div className="p-3 space-y-1.5">
+          <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-muted/40 hover:bg-muted/60 transition-colors">
+            <span className="text-sm font-medium text-foreground">Theme</span>
             <ThemeToggle />
           </div>
           <button
             onClick={handleSignOut}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/30 transition-all duration-200"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground bg-muted/40 hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
           >
             <LogOut className="h-4 w-4" />
             Abmelden
