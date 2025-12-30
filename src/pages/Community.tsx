@@ -35,6 +35,7 @@ import { ReplyQueueIndicator } from "@/components/community/ReplyQueueIndicator"
 import { FilteredCommentsDialog } from "@/components/community/FilteredCommentsDialog";
 import { NegativeCommentsDialog } from "@/components/community/NegativeCommentsDialog";
 import { useGenerationContext } from "@/contexts/GenerationContext";
+import { PostThumbnail } from "@/components/community/PostThumbnail";
 
 interface Comment {
   id: string;
@@ -770,13 +771,11 @@ export default function Community() {
                 <div key={group.igMediaId} className="rounded-2xl bg-card/50 border border-border/20 overflow-hidden">
                   {/* Compact Post Header */}
                   <div className="flex items-center gap-3 p-3 bg-muted/30 border-b border-border/20">
-                    {post?.original_media_url ? (
-                      <img src={post.original_media_url} alt="" className="w-8 h-8 rounded-lg object-cover" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    )}
+                    <PostThumbnail 
+                      mediaUrl={post?.original_media_url}
+                      permalink={post?.original_ig_permalink}
+                      className="w-8 h-8 rounded-lg"
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-muted-foreground line-clamp-1">
                         {post?.caption || "Post"}
