@@ -127,7 +127,7 @@ async function fetchInsightsForUser(
   console.log(`[fetch-daily-insights] Fetching insights for ${igUserId} on ${today}`);
 
   // 1. Fetch basic account info (followers_count)
-  const accountUrl = `https://graph.instagram.com/v22.0/${igUserId}?fields=followers_count,media_count&access_token=${accessToken}`;
+  const accountUrl = `https://graph.facebook.com/v22.0/${igUserId}?fields=followers_count,media_count&access_token=${accessToken}`;
   const accountRes = await fetch(accountUrl);
   
   if (!accountRes.ok) {
@@ -160,7 +160,7 @@ async function fetchInsightsForUser(
   
   try {
     // Fetch daily metrics
-    const insightsUrl = `https://graph.instagram.com/v22.0/${igUserId}/insights?metric=impressions,reach,profile_views,website_clicks,email_contacts,accounts_engaged,total_interactions&period=day&access_token=${accessToken}`;
+    const insightsUrl = `https://graph.facebook.com/v22.0/${igUserId}/insights?metric=impressions,reach,profile_views,website_clicks,email_contacts,accounts_engaged,total_interactions&period=day&access_token=${accessToken}`;
     const insightsRes = await fetch(insightsUrl);
     
     if (insightsRes.ok) {
@@ -209,7 +209,7 @@ async function fetchInsightsForUser(
     }
 
     // Also try to get shares from Instagram API for recent media
-    const mediaUrl = `https://graph.instagram.com/v22.0/${igUserId}/media?fields=id,shares&limit=10&access_token=${accessToken}`;
+    const mediaUrl = `https://graph.facebook.com/v22.0/${igUserId}/media?fields=id,shares&limit=10&access_token=${accessToken}`;
     const mediaRes = await fetch(mediaUrl);
     if (mediaRes.ok) {
       const mediaData = await mediaRes.json();
