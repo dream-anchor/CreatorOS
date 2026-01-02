@@ -2,7 +2,20 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Smartphone, ExternalLink, Copy, Check, Loader2, CheckCircle2, XCircle, AlertCircle, RefreshCw, ExternalLinkIcon } from "lucide-react";
+import {
+  Smartphone,
+  ExternalLink,
+  Copy,
+  Check,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  RefreshCw,
+  ExternalLinkIcon,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -38,6 +51,10 @@ export default function MobileUploadTab() {
   const [isLoadingLogs, setIsLoadingLogs] = useState(true);
   const [isTroubleshootingOpen, setIsTroubleshootingOpen] = useState(false);
 
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [isLoadingApiKey, setIsLoadingApiKey] = useState(false);
+  const [isApiKeyVisible, setIsApiKeyVisible] = useState(false);
+
   const endpointUrl = `https://utecdkwvjraucimdflnw.supabase.co/functions/v1/shortcut-upload`;
 
   // Load upload logs
@@ -65,6 +82,52 @@ export default function MobileUploadTab() {
     loadLogs();
   }, [user]);
 
+  const maskApiKey = (key: string) => {
+    if (!key) return "";
+    if (key.length <= 10) return "••••••";
+    return `${key.slice(0, 4)}…${key.slice(-4)}`;
+  };
+
+  // Load shortcut API key (needed for iOS shortcut installation)
+  useEffect(() => {
+    let isActive = true;
+
+    if (!user) {
+      setApiKey(null);
+      setIsApiKeyVisible(false);
+      return;
+    }
+
+    (async () => {
+      setIsLoadingApiKey(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("get-shortcut-api-key");
+
+        if (!isActive) return;
+
+        if (error) {
+          console.error("Error loading shortcut API key:", error);
+          setApiKey(null);
+          toast.error("API-Key konnte nicht geladen werden");
+          return;
+        }
+
+        setApiKey((data as any)?.apiKey ?? null);
+      } catch (e) {
+        if (!isActive) return;
+        console.error("Error loading shortcut API key:", e);
+        setApiKey(null);
+        toast.error("API-Key konnte nicht geladen werden");
+      } finally {
+        if (isActive) setIsLoadingApiKey(false);
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user]);
+
   const copyToClipboard = async (text: string, field: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -82,28 +145,33 @@ export default function MobileUploadTab() {
     setConnectionError(null);
 
     try {
+      const keyForTest = apiKey ?? "TEST_PING_CHECK";
+
       const response = await fetch(endpointUrl, {
         method: "GET",
         headers: {
-          "x-api-key": "TEST_PING_CHECK", // This will fail auth but confirm endpoint is reachable
+          "x-api-key": keyForTest,
         },
       });
 
-      // Even a 401 means the server is reachable
-      if (response.status === 401) {
-        // Expected - API key is wrong but server is reachable
-        setConnectionStatus("success");
-        toast.success("Server erreichbar! API-Key wird im Kurzbefehl konfiguriert.");
-      } else if (response.ok) {
+      if (response.ok) {
         setConnectionStatus("success");
         toast.success("Verbindung erfolgreich!");
-      } else {
-        const data = await response.json().catch(() => ({}));
-        setConnectionStatus("error");
-        setConnectionError(data.error || `HTTP ${response.status}`);
-        toast.error("Verbindungsfehler");
+        return;
       }
-    } catch (error) {
+
+      // If we don't have the real key yet, a 401 still proves reachability
+      if (response.status === 401 && !apiKey) {
+        setConnectionStatus("success");
+        toast.success("Server erreichbar (API-Key fehlt noch)");
+        return;
+      }
+
+      const data = await response.json().catch(() => ({}));
+      setConnectionStatus("error");
+      setConnectionError(data.error || `HTTP ${response.status}`);
+      toast.error("Verbindungsfehler");
+    } catch {
       setConnectionStatus("error");
       setConnectionError("Server nicht erreichbar");
       toast.error("Server nicht erreichbar");
@@ -206,6 +274,51 @@ export default function MobileUploadTab() {
                 )}
               </Button>
             </div>
+          </div>
+
+          {/* API Key */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-muted-foreground">API-Key</label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-muted px-3 py-2 rounded-md text-xs font-mono truncate">
+                {isLoadingApiKey
+                  ? "Lade…"
+                  : apiKey
+                    ? isApiKeyVisible
+                      ? apiKey
+                      : maskApiKey(apiKey)
+                    : "kein api key"}
+              </code>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setIsApiKeyVisible((v) => !v)}
+                  disabled={!apiKey}
+                  aria-label={isApiKeyVisible ? "API-Key verbergen" : "API-Key anzeigen"}
+                >
+                  {isApiKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => apiKey && copyToClipboard(apiKey, "apiKey")}
+                  disabled={!apiKey}
+                  aria-label="API-Key kopieren"
+                >
+                  {copiedField === "apiKey" ? (
+                    <Check className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Im Kurzbefehl als Header <span className="font-mono">x-api-key</span> eintragen.
+            </p>
           </div>
 
           {/* Endpoint URL */}
