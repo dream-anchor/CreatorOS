@@ -65,7 +65,7 @@ export function ChatSidebar() {
                 <Sparkles className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <h1 className="font-semibold text-foreground">InstagramGPT</h1>
+                <h1 className="font-semibold text-foreground">CreatorOS</h1>
                 <p className="text-[10px] text-muted-foreground">AI Co-Pilot</p>
               </div>
             </div>
