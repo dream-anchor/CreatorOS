@@ -14,7 +14,11 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  if (req.method !== "GET") {
+  const authHeader = req.headers.get("authorization") ?? "";
+  console.log("[get-shortcut-api-key] Request received", { method: req.method, hasAuth: !!authHeader });
+
+  // Allow both GET and POST (supabase.functions.invoke defaults to POST)
+  if (req.method !== "GET" && req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -32,8 +36,6 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-
-  const authHeader = req.headers.get("authorization") ?? "";
 
   // Authenticated user via anon + forwarded JWT
   const authClient = createClient(supabaseUrl, anonKey, {

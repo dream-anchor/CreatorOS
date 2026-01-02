@@ -101,14 +101,26 @@ export default function MobileUploadTab() {
     (async () => {
       setIsLoadingApiKey(true);
       try {
-        const { data, error } = await supabase.functions.invoke("get-shortcut-api-key");
+        const { data, error } = await supabase.functions.invoke("get-shortcut-api-key", {
+          method: "GET",
+        });
 
         if (!isActive) return;
 
         if (error) {
           console.error("Error loading shortcut API key:", error);
           setApiKey(null);
-          toast.error("API-Key konnte nicht geladen werden");
+          // Show specific error based on status
+          const status = (error as any)?.status;
+          if (status === 401) {
+            toast.error("Bitte erneut einloggen");
+          } else if (status === 403) {
+            toast.error("Kein Zugriff – bitte mit Owner-Konto einloggen");
+          } else if (status === 405) {
+            toast.error("Backend-Methode nicht erlaubt (405)");
+          } else {
+            toast.error("API-Key konnte nicht geladen werden");
+          }
           return;
         }
 
