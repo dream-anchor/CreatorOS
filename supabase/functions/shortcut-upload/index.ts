@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Image } from "https://deno.land/x/imagescript@1.2.15/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -98,35 +99,62 @@ async function logError(
   }
 }
 
-// Process a single file - optimized for memory
+// Compress image using ImageScript - resize to max 1920px and convert to JPEG
+async function compressImage(base64Data: string): Promise<{ data: Uint8Array; originalSize: number; compressedSize: number }> {
+  // Decode base64 to binary
+  const binaryString = atob(base64Data);
+  const originalSize = binaryString.length;
+  const bytes = new Uint8Array(originalSize);
+  for (let i = 0; i < originalSize; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  // Decode image with ImageScript
+  const image = await Image.decode(bytes);
+  
+  const maxDimension = 1920;
+  const width = image.width;
+  const height = image.height;
+  
+  // Resize if larger than maxDimension
+  if (width > maxDimension || height > maxDimension) {
+    if (width > height) {
+      const newHeight = Math.round((height / width) * maxDimension);
+      image.resize(maxDimension, newHeight);
+    } else {
+      const newWidth = Math.round((width / height) * maxDimension);
+      image.resize(newWidth, maxDimension);
+    }
+    console.log(`[shortcut-upload] Resized from ${width}x${height} to ${image.width}x${image.height}`);
+  }
+
+  // Encode as JPEG with 85% quality
+  const compressed = await image.encodeJPEG(85);
+  const compressedSize = compressed.length;
+  
+  console.log(`[shortcut-upload] Compressed: ${Math.round(originalSize / 1024)}KB -> ${Math.round(compressedSize / 1024)}KB (${Math.round((1 - compressedSize / originalSize) * 100)}% reduction)`);
+  
+  return { data: compressed, originalSize, compressedSize };
+}
+
+// Process a single file - with compression
 async function processAndUploadFile(
   supabase: any,
   userId: string,
   base64Data: string,
   fileName: string,
-  contentType: string
+  _contentType: string
 ): Promise<{ storagePath: string; publicUrl: string }> {
-  // Process base64 in chunks to reduce peak memory usage
-  const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
-  const binaryLength = Math.ceil((base64Data.length * 3) / 4);
-  const bytes = new Uint8Array(binaryLength);
+  // Compress the image before uploading
+  const { data: compressedData } = await compressImage(base64Data);
   
-  let byteIndex = 0;
-  for (let i = 0; i < base64Data.length; i += CHUNK_SIZE) {
-    const chunk = base64Data.slice(i, Math.min(i + CHUNK_SIZE, base64Data.length));
-    const binaryChunk = atob(chunk);
-    for (let j = 0; j < binaryChunk.length; j++) {
-      bytes[byteIndex++] = binaryChunk.charCodeAt(j);
-    }
-  }
-  
-  // Trim to actual size
-  const actualBytes = bytes.slice(0, byteIndex);
-  
+  // Always use .jpg extension after compression
+  const compressedFileName = fileName.replace(/\.[^.]+$/, '.jpg');
+
   const { error: uploadError } = await supabase.storage
     .from("post-assets")
-    .upload(fileName, actualBytes, {
-      contentType: contentType,
+    .upload(compressedFileName, compressedData, {
+      contentType: "image/jpeg",
       upsert: false,
     });
 
@@ -136,10 +164,10 @@ async function processAndUploadFile(
 
   const { data: publicUrlData } = supabase.storage
     .from("post-assets")
-    .getPublicUrl(fileName);
+    .getPublicUrl(compressedFileName);
 
   return {
-    storagePath: fileName,
+    storagePath: compressedFileName,
     publicUrl: publicUrlData.publicUrl,
   };
 }
@@ -232,8 +260,8 @@ serve(async (req) => {
       throw new Error("Keine Bilder hochgeladen");
     }
 
-    // Limit to max 10 files to prevent memory issues
-    const maxFiles = 10;
+    // Limit to max 5 files to prevent memory issues (reduced from 10)
+    const maxFiles = 5;
     const filesToProcess = files.slice(0, maxFiles);
     
     if (files.length > maxFiles) {
@@ -253,10 +281,10 @@ serve(async (req) => {
 
     for (let i = 0; i < filesToProcess.length; i++) {
       const file = filesToProcess[i];
-      const fileExt = file.name?.split(".").pop() || "jpg";
+      const fileExt = "jpg"; // Always .jpg after compression
       const fileName = `${userId}/${crypto.randomUUID()}.${fileExt}`;
 
-      console.log(`[shortcut-upload] Uploading file ${i + 1}/${filesToProcess.length}...`);
+      console.log(`[shortcut-upload] Processing file ${i + 1}/${filesToProcess.length}...`);
 
       try {
         const result = await processAndUploadFile(
