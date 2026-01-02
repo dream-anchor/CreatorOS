@@ -175,7 +175,13 @@ export default function CalendarPage() {
     }
   };
 
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i));
+  // Generate 3 weeks of days (21 days total)
+  const allDays = Array.from({ length: 21 }, (_, i) => addDays(currentWeekStart, i));
+  const weeks = [
+    allDays.slice(0, 7),
+    allDays.slice(7, 14),
+    allDays.slice(14, 21),
+  ];
 
   const getPostsForDay = (day: Date) => {
     return posts.filter((post) => {
@@ -512,28 +518,28 @@ export default function CalendarPage() {
   return (
     <GlobalLayout>
       <div className="p-4 sm:p-6 lg:p-8">
-        {/* Week Navigation */}
+        {/* 3-Week Navigation */}
         <div className="flex items-center justify-between mb-4 lg:mb-6">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -7))}
+            onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -21))}
           >
-            ← Vorherige
+            ← 3 Wochen
           </Button>
           <div className="flex items-center gap-2 text-sm sm:text-base font-medium">
             <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
             <span>
               {format(currentWeekStart, "d. MMM", { locale: de })} –{" "}
-              {format(endOfWeek(currentWeekStart, { weekStartsOn: 1 }), "d. MMM yyyy", { locale: de })}
+              {format(addDays(currentWeekStart, 20), "d. MMM yyyy", { locale: de })}
             </span>
           </div>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 7))}
+            onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 21))}
           >
-            Nächste →
+            3 Wochen →
           </Button>
         </div>
 
@@ -588,83 +594,87 @@ export default function CalendarPage() {
           <div className="order-1 xl:order-2 flex-1 min-w-0">
             <Card className="glass-card">
               <CardContent className="p-4 sm:p-5 lg:p-6">
-                {/* Always 7 columns on desktop for proper week view */}
-                <div className="grid grid-cols-7 gap-2 lg:gap-3">
-                  {weekDays.map((day) => {
-                    const dayPosts = getPostsForDay(day);
-                    const isToday = isSameDay(day, new Date());
-                    const dayKey = day.toISOString();
-                    const isDragOver = dragOverDay === dayKey;
+              {/* 3 weeks - one row per week */}
+                <div className="space-y-3">
+                  {weeks.map((weekDays, weekIndex) => (
+                    <div key={weekIndex} className="grid grid-cols-7 gap-2 lg:gap-3">
+                      {weekDays.map((day) => {
+                        const dayPosts = getPostsForDay(day);
+                        const isToday = isSameDay(day, new Date());
+                        const dayKey = day.toISOString();
+                        const isDragOver = dragOverDay === dayKey;
 
-                    return (
-                      <div
-                        key={dayKey}
-                        onDragOver={(e) => handleDayDragOver(e, dayKey)}
-                        onDragLeave={handleDayDragLeave}
-                        onDrop={(e) => handleDayDrop(e, day)}
-                        className={`min-h-[180px] lg:min-h-[220px] p-2 lg:p-3 rounded-xl border-2 transition-all ${
-                          isDragOver 
-                            ? "border-primary bg-primary/10 scale-[1.02]" 
-                            : isToday 
-                            ? "border-primary bg-primary/5" 
-                            : "border-border/50 hover:border-border"
-                        }`}
-                      >
-                        <div className="text-center mb-3">
-                          <p className="text-[10px] lg:text-xs text-muted-foreground uppercase tracking-wide">
-                            {format(day, "EEE", { locale: de })}
-                          </p>
-                          <p
-                            className={`text-xl lg:text-3xl font-bold ${
-                              isToday ? "text-primary" : ""
+                        return (
+                          <div
+                            key={dayKey}
+                            onDragOver={(e) => handleDayDragOver(e, dayKey)}
+                            onDragLeave={handleDayDragLeave}
+                            onDrop={(e) => handleDayDrop(e, day)}
+                            className={`min-h-[140px] lg:min-h-[160px] p-2 lg:p-3 rounded-xl border-2 transition-all ${
+                              isDragOver 
+                                ? "border-primary bg-primary/10 scale-[1.02]" 
+                                : isToday 
+                                ? "border-primary bg-primary/5" 
+                                : "border-border/50 hover:border-border"
                             }`}
                           >
-                            {format(day, "d")}
-                          </p>
-                        </div>
-                        <div className="space-y-2 max-h-[120px] lg:max-h-[150px] overflow-y-auto">
-                          {dayPosts.map((post) => {
-                            const isPublished = post.status === "PUBLISHED";
-                            return (
-                            <div
-                              key={post.id}
-                              draggable={!isPublished}
-                              onDragStart={(e) => handlePostDragStart(e, post.id)}
-                              onDragEnd={handlePostDragEnd}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openScheduleDialog(post);
-                              }}
-                              className={`p-2 rounded-lg bg-muted/60 hover:bg-muted transition-all ${
-                                isPublished 
-                                  ? "cursor-pointer" 
-                                  : "cursor-grab active:cursor-grabbing"
-                              } ${draggedPost === post.id ? "opacity-50" : ""}`}
-                            >
-                              <div className="flex items-center gap-1 mb-1">
-                                <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                                <span className="text-xs text-muted-foreground font-medium">
-                                  {post.scheduled_at &&
-                                    format(new Date(post.scheduled_at), "HH:mm")}
-                                </span>
-                              </div>
-                              <span className={`inline-block text-[10px] lg:text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                                post.status === "PUBLISHED" 
-                                  ? "bg-emerald-500/20 text-emerald-600" 
-                                  : post.status === "SCHEDULED"
-                                  ? "bg-primary/20 text-primary"
-                                  : "bg-muted-foreground/20 text-muted-foreground"
-                              }`}>
-                                {post.status === "PUBLISHED" ? "Veröff." : post.status === "SCHEDULED" ? "Geplant" : post.status}
-                              </span>
-                              <p className="text-xs line-clamp-2 mt-1 leading-tight">{post.caption}</p>
+                            <div className="text-center mb-2">
+                              <p className="text-[10px] lg:text-xs text-muted-foreground uppercase tracking-wide">
+                                {format(day, "EEE", { locale: de })}
+                              </p>
+                              <p
+                                className={`text-lg lg:text-2xl font-bold ${
+                                  isToday ? "text-primary" : ""
+                                }`}
+                              >
+                                {format(day, "d")}
+                              </p>
                             </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+                            <div className="space-y-1.5 max-h-[80px] lg:max-h-[100px] overflow-y-auto">
+                              {dayPosts.map((post) => {
+                                const isPublished = post.status === "PUBLISHED";
+                                return (
+                                <div
+                                  key={post.id}
+                                  draggable={!isPublished}
+                                  onDragStart={(e) => handlePostDragStart(e, post.id)}
+                                  onDragEnd={handlePostDragEnd}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openScheduleDialog(post);
+                                  }}
+                                  className={`p-1.5 rounded-lg bg-muted/60 hover:bg-muted transition-all ${
+                                    isPublished 
+                                      ? "cursor-pointer" 
+                                      : "cursor-grab active:cursor-grabbing"
+                                  } ${draggedPost === post.id ? "opacity-50" : ""}`}
+                                >
+                                  <div className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                    <span className="text-xs text-muted-foreground font-medium">
+                                      {post.scheduled_at &&
+                                        format(new Date(post.scheduled_at), "HH:mm")}
+                                    </span>
+                                    <span className={`ml-auto text-[9px] lg:text-[10px] px-1 py-0.5 rounded-full font-medium ${
+                                      post.status === "PUBLISHED" 
+                                        ? "bg-emerald-500/20 text-emerald-600" 
+                                        : post.status === "SCHEDULED"
+                                        ? "bg-primary/20 text-primary"
+                                        : "bg-muted-foreground/20 text-muted-foreground"
+                                    }`}>
+                                      {post.status === "PUBLISHED" ? "✓" : post.status === "SCHEDULED" ? "⏱" : "?"}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] lg:text-xs line-clamp-1 mt-0.5 leading-tight">{post.caption}</p>
+                                </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
