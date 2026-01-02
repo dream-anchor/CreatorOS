@@ -110,3 +110,6 @@ verify_jwt = false
 
 [functions.refresh-instagram-token]
 verify_jwt = false
+
+[functions.get-shortcut-api-key]
+verify_jwt = false
