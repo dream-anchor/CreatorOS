@@ -98,6 +98,52 @@ async function logError(
   }
 }
 
+// Process a single file - optimized for memory
+async function processAndUploadFile(
+  supabase: any,
+  userId: string,
+  base64Data: string,
+  fileName: string,
+  contentType: string
+): Promise<{ storagePath: string; publicUrl: string }> {
+  // Process base64 in chunks to reduce peak memory usage
+  const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
+  const binaryLength = Math.ceil((base64Data.length * 3) / 4);
+  const bytes = new Uint8Array(binaryLength);
+  
+  let byteIndex = 0;
+  for (let i = 0; i < base64Data.length; i += CHUNK_SIZE) {
+    const chunk = base64Data.slice(i, Math.min(i + CHUNK_SIZE, base64Data.length));
+    const binaryChunk = atob(chunk);
+    for (let j = 0; j < binaryChunk.length; j++) {
+      bytes[byteIndex++] = binaryChunk.charCodeAt(j);
+    }
+  }
+  
+  // Trim to actual size
+  const actualBytes = bytes.slice(0, byteIndex);
+  
+  const { error: uploadError } = await supabase.storage
+    .from("post-assets")
+    .upload(fileName, actualBytes, {
+      contentType: contentType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(`Upload-Fehler: ${uploadError.message}`);
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from("post-assets")
+    .getPublicUrl(fileName);
+
+  return {
+    storagePath: fileName,
+    publicUrl: publicUrlData.publicUrl,
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -151,16 +197,28 @@ serve(async (req) => {
   try {
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
 
-    const body = await req.json();
-    const { files, rawText, collaborators } = body;
-    userId = body.userId;
+    // Parse body and immediately extract what we need
+    const bodyText = await req.text();
+    let parsedBody;
+    try {
+      parsedBody = JSON.parse(bodyText);
+    } catch (parseError) {
+      console.error("[shortcut-upload] JSON parse error");
+      return new Response(
+        JSON.stringify({ success: false, error: "Ungültiges JSON-Format" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { files, rawText, collaborators } = parsedBody;
+    userId = parsedBody.userId;
 
     // Parse collaborators (remove @ symbols if present)
     const parsedCollaborators: string[] = Array.isArray(collaborators) 
       ? collaborators.map((c: string) => c.replace(/^@/, '').trim()).filter(Boolean)
       : [];
 
-    console.log(`[shortcut-upload] Request metadata - User-Agent: ${userAgent}, Content-Length: ${contentLength}`);
+    console.log(`[shortcut-upload] Request - User-Agent: ${userAgent}, Files: ${files?.length || 0}`);
 
     if (!userId) {
       throw new Error("userId ist erforderlich");
@@ -170,68 +228,66 @@ serve(async (req) => {
       await logError(supabase, userId, "Keine Bilder hochgeladen", {
         source: "ios_shortcut",
         userAgent,
-        contentLength,
       });
       throw new Error("Keine Bilder hochgeladen");
     }
 
-    console.log(`[shortcut-upload] Processing ${files.length} files for user ${userId}`);
+    // Limit to max 10 files to prevent memory issues
+    const maxFiles = 10;
+    const filesToProcess = files.slice(0, maxFiles);
+    
+    if (files.length > maxFiles) {
+      console.log(`[shortcut-upload] Limiting from ${files.length} to ${maxFiles} files`);
+    }
+
+    console.log(`[shortcut-upload] Processing ${filesToProcess.length} files for user ${userId}`);
 
     // Step 1: Determine format
-    const format = files.length > 1 ? "carousel" : "single";
+    const format = filesToProcess.length > 1 ? "carousel" : "single";
     console.log(`[shortcut-upload] Format detected: ${format}`);
 
-    // Step 2: Upload files to storage
+    // Step 2: Upload files SEQUENTIALLY to reduce peak memory usage
     const uploadedFiles: { storagePath: string; publicUrl: string }[] = [];
     const uploadedUrls: string[] = [];
     const slides: any[] = [];
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < filesToProcess.length; i++) {
+      const file = filesToProcess[i];
       const fileExt = file.name?.split(".").pop() || "jpg";
       const fileName = `${userId}/${crypto.randomUUID()}.${fileExt}`;
 
-      // Decode base64 to Uint8Array
-      const binaryString = atob(file.base64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let j = 0; j < binaryString.length; j++) {
-        bytes[j] = binaryString.charCodeAt(j);
-      }
+      console.log(`[shortcut-upload] Uploading file ${i + 1}/${filesToProcess.length}...`);
 
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("post-assets")
-        .upload(fileName, bytes, {
-          contentType: file.type || "image/jpeg",
-          upsert: false,
+      try {
+        const result = await processAndUploadFile(
+          supabase,
+          userId,
+          file.base64,
+          fileName,
+          file.type || "image/jpeg"
+        );
+
+        uploadedFiles.push(result);
+        uploadedUrls.push(result.publicUrl);
+        slides.push({
+          index: i,
+          image_url: result.publicUrl,
         });
 
-      if (uploadError) {
+        // Clear the base64 data from memory after processing
+        file.base64 = null;
+
+        console.log(`[shortcut-upload] Uploaded file ${i + 1}/${filesToProcess.length}`);
+      } catch (uploadError) {
         console.error(`[shortcut-upload] Upload error for file ${i}:`, uploadError);
-        await logError(supabase, userId, `Upload-Fehler: ${uploadError.message}`, {
+        await logError(supabase, userId, uploadError instanceof Error ? uploadError.message : "Upload-Fehler", {
           source: "ios_shortcut",
           fileIndex: i,
-          filesTotal: files.length,
+          filesTotal: filesToProcess.length,
           userAgent,
         });
-        throw new Error(`Fehler beim Hochladen: ${uploadError.message}`);
+        throw uploadError;
       }
-
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from("post-assets")
-        .getPublicUrl(fileName);
-
-      const publicUrl = publicUrlData.publicUrl;
-
-      uploadedFiles.push({ storagePath: fileName, publicUrl });
-      uploadedUrls.push(publicUrl);
-
-      slides.push({
-        index: i,
-        image_url: publicUrl,
-      });
-
-      console.log(`[shortcut-upload] Uploaded file ${i + 1}/${files.length}: ${fileName}`);
     }
 
     // Step 3: Load brand rules for style context
@@ -265,19 +321,19 @@ FORMAT:
 
 Antworte NUR mit der fertigen Caption + Hashtags.`;
 
-    // Build message with image(s)
+    // Build message with image(s) - use URL instead of base64
     const userContent: any[] = [
       { type: "text", text: rawText ? `Rohtext: "${rawText}"` : "Erstelle eine passende Caption für dieses Bild." },
     ];
 
-    // Add first image for vision analysis
+    // Add first image for vision analysis (using URL, not base64)
     userContent.push({
       type: "image_url",
       image_url: { url: uploadedUrls[0] },
     });
 
-    if (files.length > 1) {
-      userContent[0].text += ` (Es handelt sich um ein Karussell mit ${files.length} Bildern.)`;
+    if (filesToProcess.length > 1) {
+      userContent[0].text += ` (Es handelt sich um ein Karussell mit ${filesToProcess.length} Bildern.)`;
     }
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -300,8 +356,8 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
       console.error("[shortcut-upload] AI error:", errorText);
       await logError(supabase, userId, "AI-Generierung fehlgeschlagen", {
         source: "ios_shortcut",
-        aiError: errorText,
-        filesCount: files.length,
+        aiError: errorText.substring(0, 500),
+        filesCount: filesToProcess.length,
       });
       throw new Error("AI-Generierung fehlgeschlagen");
     }
@@ -312,7 +368,7 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
     if (!generatedCaption) {
       await logError(supabase, userId, "Keine Caption generiert", {
         source: "ios_shortcut",
-        filesCount: files.length,
+        filesCount: filesToProcess.length,
       });
       throw new Error("Keine Caption generiert");
     }
@@ -350,7 +406,7 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
       console.error("[shortcut-upload] Post creation error:", postError);
       await logError(supabase, userId, `Post-Erstellung fehlgeschlagen: ${postError.message}`, {
         source: "ios_shortcut",
-        filesCount: files.length,
+        filesCount: filesToProcess.length,
       });
       throw new Error(`Post konnte nicht erstellt werden: ${postError.message}`);
     }
@@ -372,9 +428,8 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
       await logError(supabase, userId, `Assets-Erstellung fehlgeschlagen: ${assetsError.message}`, {
         source: "ios_shortcut",
         postId: post.id,
-        filesCount: files.length,
+        filesCount: filesToProcess.length,
       });
-      // IMPORTANT: don't throw here to avoid creating duplicate scheduled posts on retry
     }
 
     // Step 8: Create slide assets for carousel (keeps order)
@@ -391,7 +446,7 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
       console.log(`[shortcut-upload] Created ${uploadedFiles.length} slide assets`);
     }
 
-    // Step 8: Log the successful action
+    // Step 9: Log the successful action
     await supabase.from("logs").insert({
       user_id: userId,
       post_id: post.id,
@@ -399,7 +454,7 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
       level: "info",
       details: {
         format,
-        files_count: files.length,
+        files_count: filesToProcess.length,
         scheduled_for: scheduledAt.toISOString(),
         raw_text_provided: !!rawText,
         collaborators: parsedCollaborators,
