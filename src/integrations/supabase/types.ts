@@ -1090,6 +1090,42 @@ export type Database = {
         }
         Relationships: []
       }
+      upload_sessions: {
+        Row: {
+          collaborators: string[] | null
+          created_at: string
+          expires_at: string
+          id: string
+          is_completed: boolean
+          raw_text: string | null
+          session_id: string
+          uploaded_files: Json
+          user_id: string
+        }
+        Insert: {
+          collaborators?: string[] | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          is_completed?: boolean
+          raw_text?: string | null
+          session_id: string
+          uploaded_files?: Json
+          user_id: string
+        }
+        Update: {
+          collaborators?: string[] | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          is_completed?: boolean
+          raw_text?: string | null
+          session_id?: string
+          uploaded_files?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string

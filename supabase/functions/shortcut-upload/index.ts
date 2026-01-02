@@ -172,6 +172,217 @@ async function processAndUploadFile(
   };
 }
 
+// Create final post from session data
+async function createPostFromSession(
+  supabase: any,
+  session: any,
+  lovableApiKey: string,
+  userAgent: string
+): Promise<{ success: boolean; postId?: string; message?: string; error?: string }> {
+  const userId = session.user_id;
+  const uploadedFiles = session.uploaded_files as { storagePath: string; publicUrl: string }[];
+  const rawText = session.raw_text;
+  const parsedCollaborators = session.collaborators || [];
+
+  console.log(`[shortcut-upload] Creating post from session with ${uploadedFiles.length} files`);
+
+  // Determine format
+  const format = uploadedFiles.length > 1 ? "carousel" : "single";
+  const uploadedUrls = uploadedFiles.map(f => f.publicUrl);
+
+  // Build slides
+  const slides = uploadedFiles.map((f, i) => ({
+    index: i,
+    image_url: f.publicUrl,
+  }));
+
+  // Load brand rules for style context
+  const { data: brandRules } = await supabase
+    .from("brand_rules")
+    .select("tone_style, writing_style, language_primary, hashtag_min, hashtag_max")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const toneStyle = brandRules?.tone_style || "locker und authentisch";
+  const writingStyle = brandRules?.writing_style || "";
+  const hashtagMin = brandRules?.hashtag_min || 8;
+  const hashtagMax = brandRules?.hashtag_max || 15;
+
+  // Generate optimized caption using AI Vision
+  console.log(`[shortcut-upload] Generating caption with AI...`);
+
+  const systemPrompt = `Du bist ein Instagram Content-Creator. Dein Stil ist: ${toneStyle}.
+${writingStyle ? `Zusätzlicher Stil-Hinweis: ${writingStyle}` : ""}
+
+AUFGABE:
+1. Analysiere das/die Bild(er) und verstehe den Kontext.
+2. ${rawText ? `Schreibe den folgenden Rohtext um, sodass er authentisch und engaging klingt: "${rawText}"` : "Erstelle eine passende Caption basierend auf dem Bild."}
+3. Füge ${hashtagMin}-${hashtagMax} relevante Hashtags hinzu.
+
+FORMAT:
+- Schreibe locker, wie für Instagram (keine steifen Formulierungen).
+- Nutze Emojis sparsam aber effektiv.
+- Die Caption sollte zum Engagement einladen (Frage, CTA, etc.).
+- Hashtags am Ende, durch Leerzeilen getrennt.
+
+Antworte NUR mit der fertigen Caption + Hashtags.`;
+
+  // Build message with image(s) - use URL instead of base64
+  const userContent: any[] = [
+    { type: "text", text: rawText ? `Rohtext: "${rawText}"` : "Erstelle eine passende Caption für dieses Bild." },
+  ];
+
+  // Add first image for vision analysis (using URL, not base64)
+  userContent.push({
+    type: "image_url",
+    image_url: { url: uploadedUrls[0] },
+  });
+
+  if (uploadedFiles.length > 1) {
+    userContent[0].text += ` (Es handelt sich um ein Karussell mit ${uploadedFiles.length} Bildern.)`;
+  }
+
+  const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${lovableApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+    }),
+  });
+
+  if (!aiResponse.ok) {
+    const errorText = await aiResponse.text();
+    console.error("[shortcut-upload] AI error:", errorText);
+    await logError(supabase, userId, "AI-Generierung fehlgeschlagen", {
+      source: "ios_shortcut",
+      aiError: errorText.substring(0, 500),
+      filesCount: uploadedFiles.length,
+    });
+    return { success: false, error: "AI-Generierung fehlgeschlagen" };
+  }
+
+  const aiData = await aiResponse.json();
+  const generatedCaption = (aiData.choices?.[0]?.message?.content ?? "").trim();
+
+  if (!generatedCaption) {
+    await logError(supabase, userId, "Keine Caption generiert", {
+      source: "ios_shortcut",
+      filesCount: uploadedFiles.length,
+    });
+    return { success: false, error: "Keine Caption generiert" };
+  }
+
+  console.log(`[shortcut-upload] Generated caption: ${generatedCaption.substring(0, 100)}...`);
+
+  // Find next free slot (Gap-Filler Algorithm)
+  const scheduledAt = await findNextFreeSlot(supabase, userId);
+  const scheduledDay = getDayName(scheduledAt);
+  const scheduledDateFormatted = formatDate(scheduledAt);
+
+  console.log(`[shortcut-upload] Scheduling for: ${scheduledDay}, ${scheduledDateFormatted} at 18:00`);
+
+  // Create the post
+  const { data: post, error: postError } = await supabase
+    .from("posts")
+    .insert({
+      user_id: userId,
+      status: "SCHEDULED",
+      format: format,
+      caption: generatedCaption,
+      original_media_url: uploadedUrls[0],
+      slides: format === "carousel" ? slides : null,
+      scheduled_at: scheduledAt.toISOString(),
+      collaborators: parsedCollaborators,
+    })
+    .select("id")
+    .single();
+
+  if (postError) {
+    console.error("[shortcut-upload] Post creation error:", postError);
+    await logError(supabase, userId, `Post-Erstellung fehlgeschlagen: ${postError.message}`, {
+      source: "ios_shortcut",
+      filesCount: uploadedFiles.length,
+    });
+    return { success: false, error: `Post konnte nicht erstellt werden: ${postError.message}` };
+  }
+
+  console.log(`[shortcut-upload] Post created: ${post.id}`);
+
+  // Link uploaded images to the post (planner reads assets(*))
+  const { error: assetsError } = await supabase.from("assets").insert(
+    uploadedFiles.map((f) => ({
+      user_id: userId,
+      post_id: post.id,
+      storage_path: f.storagePath,
+      public_url: f.publicUrl,
+    })),
+  );
+
+  if (assetsError) {
+    console.error("[shortcut-upload] Assets creation error:", assetsError);
+    await logError(supabase, userId, `Assets-Erstellung fehlgeschlagen: ${assetsError.message}`, {
+      source: "ios_shortcut",
+      postId: post.id,
+      filesCount: uploadedFiles.length,
+    });
+  }
+
+  // Create slide assets for carousel (keeps order)
+  if (format === "carousel") {
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      await supabase.from("slide_assets").insert({
+        user_id: userId,
+        post_id: post.id,
+        slide_index: i,
+        public_url: uploadedFiles[i].publicUrl,
+        storage_path: uploadedFiles[i].storagePath,
+      });
+    }
+    console.log(`[shortcut-upload] Created ${uploadedFiles.length} slide assets`);
+  }
+
+  // Mark session as completed
+  await supabase
+    .from("upload_sessions")
+    .update({ is_completed: true })
+    .eq("session_id", session.session_id);
+
+  // Log the successful action
+  await supabase.from("logs").insert({
+    user_id: userId,
+    post_id: post.id,
+    event_type: "shortcut_upload",
+    level: "info",
+    details: {
+      format,
+      files_count: uploadedFiles.length,
+      scheduled_for: scheduledAt.toISOString(),
+      raw_text_provided: !!rawText,
+      collaborators: parsedCollaborators,
+      source: "ios_shortcut",
+      userAgent,
+      mode: "session",
+    },
+  });
+
+  const message = parsedCollaborators.length > 0 
+    ? `📸 Collab-Post eingeplant für ${scheduledDay}, ${scheduledDateFormatted} um 18:00 Uhr (mit ${parsedCollaborators.join(", ")})`
+    : `📸 Post eingeplant für ${scheduledDay}, ${scheduledDateFormatted} um 18:00 Uhr`;
+
+  return {
+    success: true,
+    postId: post.id,
+    message,
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -238,7 +449,7 @@ serve(async (req) => {
       );
     }
 
-    const { files, rawText, collaborators } = parsedBody;
+    const { files, rawText, collaborators, sessionId, imageIndex, totalImages } = parsedBody;
     userId = parsedBody.userId;
 
     // Parse collaborators (remove @ symbols if present)
@@ -246,12 +457,169 @@ serve(async (req) => {
       ? collaborators.map((c: string) => c.replace(/^@/, '').trim()).filter(Boolean)
       : [];
 
-    console.log(`[shortcut-upload] Request - User-Agent: ${userAgent}, Files: ${files?.length || 0}`);
+    console.log(`[shortcut-upload] Request - User-Agent: ${userAgent}, Files: ${files?.length || 0}, SessionId: ${sessionId || 'none'}, ImageIndex: ${imageIndex ?? 'N/A'}, TotalImages: ${totalImages ?? 'N/A'}`);
 
     if (!userId) {
       throw new Error("userId ist erforderlich");
     }
 
+    // ========== SESSION MODE: Sequential upload with session tracking ==========
+    if (sessionId !== undefined && imageIndex !== undefined && totalImages !== undefined) {
+      console.log(`[shortcut-upload] Session mode: image ${imageIndex + 1}/${totalImages}`);
+
+      // Validate we have exactly one file
+      if (!files || !Array.isArray(files) || files.length !== 1) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Im Session-Modus muss genau 1 Bild pro Request gesendet werden" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Upload the single file
+      const file = files[0];
+      const fileExt = "jpg";
+      const fileName = `${userId}/${crypto.randomUUID()}.${fileExt}`;
+
+      console.log(`[shortcut-upload] Uploading image ${imageIndex + 1}/${totalImages}...`);
+
+      const uploadResult = await processAndUploadFile(
+        supabase,
+        userId,
+        file.base64,
+        fileName,
+        file.type || "image/jpeg"
+      );
+
+      console.log(`[shortcut-upload] Uploaded: ${uploadResult.publicUrl}`);
+
+      // Check if session already exists
+      const { data: existingSession } = await supabase
+        .from("upload_sessions")
+        .select("*")
+        .eq("session_id", sessionId)
+        .eq("user_id", userId)
+        .eq("is_completed", false)
+        .single();
+
+      if (imageIndex === 0) {
+        // First image: create new session
+        if (existingSession) {
+          // Session already exists (retry?) - update it
+          const updatedFiles = [uploadResult];
+          await supabase
+            .from("upload_sessions")
+            .update({
+              uploaded_files: updatedFiles,
+              raw_text: rawText || null,
+              collaborators: parsedCollaborators,
+              expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+            })
+            .eq("session_id", sessionId)
+            .eq("user_id", userId);
+          
+          console.log(`[shortcut-upload] Session ${sessionId} reset with first image`);
+        } else {
+          // Create new session
+          await supabase.from("upload_sessions").insert({
+            user_id: userId,
+            session_id: sessionId,
+            uploaded_files: [uploadResult],
+            raw_text: rawText || null,
+            collaborators: parsedCollaborators,
+          });
+          
+          console.log(`[shortcut-upload] New session created: ${sessionId}`);
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            sessionId,
+            imageIndex,
+            totalImages,
+            message: `Bild ${imageIndex + 1}/${totalImages} hochgeladen`,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } else {
+        // Subsequent images: append to session
+        if (!existingSession) {
+          return new Response(
+            JSON.stringify({ success: false, error: `Session ${sessionId} nicht gefunden` }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const currentFiles = existingSession.uploaded_files as any[];
+        const updatedFiles = [...currentFiles, uploadResult];
+
+        await supabase
+          .from("upload_sessions")
+          .update({
+            uploaded_files: updatedFiles,
+            expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          })
+          .eq("session_id", sessionId)
+          .eq("user_id", userId);
+
+        console.log(`[shortcut-upload] Session ${sessionId} updated with image ${imageIndex + 1}`);
+
+        // Check if this is the last image
+        const isLast = imageIndex === totalImages - 1;
+
+        if (isLast) {
+          console.log(`[shortcut-upload] Last image received, creating post...`);
+
+          // Fetch updated session
+          const { data: finalSession } = await supabase
+            .from("upload_sessions")
+            .select("*")
+            .eq("session_id", sessionId)
+            .eq("user_id", userId)
+            .single();
+
+          if (!finalSession) {
+            return new Response(
+              JSON.stringify({ success: false, error: "Session nicht gefunden" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          // Create the post
+          const result = await createPostFromSession(supabase, finalSession, lovableApiKey, userAgent);
+
+          if (!result.success) {
+            return new Response(
+              JSON.stringify({ success: false, error: result.error }),
+              { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              postId: result.postId,
+              message: result.message,
+              imagesUploaded: totalImages,
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            sessionId,
+            imageIndex,
+            totalImages,
+            message: `Bild ${imageIndex + 1}/${totalImages} hochgeladen`,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // ========== LEGACY MODE: Single request with multiple files (max 3) ==========
     if (!files || !Array.isArray(files) || files.length === 0) {
       await logError(supabase, userId, "Keine Bilder hochgeladen", {
         source: "ios_shortcut",
@@ -260,21 +628,15 @@ serve(async (req) => {
       throw new Error("Keine Bilder hochgeladen");
     }
 
-    // Limit to max 3 files to prevent memory issues
+    // Limit to max 3 files in legacy mode
     const maxFiles = 3;
     
     if (files.length > maxFiles) {
-      console.log(`[shortcut-upload] Too many files: ${files.length}, max allowed: ${maxFiles}`);
-      await logError(supabase, userId, `Zu viele Bilder: ${files.length}`, {
-        source: "ios_shortcut",
-        filesCount: files.length,
-        maxAllowed: maxFiles,
-        userAgent,
-      });
+      console.log(`[shortcut-upload] Too many files for legacy mode: ${files.length}, max allowed: ${maxFiles}`);
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: `Maximal ${maxFiles} Bilder erlaubt. Du hast ${files.length} gesendet. Bitte passe deinen Kurzbefehl an.` 
+          error: `Für mehr als ${maxFiles} Bilder nutze bitte den Session-Modus (mit sessionId, imageIndex, totalImages).` 
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -282,7 +644,7 @@ serve(async (req) => {
     
     const filesToProcess = files;
 
-    console.log(`[shortcut-upload] Processing ${filesToProcess.length} files for user ${userId}`);
+    console.log(`[shortcut-upload] Legacy mode: Processing ${filesToProcess.length} files for user ${userId}`);
 
     // Step 1: Determine format
     const format = filesToProcess.length > 1 ? "carousel" : "single";
@@ -502,6 +864,7 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
         collaborators: parsedCollaborators,
         source: "ios_shortcut",
         userAgent,
+        mode: "legacy",
       },
     });
 
