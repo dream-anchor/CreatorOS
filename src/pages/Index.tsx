@@ -54,7 +54,7 @@ const Index = () => {
         </div>
         
         <div>
-          <h1 className="mb-2 text-4xl font-bold text-foreground">InstagramGPT</h1>
+          <h1 className="mb-2 text-4xl font-bold text-foreground">CreatorOS</h1>
           <p className="text-lg text-muted-foreground">AI Co-Pilot für deinen Instagram-Erfolg</p>
         </div>
 

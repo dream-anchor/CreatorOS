@@ -81,7 +81,7 @@ export default function LoginPage() {
             <Instagram className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-foreground font-display tracking-tight">IG Autopublisher</h1>
+            <h1 className="text-lg font-bold text-foreground font-display tracking-tight">CreatorOS</h1>
             <p className="text-xs text-muted-foreground">v1.0</p>
           </div>
         </div>
@@ -96,7 +96,7 @@ export default function LoginPage() {
               <Instagram className="h-7 w-7 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-foreground font-display tracking-tight">IG Autopublisher</h1>
+              <h1 className="text-xl font-bold text-foreground font-display tracking-tight">CreatorOS</h1>
               <p className="text-sm text-muted-foreground">v1.0</p>
             </div>
           </div>
