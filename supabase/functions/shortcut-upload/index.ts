@@ -260,13 +260,27 @@ serve(async (req) => {
       throw new Error("Keine Bilder hochgeladen");
     }
 
-    // Limit to max 5 files to prevent memory issues (reduced from 10)
-    const maxFiles = 5;
-    const filesToProcess = files.slice(0, maxFiles);
+    // Limit to max 3 files to prevent memory issues
+    const maxFiles = 3;
     
     if (files.length > maxFiles) {
-      console.log(`[shortcut-upload] Limiting from ${files.length} to ${maxFiles} files`);
+      console.log(`[shortcut-upload] Too many files: ${files.length}, max allowed: ${maxFiles}`);
+      await logError(supabase, userId, `Zu viele Bilder: ${files.length}`, {
+        source: "ios_shortcut",
+        filesCount: files.length,
+        maxAllowed: maxFiles,
+        userAgent,
+      });
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Maximal ${maxFiles} Bilder erlaubt. Du hast ${files.length} gesendet. Bitte passe deinen Kurzbefehl an.` 
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
+    
+    const filesToProcess = files;
 
     console.log(`[shortcut-upload] Processing ${filesToProcess.length} files for user ${userId}`);
 
