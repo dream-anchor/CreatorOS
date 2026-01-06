@@ -113,3 +113,6 @@ verify_jwt = false
 
 [functions.get-shortcut-api-key]
 verify_jwt = false
+
+[functions.process-expired-sessions]
+verify_jwt = false
