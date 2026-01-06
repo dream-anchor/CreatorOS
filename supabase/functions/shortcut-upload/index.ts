@@ -465,7 +465,11 @@ serve(async (req) => {
 
     // ========== SESSION MODE: Sequential upload with session tracking ==========
     if (sessionId !== undefined && imageIndex !== undefined && totalImages !== undefined) {
-      console.log(`[shortcut-upload] Session mode: image ${imageIndex + 1}/${totalImages}`);
+      // Normalize sessionId to 10-minute intervals to handle minute-boundary issues
+      // e.g., "06.01.2025, 18:04" and "06.01.2025, 18:05" both become "06.01.2025, 18:00"
+      const normalizedSessionId = sessionId.replace(/:\d{2}$/, ':00').replace(/:\d{1}$/, ':00');
+      
+      console.log(`[shortcut-upload] Session mode: image ${imageIndex + 1}/${totalImages}, originalSessionId: ${sessionId}, normalizedSessionId: ${normalizedSessionId}`);
 
       // Validate we have exactly one file
       if (!files || !Array.isArray(files) || files.length !== 1) {
@@ -492,49 +496,64 @@ serve(async (req) => {
 
       console.log(`[shortcut-upload] Uploaded: ${uploadResult.publicUrl}`);
 
-      // Check if session already exists
-      const { data: existingSession } = await supabase
+      // Look for ANY recent open session for this user (within last 10 minutes)
+      // This handles cases where images arrive with different sessionIds
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      
+      const { data: recentSessions } = await supabase
         .from("upload_sessions")
         .select("*")
-        .eq("session_id", sessionId)
         .eq("user_id", userId)
         .eq("is_completed", false)
-        .single();
+        .gte("created_at", tenMinutesAgo)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      // Find matching session: prefer exact normalized match, then any recent open session
+      let existingSession = recentSessions?.find(s => 
+        s.session_id === normalizedSessionId || s.session_id === sessionId
+      );
+      
+      // If no exact match but we have a recent session and this looks like a continuation
+      if (!existingSession && recentSessions && recentSessions.length > 0 && imageIndex > 0) {
+        existingSession = recentSessions[0]; // Use most recent open session
+        console.log(`[shortcut-upload] No exact session match, using recent session: ${existingSession.session_id}`);
+      }
 
       if (imageIndex === 0) {
-        // First image: create new session
+        // First image: create new session or reset existing one
         if (existingSession) {
-          // Session already exists (retry?) - update it
+          // Session already exists (retry or same 10-min window) - update it
           const updatedFiles = [uploadResult];
           await supabase
             .from("upload_sessions")
             .update({
+              session_id: normalizedSessionId, // Update to normalized ID
               uploaded_files: updatedFiles,
-              raw_text: rawText || null,
-              collaborators: parsedCollaborators,
+              raw_text: rawText || existingSession.raw_text || null,
+              collaborators: parsedCollaborators.length > 0 ? parsedCollaborators : existingSession.collaborators,
               expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
             })
-            .eq("session_id", sessionId)
-            .eq("user_id", userId);
+            .eq("id", existingSession.id);
           
-          console.log(`[shortcut-upload] Session ${sessionId} reset with first image`);
+          console.log(`[shortcut-upload] Session ${existingSession.session_id} reset with first image, normalized to ${normalizedSessionId}`);
         } else {
-          // Create new session
+          // Create new session with normalized ID
           await supabase.from("upload_sessions").insert({
             user_id: userId,
-            session_id: sessionId,
+            session_id: normalizedSessionId,
             uploaded_files: [uploadResult],
             raw_text: rawText || null,
             collaborators: parsedCollaborators,
           });
           
-          console.log(`[shortcut-upload] New session created: ${sessionId}`);
+          console.log(`[shortcut-upload] New session created: ${normalizedSessionId}`);
         }
 
         return new Response(
           JSON.stringify({
             success: true,
-            sessionId,
+            sessionId: normalizedSessionId,
             imageIndex,
             totalImages,
             message: `Bild ${imageIndex + 1}/${totalImages} hochgeladen`,
@@ -544,8 +563,9 @@ serve(async (req) => {
       } else {
         // Subsequent images: append to session
         if (!existingSession) {
+          console.error(`[shortcut-upload] No session found for user ${userId}, looked for: ${normalizedSessionId} or ${sessionId}`);
           return new Response(
-            JSON.stringify({ success: false, error: `Session ${sessionId} nicht gefunden` }),
+            JSON.stringify({ success: false, error: `Session nicht gefunden. Bitte erneut versuchen.` }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
@@ -553,16 +573,21 @@ serve(async (req) => {
         const currentFiles = existingSession.uploaded_files as any[];
         const updatedFiles = [...currentFiles, uploadResult];
 
+        // Update raw_text if provided (might come with any image)
+        const newRawText = rawText || existingSession.raw_text;
+        const newCollaborators = parsedCollaborators.length > 0 ? parsedCollaborators : existingSession.collaborators;
+
         await supabase
           .from("upload_sessions")
           .update({
             uploaded_files: updatedFiles,
+            raw_text: newRawText,
+            collaborators: newCollaborators,
             expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
           })
-          .eq("session_id", sessionId)
-          .eq("user_id", userId);
+          .eq("id", existingSession.id);
 
-        console.log(`[shortcut-upload] Session ${sessionId} updated with image ${imageIndex + 1}`);
+        console.log(`[shortcut-upload] Session ${existingSession.session_id} updated with image ${imageIndex + 1}, total files now: ${updatedFiles.length}`);
 
         // Check if this is the last image
         const isLast = imageIndex === totalImages - 1;
@@ -574,8 +599,7 @@ serve(async (req) => {
           const { data: finalSession } = await supabase
             .from("upload_sessions")
             .select("*")
-            .eq("session_id", sessionId)
-            .eq("user_id", userId)
+            .eq("id", existingSession.id)
             .single();
 
           if (!finalSession) {
@@ -609,7 +633,7 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({
             success: true,
-            sessionId,
+            sessionId: existingSession.session_id,
             imageIndex,
             totalImages,
             message: `Bild ${imageIndex + 1}/${totalImages} hochgeladen`,
