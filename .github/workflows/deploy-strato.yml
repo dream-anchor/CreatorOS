@@ -1,4 +1,4 @@
-name: Build, Prerender (react-snap) & Deploy to Strato (postpro)
+name: Build & Deploy to Strato (postpro)
 
 on:
   push:
@@ -26,50 +26,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # ✅ Install modern Chrome (fixes "Unexpected token ?")
-      - name: Install Google Chrome
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
+      # "Install Google Chrome" entfernt - wird ohne react-snap nicht benötigt
+      # "Inject react-snap" entfernt - verursacht den Fehler
 
-      # ✅ Inject react-snap + force modern Chrome
-      - name: Inject react-snap (CI only)
-        shell: bash
-        run: |
-          set -e
-
-          npm i -D react-snap
-
-          npm pkg set scripts.postbuild="react-snap"
-
-          npm pkg set reactSnap.source="dist"
-          npm pkg set reactSnap.crawl=true
-          npm pkg set reactSnap.minifyHtml=true
-          npm pkg set reactSnap.include[0]="/"
-
-          npm pkg set reactSnap.puppeteerExecutablePath="/usr/bin/google-chrome"
-          npm pkg set reactSnap.puppeteerArgs[0]="--no-sandbox"
-          npm pkg set reactSnap.puppeteerArgs[1]="--disable-setuid-sandbox"
-
-      - name: Build (includes prerender)
+      - name: Build
         run: npm run build
 
-      # ✅ Apache: serve prerendered HTML first
+      # ✅ Standard .htaccess für React Single Page Apps (Vite)
+      # Leitet alle Anfragen, die keine Datei sind, auf index.html um
       - name: Create .htaccess
         shell: bash
         run: |
           mkdir -p dist
           cat > dist/.htaccess <<'EOF'
-          RewriteEngine On
-
-          RewriteCond %{REQUEST_FILENAME} -f [OR]
-          RewriteCond %{REQUEST_FILENAME} -d
-          RewriteRule ^ - [L]
-
-          RewriteCond %{DOCUMENT_ROOT}/$1/index.html -f
-          RewriteRule ^(.+?)/?$ $1/index.html [L]
-
-          RewriteRule ^ index.html [L]
+          <IfModule mod_rewrite.c>
+            RewriteEngine On
+            RewriteBase /
+            RewriteRule ^index\.html$ - [L]
+            RewriteCond %{REQUEST_FILENAME} !-f
+            RewriteCond %{REQUEST_FILENAME} !-d
+            RewriteRule . /index.html [L]
+          </IfModule>
           EOF
 
       - name: Install lftp
