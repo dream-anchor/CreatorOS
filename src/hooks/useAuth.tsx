@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -8,13 +8,20 @@ let cachedUser: User | null = null;
 let isInitialized = false;
 let listeners: Set<() => void> = new Set();
 
+// Cached snapshot object - only recreate when values change
+let cachedSnapshot = { user: cachedUser, session: cachedSession, loading: !isInitialized };
+
+function updateSnapshot() {
+  cachedSnapshot = { user: cachedUser, session: cachedSession, loading: !isInitialized };
+}
+
 function subscribe(callback: () => void) {
   listeners.add(callback);
   return () => listeners.delete(callback);
 }
 
 function getSnapshot() {
-  return { user: cachedUser, session: cachedSession, loading: !isInitialized };
+  return cachedSnapshot;
 }
 
 // Initialize auth state once
@@ -27,6 +34,7 @@ if (!isInitialized) {
       if (parsed?.user) {
         cachedUser = parsed.user;
         cachedSession = parsed;
+        updateSnapshot();
       }
     } catch (e) {
       // Ignore parse errors
@@ -38,6 +46,7 @@ if (!isInitialized) {
     cachedSession = session;
     cachedUser = session?.user ?? null;
     isInitialized = true;
+    updateSnapshot();
     listeners.forEach(listener => listener());
   });
 
@@ -46,6 +55,7 @@ if (!isInitialized) {
     cachedSession = session;
     cachedUser = session?.user ?? null;
     isInitialized = true;
+    updateSnapshot();
     listeners.forEach(listener => listener());
   });
 }
