@@ -23,6 +23,8 @@ import {
   MessageSquarePlus,
   ChevronDown,
   ChevronUp,
+  Sparkles,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -36,8 +38,15 @@ interface GlobalLayoutProps {
 
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: Home },
-  { name: "Community", href: "/community", icon: MessageCircle },
+  // Strategy
+  { name: "Brand DNA", href: "/brand", icon: Brain },
+  { name: "Themen", href: "/topics", icon: Sparkles },
+  // Creation
+  { name: "Generator", href: "/generator", icon: Zap },
+  // Management
   { name: "Planung", href: "/calendar", icon: CalendarClock },
+  { name: "Community", href: "/community", icon: MessageCircle },
+  // Assets & Analysis
   { name: "Medien", href: "/media", icon: ImageIcon },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: Settings },

@@ -6,7 +6,9 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { GenerationProvider } from "@/contexts/GenerationContext";
+import { ImportProvider } from "@/contexts/ImportContext";
 import { FloatingGenerationIndicator } from "@/components/FloatingGenerationIndicator";
+import { FloatingImportIndicator } from "@/components/FloatingImportIndicator";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import Dashboard from "./pages/Dashboard";
@@ -28,12 +30,14 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider defaultTheme="dark" storageKey="creator-studio-theme">
       <GenerationProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <FloatingGenerationIndicator />
-            <Routes>
+        <ImportProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <FloatingGenerationIndicator />
+              <FloatingImportIndicator />
+              <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/auth/callback" element={<ProtectedRoute><AuthCallback /></ProtectedRoute>} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -53,6 +57,7 @@ const App = () => (
             </Routes>
           </BrowserRouter>
         </TooltipProvider>
+        </ImportProvider>
       </GenerationProvider>
     </ThemeProvider>
   </QueryClientProvider>

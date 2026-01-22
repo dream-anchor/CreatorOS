@@ -34,6 +34,8 @@ export interface BrandRules {
   taboo_words: string[];
   ai_model: string;
   style_system_prompt: string | null;
+  reply_style_system_prompt: string | null;
+  reply_style_description: string | null;
   last_style_analysis_at: string | null;
   formality_mode: 'smart' | 'du' | 'sie';
   created_at: string;

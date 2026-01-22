@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { useImport } from "@/contexts/ImportContext";
 
 interface InstagramAccount {
   ig_user_id: string;
@@ -56,10 +57,8 @@ export default function MetaConnectionTab() {
   const [tokenExpiresAt, setTokenExpiresAt] = useState<string>("");
   const [selectingAccount, setSelectingAccount] = useState<string | null>(null);
 
-  // Import state
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [importProgress, setImportProgress] = useState(0);
+  // Import state from global context
+  const { isImporting, progress, importResult, startImport, statusMessage } = useImport();
 
   useEffect(() => {
     if (user) loadConnection();
@@ -192,61 +191,8 @@ export default function MetaConnectionTab() {
       toast.error("Bitte zuerst Instagram verbinden");
       return;
     }
-
-    setImporting(true);
-    setImportResult(null);
-    setImportProgress(10);
-
-    // Simulate progress while waiting
-    const progressInterval = setInterval(() => {
-      setImportProgress(prev => Math.min(prev + 5, 85));
-    }, 2000);
-
-    try {
-      const { data, error } = await supabase.functions.invoke('fetch-instagram-history', {});
-
-      clearInterval(progressInterval);
-      setImportProgress(90);
-
-      if (error) throw error;
-      
-      const result = data as ImportResult;
-      setImportResult(result);
-      
-      if (result.success && result.imported > 0) {
-        toast.success(`${result.imported} Posts importiert! ${result.unicorn_count} Top-Performer gefunden.`);
-        
-        // Auto-trigger style analysis after successful import
-        setImportProgress(95);
-        setAnalyzingStyle(true);
-        toast.info("🧠 Schärfe Profil-Stil nach...", { duration: 3000 });
-        
-        try {
-          const { error: analyzeError } = await supabase.functions.invoke('analyze-style', {});
-          
-          if (!analyzeError) {
-            toast.success("✨ Profil-Stil aktualisiert!", { duration: 3000 });
-          }
-        } catch (styleErr) {
-          console.error("Style analysis error:", styleErr);
-          // Don't show error toast - import was still successful
-        } finally {
-          setAnalyzingStyle(false);
-        }
-        
-        setImportProgress(100);
-      } else if (result.success) {
-        toast.info(result.message || "Keine neuen Posts gefunden");
-        setImportProgress(100);
-      }
-    } catch (err) {
-      clearInterval(progressInterval);
-      const message = err instanceof Error ? err.message : 'Import fehlgeschlagen';
-      toast.error(message);
-    } finally {
-      setImporting(false);
-      setTimeout(() => setImportProgress(0), 2000);
-    }
+    
+    await startImport();
   };
 
   const isConnected = connection?.ig_user_id;
@@ -413,28 +359,25 @@ export default function MetaConnectionTab() {
               Archiv-Import
             </CardTitle>
             <CardDescription>
-              Importiere deine komplette Instagram-Historie für die Remix-Funktion
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {(importing || analyzingStyle) && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  <span className="text-sm">
-                    {analyzingStyle 
-                      ? "Schärfe Profil-Stil nach..." 
-                      : "Analysiere Historie... (kann bis zu 1 Min dauern)"
-                    }
-                  </span>
-                </div>
-                <Progress value={importProgress} className="h-2" />
+            Importiere deine komplette Instagram-Historie für die Remix-Funktion
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(isImporting || analyzingStyle) && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <span className="text-sm">
+                  {statusMessage || "Verarbeite Daten..."}
+                </span>
               </div>
-            )}
+              <Progress value={progress} className="h-2" />
+            </div>
+          )}
 
-            {importResult && importResult.success && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30">
+          {importResult && importResult.success && !isImporting && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30">
                   <CheckCircle2 className="h-5 w-5 text-green-500" />
                   <div className="flex-1">
                     <p className="font-medium text-green-500">Import erfolgreich!</p>
@@ -492,10 +435,10 @@ export default function MetaConnectionTab() {
 
             <Button 
               onClick={startDeepImport} 
-              disabled={importing}
+              disabled={isImporting}
               className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
             >
-              {importing ? (
+              {isImporting ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Importiere...</>
               ) : (
                 <><Download className="mr-2 h-4 w-4" />📥 Komplettes Archiv importieren</>

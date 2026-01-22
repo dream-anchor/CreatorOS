@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { BrandRules } from "@/types/database";
-import { Loader2, Plus, X, Sparkles, Brain, CheckCircle2, Clock, Database, ExternalLink, PenLine, AlertCircle } from "lucide-react";
+import { Loader2, Plus, X, Sparkles, Brain, CheckCircle2, Clock, Database, ExternalLink, PenLine, AlertCircle, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -35,6 +35,7 @@ export default function BrandPage() {
   
   // Data source state
   const [postCount, setPostCount] = useState(0);
+  const [replyCount, setReplyCount] = useState(0);
   
   // Autosave state
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -46,6 +47,7 @@ export default function BrandPage() {
     if (user) {
       loadBrandRules();
       loadPostCount();
+      loadReplyCount();
     }
   }, [user]);
 
@@ -103,6 +105,8 @@ export default function BrandPage() {
           taboo_words: brand.taboo_words,
           ai_model: brand.ai_model,
           style_system_prompt: brand.style_system_prompt,
+          reply_style_system_prompt: brand.reply_style_system_prompt,
+          reply_style_description: brand.reply_style_description,
           formality_mode: brand.formality_mode,
         })
         .eq("id", brand.id);
@@ -154,6 +158,21 @@ export default function BrandPage() {
       }
     } catch (error) {
       console.error("Error loading post count:", error);
+    }
+  };
+
+  const loadReplyCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from("reply_queue")
+        .select("*", { count: "exact", head: true })
+        .or('status.eq.sent,status.eq.imported');
+
+      if (!error && count !== null) {
+        setReplyCount(count);
+      }
+    } catch (error) {
+      console.error("Error loading reply count:", error);
     }
   };
 
@@ -322,6 +341,66 @@ export default function BrandPage() {
                   />
                   <p className="text-xs text-muted-foreground">
                     Diese Instruktion wird automatisch vom Generator verwendet. Du kannst sie manuell anpassen.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Antwort-DNA Box */}
+          <Card className="glass-card border-2 border-accent/30 bg-gradient-to-br from-accent/5 via-accent/10 to-accent/5">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-accent" />
+                <CardTitle>Deine Antwort-DNA</CardTitle>
+              </div>
+              <CardDescription>
+                Dein Kommentar-Stil, gelernt aus deinen Antworten
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                <div className="flex-1 space-y-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Database className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Datenbasis:</span>
+                    <Badge variant="secondary" className="font-medium">
+                      {replyCount} Antworten analysiert
+                    </Badge>
+                  </div>
+                  
+                  {brand?.reply_style_system_prompt && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      <span className="text-success">Antwort-Profil aktiv</span>
+                    </div>
+                  )}
+
+                  {replyCount < 5 && (
+                    <p className="text-sm text-muted-foreground">
+                      Noch zu wenige Antworten für eine Analyse (min. 5 benötigt).
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {brand?.reply_style_description && (
+                <div className="mt-4 p-3 bg-background/50 rounded-lg border border-border/50">
+                  <p className="text-sm italic text-muted-foreground">"{brand.reply_style_description}"</p>
+                </div>
+              )}
+
+              {brand?.reply_style_system_prompt && (
+                <div className="mt-6 space-y-2">
+                  <Label className="text-sm font-medium">Generierte Antwort-Instruktion</Label>
+                  <Textarea
+                    value={brand.reply_style_system_prompt}
+                    onChange={(e) => setBrand(brand ? { ...brand, reply_style_system_prompt: e.target.value } : null)}
+                    className="min-h-[150px] text-sm font-mono bg-muted/30"
+                    placeholder="Hier erscheint deine Antwort-DNA..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Diese Instruktion steuert den KI-Copiloten beim Antworten auf Kommentare.
                   </p>
                 </div>
               )}
