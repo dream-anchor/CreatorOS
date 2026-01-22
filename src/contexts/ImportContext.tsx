@@ -105,8 +105,20 @@ export function ImportProvider({ children }: { children: ReactNode }) {
         message = err;
       }
       
-      if (message.includes("Failed to send a request to the Edge Function")) {
-        message = "Verbindung fehlgeschlagen: Die Funktion 'fetch-instagram-history' ist möglicherweise nicht deployed.";
+      // Check for specific error types and provide helpful messages
+      if (message.includes('504') || message.includes('timeout') || message.includes('Timeout')) {
+        message = "Der Import dauert länger als erwartet. Bitte warte 1-2 Minuten und lade die Seite neu - die Daten werden im Hintergrund importiert.";
+      } else if (message.includes('Unauthorized') || message.includes('401')) {
+        message = "Sitzung abgelaufen. Bitte melde dich erneut an und versuche es noch einmal.";
+      } else if (message.includes('Failed to send a request') || message.includes('FunctionsHttpError')) {
+        // Check if it's actually a server error vs connection error
+        if (err.context?.status === 504 || err.context?.status === 502) {
+          message = "Der Server ist überlastet. Bitte versuche es in einer Minute erneut.";
+        } else if (err.context?.status === 401 || err.context?.status === 403) {
+          message = "Sitzung abgelaufen. Bitte melde dich erneut an.";
+        } else {
+          message = "Verbindungsfehler beim Import. Bitte überprüfe deine Internetverbindung und versuche es erneut.";
+        }
       }
 
       toast.error(message);
