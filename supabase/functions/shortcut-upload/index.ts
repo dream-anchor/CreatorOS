@@ -257,26 +257,29 @@ Antworte NUR mit der fertigen Caption + Hashtags.`;
     }),
   });
 
+  let generatedCaption = "";
+  
   if (!aiResponse.ok) {
     const errorText = await aiResponse.text();
     console.error("[shortcut-upload] AI error:", errorText);
-    await logError(supabase, userId, "AI-Generierung fehlgeschlagen", {
+    await logError(supabase, userId, "AI-Generierung fehlgeschlagen - nutze Fallback", {
       source: "ios_shortcut",
       aiError: errorText.substring(0, 500),
       filesCount: uploadedFiles.length,
+      usingFallback: true,
     });
-    return { success: false, error: "AI-Generierung fehlgeschlagen" };
-  }
+    // Use fallback caption instead of failing
+    generatedCaption = rawText || "📸 Neuer Post";
+    console.log(`[shortcut-upload] Using fallback caption: ${generatedCaption}`);
+  } else {
+    const aiData = await aiResponse.json();
+    generatedCaption = (aiData.choices?.[0]?.message?.content ?? "").trim();
 
-  const aiData = await aiResponse.json();
-  const generatedCaption = (aiData.choices?.[0]?.message?.content ?? "").trim();
-
-  if (!generatedCaption) {
-    await logError(supabase, userId, "Keine Caption generiert", {
-      source: "ios_shortcut",
-      filesCount: uploadedFiles.length,
-    });
-    return { success: false, error: "Keine Caption generiert" };
+    if (!generatedCaption) {
+      // Use fallback if AI returned empty
+      generatedCaption = rawText || "📸 Neuer Post";
+      console.log(`[shortcut-upload] AI returned empty, using fallback: ${generatedCaption}`);
+    }
   }
 
   console.log(`[shortcut-upload] Generated caption: ${generatedCaption.substring(0, 100)}...`);
