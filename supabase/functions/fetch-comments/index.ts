@@ -93,6 +93,7 @@ serve(async (req) => {
 
     // Fetch comments for each media
     let allComments: any[] = [];
+    let myReplies: { ig_reply_id: string; parent_ig_id: string; text: string; timestamp: string }[] = [];
     let myRepliedCommentIds: Set<string> = new Set();
 
     for (const media of recentMedia) {
@@ -120,8 +121,23 @@ serve(async (req) => {
               if (replyUsername) {
                 repliedByUsernames.push(replyUsername.toLowerCase());
               }
+              
+              // Check if this is MY reply
               if (reply.from?.id === igUserId || reply.username === connection.ig_username) {
                 hasMyReply = true;
+                
+                // Collect my reply for import
+                const replyText = typeof (reply as any).text === 'string' ? (reply as any).text.trim() : '';
+                const replyTimestamp = typeof (reply as any).timestamp === 'string' ? (reply as any).timestamp : null;
+                
+                if (replyText && replyTimestamp) {
+                  myReplies.push({
+                    ig_reply_id: reply.id,
+                    parent_ig_id: comment.id,
+                    text: replyText,
+                    timestamp: replyTimestamp
+                  });
+                }
               }
             }
           }
@@ -161,6 +177,7 @@ serve(async (req) => {
     }
 
     console.log(`[fetch-comments] Found ${allComments.length} total comments, ${allComments.filter(c => !c.is_replied).length} unreplied`);
+    console.log(`[fetch-comments] Found ${myReplies.length} of my own replies to import`);
 
     // Upsert comments to database
     const commentsToUpsert = allComments.map(c => ({
@@ -169,13 +186,67 @@ serve(async (req) => {
     }));
 
     if (commentsToUpsert.length > 0) {
-      const { error: upsertError } = await supabase
+      const { data: upsertedComments, error: upsertError } = await supabase
         .from('instagram_comments')
-        .upsert(commentsToUpsert, { onConflict: 'ig_comment_id' });
+        .upsert(commentsToUpsert, { onConflict: 'ig_comment_id' })
+        .select('id, ig_comment_id');
 
       if (upsertError) {
         console.error('Upsert error:', upsertError);
         throw new Error('Failed to store comments');
+      }
+
+      // --- IMPORT REPLIES ---
+      if (myReplies.length > 0 && upsertedComments) {
+        // Create map of IG ID -> UUID
+        const commentIdMap = new Map<string, string>();
+        upsertedComments.forEach((c: any) => {
+          commentIdMap.set(c.ig_comment_id, c.id);
+        });
+
+        // Prepare replies for insertion
+        const repliesToInsert = [];
+        
+        // Get existing imported replies to avoid duplicates
+        // We use ig_comment_id in reply_queue to store the IG Reply ID for imported items
+        const { data: existingReplies } = await supabase
+          .from('reply_queue')
+          .select('ig_comment_id')
+          .eq('user_id', user.id)
+          .eq('status', 'imported');
+          
+        const existingReplyIds = new Set(existingReplies?.map((r: any) => r.ig_comment_id) || []);
+
+        for (const reply of myReplies) {
+          const parentUuid = commentIdMap.get(reply.parent_ig_id);
+          
+          // Only insert if we have the parent in DB and it's not already imported
+          if (parentUuid && !existingReplyIds.has(reply.ig_reply_id)) {
+            repliesToInsert.push({
+              user_id: user.id,
+              comment_id: parentUuid,
+              reply_text: reply.text,
+              status: 'imported',
+              sent_at: reply.timestamp,
+              ig_comment_id: reply.ig_reply_id, // Storing Reply ID here!
+              created_at: reply.timestamp // Backdate creation to match send time
+            });
+          }
+        }
+
+        if (repliesToInsert.length > 0) {
+          console.log(`[fetch-comments] Importing ${repliesToInsert.length} new replies`);
+          const { error: replyError } = await supabase
+            .from('reply_queue')
+            .insert(repliesToInsert);
+            
+          if (replyError) {
+            console.error('Error importing replies:', replyError);
+            // Non-blocking error
+          }
+        } else {
+          console.log(`[fetch-comments] No new replies to import (all ${myReplies.length} already exist or missing parent)`);
+        }
       }
     }
 

@@ -18,7 +18,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,30 +31,15 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/`,
-          },
-        });
-        if (error) throw error;
-        toast.success("Konto erstellt! Du kannst dich jetzt anmelden.");
-        setIsSignUp(false);
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
-        toast.success("Erfolgreich angemeldet!");
-        navigate("/dashboard");
-      }
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+      toast.success("Erfolgreich angemeldet!");
+      navigate("/dashboard");
     } catch (error: any) {
-      if (error.message === "User already registered") {
-        toast.error("Diese E-Mail ist bereits registriert");
-      } else if (error.message === "Invalid login credentials") {
+      if (error.message === "Invalid login credentials") {
         toast.error("Ungültige Anmeldedaten");
       } else {
         toast.error(error.message);
@@ -102,12 +86,10 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-2 sm:mb-3 font-display tracking-tight text-center lg:text-left">
-            {isSignUp ? "Konto erstellen" : "Willkommen zurück"}
+            Willkommen zurück
           </h2>
           <p className="text-muted-foreground mb-6 sm:mb-10 text-sm sm:text-base text-center lg:text-left">
-            {isSignUp
-              ? "Erstelle dein Konto, um loszulegen"
-              : "Melde dich an, um fortzufahren"}
+            Melde dich an, um fortzufahren
           </p>
 
           <form onSubmit={handleAuth} className="space-y-4 sm:space-y-5">
@@ -139,19 +121,9 @@ export default function LoginPage() {
 
             <Button type="submit" className="w-full h-11 sm:h-10 text-base sm:text-sm" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isSignUp ? "Registrieren" : "Anmelden"}
+              Anmelden
             </Button>
           </form>
-
-          <p className="mt-6 sm:mt-8 text-center text-sm text-muted-foreground">
-            {isSignUp ? "Schon ein Konto?" : "Noch kein Konto?"}{" "}
-            <button
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="font-medium text-primary hover:text-primary/80 transition-colors"
-            >
-              {isSignUp ? "Anmelden" : "Registrieren"}
-            </button>
-          </p>
         </div>
       </div>
 

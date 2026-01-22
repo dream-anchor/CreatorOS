@@ -119,6 +119,8 @@ export type Database = {
           id: string
           language_primary: string | null
           last_style_analysis_at: string | null
+          reply_style_system_prompt: string | null
+          reply_style_description: string | null
           style_system_prompt: string | null
           taboo_words: string[] | null
           tone_style: string | null
@@ -141,6 +143,8 @@ export type Database = {
           id?: string
           language_primary?: string | null
           last_style_analysis_at?: string | null
+          reply_style_system_prompt?: string | null
+          reply_style_description?: string | null
           style_system_prompt?: string | null
           taboo_words?: string[] | null
           tone_style?: string | null
@@ -163,6 +167,8 @@ export type Database = {
           id?: string
           language_primary?: string | null
           last_style_analysis_at?: string | null
+          reply_style_system_prompt?: string | null
+          reply_style_description?: string | null
           style_system_prompt?: string | null
           taboo_words?: string[] | null
           tone_style?: string | null

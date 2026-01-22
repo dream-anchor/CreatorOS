@@ -140,13 +140,14 @@ serve(async (req) => {
     // Get brand rules for tone AND formality mode
     const { data: brandRules } = await supabase
       .from('brand_rules')
-      .select('tone_style, writing_style, language_primary, formality_mode')
+      .select('tone_style, writing_style, language_primary, formality_mode, reply_style_system_prompt')
       .eq('user_id', user.id)
       .maybeSingle();
 
     const toneStyle = brandRules?.tone_style || 'locker und authentisch';
     const language = brandRules?.language_primary || 'DE';
     const formalityMode = brandRules?.formality_mode || 'smart';
+    const replyStylePrompt = brandRules?.reply_style_system_prompt || '';
 
     // ========== DYNAMIC STYLE LEARNING ==========
     // Query last 15-20 approved/sent replies as few-shot examples
@@ -237,6 +238,9 @@ Falls kein Bild vorhanden ist, basiere die Antwort nur auf dem Text.
 
 SPRACHE: ${language === 'DE' ? 'Deutsch' : language}
 TONALITÄT: ${toneStyle}
+
+${replyStylePrompt ? `===== DEIN GELERNTES ANTWORT-PROFIL (WICHTIG!) =====\n${replyStylePrompt}\n================================================` : ''}
+
 ${fewShotSection}
 
 ===== PERSONA-REGELN FÜR ANTWORTEN (NIEMALS BRECHEN!) =====

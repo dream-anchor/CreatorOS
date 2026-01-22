@@ -302,7 +302,7 @@ export default function BrandPage() {
                 
                 <Button 
                   variant="outline"
-                  onClick={() => navigate("/content-library")}
+                  onClick={() => navigate("/library")}
                   className="shrink-0"
                 >
                   <ExternalLink className="mr-2 h-4 w-4" />
