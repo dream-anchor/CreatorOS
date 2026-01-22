@@ -59,8 +59,6 @@ interface PaginatedResponse {
 async function fetchMediaInsights(mediaId: string, accessToken: string, mediaType: string): Promise<MediaInsights> {
   try {
     // Different metrics for different media types
-    // Images/Carousels: impressions, reach, saved
-    // Reels: plays, reach, saved
     const isReel = mediaType === 'VIDEO' || mediaType === 'REELS';
     const metrics = isReel 
       ? 'plays,reach,saved' 
@@ -70,8 +68,7 @@ async function fetchMediaInsights(mediaId: string, accessToken: string, mediaTyp
     const response = await fetch(url);
     
     if (!response.ok) {
-      // Insights might not be available for all posts (e.g., older posts)
-      console.log(`Insights not available for ${mediaId}: ${response.status}`);
+      // Insights might not be available for all posts
       return {};
     }
     
@@ -93,7 +90,6 @@ async function fetchMediaInsights(mediaId: string, accessToken: string, mediaTyp
             break;
           case 'plays':
             insights.plays = value;
-            // For reels, use plays as impressions equivalent
             insights.impressions = value;
             break;
         }
@@ -102,9 +98,36 @@ async function fetchMediaInsights(mediaId: string, accessToken: string, mediaTyp
     
     return insights;
   } catch (error) {
-    console.error(`Error fetching insights for ${mediaId}:`, error);
     return {};
   }
+}
+
+// Fetch insights for multiple media items in parallel (batch of 5)
+async function fetchMediaInsightsBatch(
+  mediaItems: InstagramMedia[], 
+  accessToken: string
+): Promise<Array<InstagramMedia & { insights: MediaInsights }>> {
+  const PARALLEL_BATCH_SIZE = 5;
+  const results: Array<InstagramMedia & { insights: MediaInsights }> = [];
+  
+  for (let i = 0; i < mediaItems.length; i += PARALLEL_BATCH_SIZE) {
+    const batch = mediaItems.slice(i, i + PARALLEL_BATCH_SIZE);
+    
+    const batchPromises = batch.map(async (media) => {
+      const insights = await fetchMediaInsights(media.id, accessToken, media.media_type);
+      return { ...media, insights };
+    });
+    
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
+    
+    // Small delay between batches to avoid rate limiting
+    if (i + PARALLEL_BATCH_SIZE < mediaItems.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  return results;
 }
 
 serve(async (req) => {
@@ -193,8 +216,9 @@ serve(async (req) => {
       throw new Error('Instagram User ID nicht gefunden');
     }
 
-    // Mode-specific settings
-    const MAX_POSTS = mode === 'force_resync' ? 20 : (mode === 'sync_recent' ? 50 : 1000);
+    // Mode-specific settings - reduced MAX_POSTS to avoid timeout (150s limit)
+    // Full import: 200 posts max to stay under timeout, can run multiple times
+    const MAX_POSTS = mode === 'force_resync' ? 20 : (mode === 'sync_recent' ? 50 : 200);
     const BATCH_SIZE = mode === 'force_resync' ? 20 : (mode === 'sync_recent' ? 50 : 50);
     const logPrefix = mode === 'force_resync' ? 'Force Resync' : (mode === 'sync_recent' ? 'Smart Sync' : 'Deep Import');
 
@@ -275,24 +299,10 @@ serve(async (req) => {
       });
     }
 
-    // Fetch insights for each post (with rate limiting)
-    console.log(`${logPrefix}: Fetching deep insights for ${allMedia.length} posts...`);
+    // Fetch insights for each post in parallel batches (much faster)
+    console.log(`${logPrefix}: Fetching insights for ${allMedia.length} posts in parallel batches...`);
     
-    const mediaWithInsights: Array<InstagramMedia & { insights: MediaInsights }> = [];
-    
-    for (let i = 0; i < allMedia.length; i++) {
-      const media = allMedia[i];
-      
-      // Fetch insights for this media
-      const insights = await fetchMediaInsights(media.id, accessToken, media.media_type);
-      mediaWithInsights.push({ ...media, insights });
-      
-      // Rate limiting: pause every 10 requests to avoid hitting API limits
-      if ((i + 1) % 10 === 0) {
-        console.log(`${logPrefix}: Processed insights for ${i + 1}/${allMedia.length} posts`);
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-    }
+    const mediaWithInsights = await fetchMediaInsightsBatch(allMedia, accessToken);
     
     console.log(`${logPrefix}: Insights fetched for all ${allMedia.length} posts`);
 
