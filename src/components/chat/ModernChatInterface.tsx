@@ -82,7 +82,9 @@ export function ModernChatInterface() {
     } else if (!conversationId) {
       setLocalMessages([]);
     }
-  }, [dbMessages, conversationId]);
+    // Only depend on conversationId and messages length to avoid infinite loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, dbMessages.length]);
 
   const hasMessages = localMessages.length > 0;
 
