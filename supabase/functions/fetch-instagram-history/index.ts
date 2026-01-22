@@ -50,8 +50,9 @@ interface MediaInsights {
 interface PaginatedResponse {
   data: InstagramMedia[];
   paging?: {
-    cursors?: { after?: string };
+    cursors?: { after?: string; before?: string };
     next?: string;
+    previous?: string;
   };
 }
 
@@ -146,14 +147,20 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) throw new Error('Unauthorized');
 
-    // Parse request body for mode
+    // Parse request body for mode and cursor
     let mode = 'full'; // Default: full import
+    let cursor: string | undefined;
+    
     try {
       const body = await req.json();
       if (body?.mode === 'sync_recent') {
         mode = 'sync_recent';
       } else if (body?.mode === 'force_resync') {
         mode = 'force_resync';
+      }
+      
+      if (body?.cursor) {
+        cursor = body.cursor;
       }
     } catch {
       // No body or invalid JSON - use default mode
@@ -226,11 +233,19 @@ serve(async (req) => {
 
     let allMedia: InstagramMedia[] = [];
     let pageCount = 0;
+    // Capture the next cursor from the last response
+    let nextCursor: string | undefined;
 
     // Initial request
     const baseUrl = `https://graph.facebook.com/v17.0/${igUserId}/media`;
     const fields = 'id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count';
     let currentUrl = `${baseUrl}?fields=${fields}&limit=${BATCH_SIZE}&access_token=${accessToken}`;
+    
+    // If cursor is provided, start from there
+    if (cursor) {
+      currentUrl += `&after=${cursor}`;
+      console.log(`${logPrefix}: Resuming from cursor ${cursor}`);
+    }
 
     // Pagination loop (for sync_recent, only 1 page)
     while (currentUrl && allMedia.length < MAX_POSTS) {
@@ -276,6 +291,12 @@ serve(async (req) => {
       }
 
       // Check for next page (full import only)
+      if (data.paging?.cursors?.after) {
+        nextCursor = data.paging.cursors.after;
+      } else {
+        nextCursor = undefined;
+      }
+
       if (data.paging?.next && allMedia.length < MAX_POSTS) {
         currentUrl = data.paging.next;
       } else {
@@ -437,7 +458,11 @@ serve(async (req) => {
         score: bestScore,
         image_url: bestPost.original_media_url,
       },
-      message: `${allMedia.length} Posts importiert, ${unicornCount} Top-Performer identifiziert`
+      message: `${allMedia.length} Posts importiert, ${unicornCount} Top-Performer identifiziert`,
+      paging: {
+        next: nextCursor,
+        has_more: !!nextCursor
+      }
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

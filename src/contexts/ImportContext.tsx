@@ -52,26 +52,66 @@ export function ImportProvider({ children }: { children: ReactNode }) {
 
     try {
       setStatusMessage("Hole Daten von Instagram...");
-      const { data, error } = await supabase.functions.invoke('fetch-instagram-history', {});
+      
+      let totalImported = 0;
+      let nextCursor: string | undefined = undefined;
+      let hasMore = true;
+      let batchCount = 0;
+      
+      while (hasMore) {
+        batchCount++;
+        setStatusMessage(`Importiere Batch ${batchCount}... (${totalImported} bisher)`);
+        
+        const { data, error } = await supabase.functions.invoke('fetch-instagram-history', {
+          body: { 
+            cursor: nextCursor,
+            mode: 'full' 
+          }
+        });
+
+        if (error) {
+          console.error("Import error details:", error);
+          throw error;
+        }
+        
+        const result = data as ImportResult & { paging?: { next?: string, has_more?: boolean } };
+        
+        if (!result.success) {
+          throw new Error(result.message || "Import fehlgeschlagen");
+        }
+        
+        totalImported += result.imported;
+        
+        // Update result state to show accumulated progress
+        setImportResult(prev => ({
+          ...result,
+          imported: totalImported,
+          // Keep the unicorn count from the latest batch or sum it up? 
+          // For now, let's just show the latest batch's analysis or sum if needed.
+          // Ideally, we'd sum it up, but the edge function returns independent stats.
+          // Let's accumulate unicorn count too.
+          unicorn_count: (prev?.unicorn_count || 0) + result.unicorn_count
+        }));
+
+        // Check pagination
+        if (result.paging && result.paging.has_more && result.paging.next) {
+          nextCursor = result.paging.next;
+          hasMore = true;
+          // Small delay to be nice to the API/server
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          hasMore = false;
+        }
+        
+        // Update progress bar
+        setProgress(Math.min(90, 10 + (batchCount * 10)));
+      }
 
       clearInterval(progressInterval);
       setProgress(90);
-
-      if (error) {
-        console.error("Import error details:", error);
-        throw error;
-      }
       
-      const result = data as ImportResult;
-      
-      if (!result.success) {
-        throw new Error(result.message || "Import fehlgeschlagen");
-      }
-
-      setImportResult(result);
-      
-      if (result.success && result.imported > 0) {
-        toast.success(`${result.imported} Posts importiert!`);
+      if (totalImported > 0) {
+        toast.success(`${totalImported} Posts erfolgreich importiert!`);
         
         // Auto-trigger style analysis
         setProgress(95);
@@ -86,7 +126,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
           console.error("Style analysis error:", styleErr);
         }
       } else {
-        toast.info(result.message || "Keine neuen Posts gefunden");
+        toast.info("Keine neuen Posts gefunden");
       }
       
       setProgress(100);
