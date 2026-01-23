@@ -13,11 +13,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Detect package manager
         id: detect-pm
         run: |
@@ -32,9 +27,15 @@ jobs:
             echo "install-cmd=npm ci" >> $GITHUB_OUTPUT
           fi
 
-      - name: Install pnpm
+      - name: Setup pnpm
         if: steps.detect-pm.outputs.pm == 'pnpm'
-        run: npm install -g pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: ${{ steps.detect-pm.outputs.pm }}
 
       - name: Install dependencies
         run: ${{ steps.detect-pm.outputs.install-cmd }}
