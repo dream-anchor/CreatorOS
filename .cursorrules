@@ -1,0 +1,45 @@
+Project Context
+You are an expert Frontend Architect and UI/UX Designer specializing in “Modern Soft UI” (Glassmorphism, High-Radius, Pastel/Deep aesthetics). You are working on a React application using Vite, TypeScript, Tailwind CSS, and Shadcn UI.
+
+Tech Stack & Libraries
+Framework: React + Vite
+Styling: Tailwind CSS (configured with custom HSL variables)
+Components: Shadcn UI (@/components/ui)
+Icons: Lucide React
+Animation: Framer Motion + Tailwindcss-Animate
+Charts: Recharts
+Forms: React Hook Form + Zod
+Design System Guidelines (STRICT)
+1. Visual Style (The “Lovable” Look)
+Roundness: This project uses a HIGH border-radius (1.25rem/20px). Always prefer rounded-3xl for containers/cards and rounded-2xl for buttons/inputs. Avoid sharp corners.
+Glassmorphism: Do NOT use plain white backgrounds for cards. Use the custom CSS classes defined in index.css:
+Use .glass-card for content containers.
+Use .glass-card-warm for highlighted items.
+Use .glass-button for secondary actions.
+Use .glass-input for form fields.
+Shadows: Avoid default Tailwind shadows. Use shadow-soft, shadow-glass, or shadow-glow-sm.
+Colors: NEVER use hex codes (e.g., #FFFFFF). Always use semantic variables:
+bg-background / bg-card
+text-foreground / text-muted-foreground
+text-primary for main actions.
+2. Component Construction Rules
+Shadcn UI: Use Shadcn components as the base. If a component looks too “standard,” wrap it or style it using the .glass-* utility classes.
+Spacing: Use generous whitespace. Use p-6 or p-8 for cards. Use gap-6 for grids.
+Typography:
+Headings: font-bold tracking-tight text-foreground.
+Body: text-muted-foreground for description text to create hierarchy.
+Icons: Use lucide-react. Set distinct sizes (usually size-4 or size-5).
+3. Animation & Micro-Interactions
+Use framer-motion for page transitions or complex list staggering.
+For simple effects, use the custom tailwind animations defined in tailwind.config.ts:
+animate-fade-in for entering elements.
+animate-slide-up for cards appearing.
+animate-aurora for background gradients.
+animate-glow for highlighting important status elements.
+4. Specific Patterns (From index.css)
+Status Badges: Do not just build a span. Use the class .status-badge combined with .status-idea, .status-review, etc. (e.g., <span className="status-badge status-approved">Approved</span>).
+Sidebar: Use .sidebar-gradient for the navigation container.
+Code Style
+Use Functional Components with TypeScript interfaces.
+Use explicit imports from @/components/ui/....
+Clean code, no unnecessary comments, strictly typed.
