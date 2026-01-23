@@ -11,8 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Loader2, Sparkles, Copy, Check, ImagePlus, Camera, Brain, Laugh, Heart, 
   Lightbulb, Star, ArrowRight, ArrowLeft, Recycle, TrendingUp, MessageSquare, 
-  Flame, BookmarkCheck, Eye, Zap,
-  BarChart3, Layers
+  Flame, BookmarkCheck, Eye, Zap, BarChart3, Layers,
+  RotateCw, Calendar, Image as ImageIcon
 } from "lucide-react";
 import { AiModelSelector, AI_MODELS } from "@/components/community/AiModelSelector";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -272,12 +272,6 @@ export default function GeneratorPage() {
   const handleCaptionChange = (newCaption: string) => {
     if (draft) {
       setDraft({ ...draft, caption: newCaption });
-      // Update word count approximately
-      const words = newCaption.trim().split(/\s+/).length;
-      if (createdPost) {
-        setCreatedPost({ ...createdPost }); // Trigger update if needed, mostly local state
-      }
-      setGeneratedContent({ ...draft, caption: newCaption, wordCount: words });
     }
   };
 
