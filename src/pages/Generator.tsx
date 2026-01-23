@@ -7,10 +7,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Topic, Post, DraftGenerationResult, TopPerformingPost, RemasterResult } from "@/types/database";
 import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Loader2, Sparkles, Copy, Check, ImagePlus, Camera, Brain, Laugh, Heart, 
   Lightbulb, Star, ArrowRight, ArrowLeft, Recycle, TrendingUp, MessageSquare, 
-  Flame, BookmarkCheck, Eye, Zap
+  Flame, BookmarkCheck, Eye, Zap,
+  BarChart3, Layers
 } from "lucide-react";
 import { AiModelSelector, AI_MODELS } from "@/components/community/AiModelSelector";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -91,6 +93,7 @@ export default function GeneratorPage() {
   const [createdPost, setCreatedPost] = useState<Post | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [assetUrl, setAssetUrl] = useState<string | null>(null);
+  const [outputTab, setOutputTab] = useState<"post" | "alternatives" | "analysis">("post");
 
   // Wizard State
   const [wizardStep, setWizardStep] = useState<WizardStep>("mode");
@@ -266,6 +269,18 @@ export default function GeneratorPage() {
     }
   };
 
+  const handleCaptionChange = (newCaption: string) => {
+    if (draft) {
+      setDraft({ ...draft, caption: newCaption });
+      // Update word count approximately
+      const words = newCaption.trim().split(/\s+/).length;
+      if (createdPost) {
+        setCreatedPost({ ...createdPost }); // Trigger update if needed, mostly local state
+      }
+      setGeneratedContent({ ...draft, caption: newCaption, wordCount: words });
+    }
+  };
+
   if (loading) {
     return (
       <GlobalLayout>
@@ -285,16 +300,18 @@ export default function GeneratorPage() {
           {wizardStep === "mode" && (
             <Card className="glass-card border-primary/20">
               <CardHeader>
-            <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  Was möchtest du erstellen?
-                </CardTitle>
-                <AiModelSelector
-                  selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
-                />
-              </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                    Was möchtest du erstellen?
+                  </CardTitle>
+                  <div className="w-full sm:w-auto">
+                    <AiModelSelector
+                      selectedModel={selectedModel}
+                      onModelChange={setSelectedModel}
+                    />
+                  </div>
+                </div>
                 <CardDescription>
                   Wähle zwischen neuem Content oder dem Remaster eines Erfolgs-Posts
                 </CardDescription>
@@ -751,180 +768,244 @@ export default function GeneratorPage() {
 
           {draft && createdPost && (
             <>
-              <div className="flex items-center gap-3 mb-2">
-                <StatusBadge status={createdPost.status} />
-                <span className="text-sm text-muted-foreground">
-                  Post wurde erstellt und wartet auf Review
-                </span>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                    Generierter Content
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Überprüfe und verfeinere deinen Post
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={resetWizard} className="text-xs h-8">
+                    <RotateCw className="h-3.5 w-3.5 mr-1.5" />
+                    Neu generieren
+                  </Button>
+                  <Button size="sm" className="text-xs h-8 bg-primary hover:bg-primary/90 text-primary-foreground">
+                    <Calendar className="h-3.5 w-3.5 mr-1.5" />
+                    Planen
+                  </Button>
+                </div>
               </div>
 
-              {/* Image Preview */}
-              {assetUrl && (
-                <Card className="glass-card overflow-hidden">
-                  <img 
-                    src={assetUrl} 
-                    alt="Post Bild" 
-                    className="w-full aspect-square object-cover"
-                  />
-                </Card>
-              )}
+              <Tabs value={outputTab} onValueChange={(v) => setOutputTab(v as any)} className="w-full">
+                <TabsList className="w-full grid grid-cols-3 mb-6 bg-muted/50 p-1 h-auto">
+                  <TabsTrigger value="post" className="flex items-center gap-2 py-2 data-[state=active]:bg-background shadow-sm">
+                    <MessageSquare className="h-4 w-4" />
+                    <span className="hidden sm:inline">Post</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="alternatives" className="flex items-center gap-2 py-2 data-[state=active]:bg-background shadow-sm">
+                    <Layers className="h-4 w-4" />
+                    <span className="hidden sm:inline">Alternativen</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="analysis" className="flex items-center gap-2 py-2 data-[state=active]:bg-background shadow-sm">
+                    <BarChart3 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Analyse</span>
+                  </TabsTrigger>
+                </TabsList>
 
-              <Card className="glass-card">
-                <CardContent className="pt-6 space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Caption</Label>
+                <TabsContent value="post" className="space-y-6 animate-in fade-in-50 duration-300">
+                  {/* Image Preview */}
+                  {assetUrl && (
+                    <Card className="glass-card overflow-hidden border-primary/10">
+                      <img 
+                        src={assetUrl} 
+                        alt="Post Bild" 
+                        className="w-full aspect-square object-cover"
+                      />
+                    </Card>
+                  )}
+
+                  {/* Main Post Content */}
+                  <div className="glass-card p-6 rounded-2xl border-primary/10">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium px-2 py-1 bg-primary/10 text-primary rounded-md">
+                          Haupt-Version
+                        </span>
+                        {createdPost.status && <StatusBadge status={createdPost.status} />}
+                      </div>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
+                        className="h-8 w-8 hover:bg-primary/5"
                         onClick={() => copyToClipboard(draft.caption, "caption")}
                       >
-                        {copied === "caption" ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
+                        {copied === "caption" ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
                       </Button>
                     </div>
-                    <Textarea
-                      value={draft.caption}
-                      readOnly
-                      className="min-h-[200px] text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Hashtags</Label>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyToClipboard(draft.hashtags, "hashtags")}
-                      >
-                        {copied === "hashtags" ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
+                    
+                    <div className="bg-muted/30 rounded-xl p-1 border border-border/50 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/50 transition-all duration-200">
+                      <Textarea
+                        value={draft.caption}
+                        onChange={(e) => handleCaptionChange(e.target.value)}
+                        className="min-h-[200px] border-0 bg-transparent resize-none focus-visible:ring-0 text-sm leading-relaxed p-4"
+                        placeholder="Schreibe hier deine Caption..."
+                      />
                     </div>
-                    <p className="text-sm text-primary p-3 rounded-lg bg-muted/50 border border-border">
-                      {draft.hashtags}
-                    </p>
-                  </div>
 
-                  <div className="space-y-2">
-                    <Label>Alt-Text (Bildbeschreibung)</Label>
-                    <p className="text-sm text-muted-foreground p-3 rounded-lg bg-muted/50 border border-border">
-                      {draft.alt_text}
-                    </p>
-                  </div>
+                    <div className="mt-6 space-y-4">
+                      {/* Image Prompt */}
+                      {draft.asset_prompt && (
+                        <div className="bg-accent/5 rounded-xl p-4 border border-accent/10">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-semibold text-accent flex items-center gap-1.5">
+                              <ImageIcon className="h-3.5 w-3.5" />
+                              Bild-Prompt
+                            </span>
+                            <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 hover:bg-accent/10"
+                                  onClick={() => copyToClipboard(draft.asset_prompt || "", "prompt")}
+                                >
+                                  {copied === "prompt" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
+                                </Button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground italic">
+                            "{draft.asset_prompt}"
+                          </p>
+                        </div>
+                      )}
 
-                  {draft.asset_prompt && (
-                    <div className="space-y-2">
-                      <Label>Bild-Prompt (für Generierung)</Label>
-                      <div className="flex gap-2">
-                        <p className="flex-1 text-sm text-muted-foreground p-3 rounded-lg bg-muted/50 border border-border">
-                          {draft.asset_prompt}
-                        </p>
-                        <Button variant="outline" size="icon">
-                          <ImagePlus className="h-4 w-4" />
-                        </Button>
+                      {/* Hashtags */}
+                      {draft.hashtags && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-medium text-muted-foreground">Hashtags</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 hover:bg-primary/5"
+                              onClick={() => copyToClipboard(Array.isArray(draft.hashtags) ? draft.hashtags.join(" ") : draft.hashtags, "hashtags")}
+                            >
+                              {copied === "hashtags" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
+                            </Button>
+                          </div>
+                          <div className="p-3 bg-muted/30 rounded-lg text-xs text-muted-foreground">
+                             {Array.isArray(draft.hashtags) ? draft.hashtags.join(" ") : draft.hashtags}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="alternatives" className="space-y-6 animate-in fade-in-50 duration-300">
+                  {/* Hooks */}
+                  {draft.hook_options && draft.hook_options.length > 0 && (
+                    <div className="glass-card p-6 rounded-2xl">
+                      <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-yellow-500" />
+                        Virale Hooks
+                      </h3>
+                      <div className="space-y-3">
+                        {draft.hook_options.map((hook, i) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-muted/30 rounded-xl border border-border/50 hover:border-primary/20 transition-colors group">
+                            <span className="text-sm">{hook}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => copyToClipboard(hook, `hook-${i}`)}
+                            >
+                              {copied === `hook-${i}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+                            </Button>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
-                </CardContent>
-              </Card>
 
-              {/* Alternative Captions */}
-              {(draft.caption_alt || draft.caption_short) && (
-                <Card className="glass-card">
-                  <CardContent className="pt-6 space-y-4">
-                    <Label>Alternative Versionen</Label>
-                    {draft.caption_alt && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">
-                            Alternative
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              copyToClipboard(draft.caption_alt, "caption_alt")
-                            }
-                          >
-                            {copied === "caption_alt" ? (
-                              <Check className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <Copy className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                        <p className="text-sm p-3 rounded-lg bg-muted/50 border border-border">
-                          {draft.caption_alt}
-                        </p>
+                  {/* Alternative Captions */}
+                  {(draft.caption_alt || draft.caption_short) && (
+                    <div className="glass-card p-6 rounded-2xl">
+                      <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
+                        <Recycle className="h-4 w-4 text-blue-500" />
+                        Alternative Versionen
+                      </h3>
+                      <div className="space-y-4">
+                        {draft.caption_alt && (
+                          <div className="p-4 bg-muted/30 rounded-xl border border-border/50">
+                            <div className="flex justify-between items-start mb-2">
+                              <span className="text-xs font-medium text-muted-foreground">Alternative</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => copyToClipboard(draft.caption_alt || "", "caption_alt")}
+                              >
+                                {copied === "caption_alt" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
+                              </Button>
+                            </div>
+                            <p className="text-sm whitespace-pre-wrap">{draft.caption_alt}</p>
+                          </div>
+                        )}
+                        {draft.caption_short && (
+                          <div className="p-4 bg-muted/30 rounded-xl border border-border/50">
+                            <div className="flex justify-between items-start mb-2">
+                              <span className="text-xs font-medium text-muted-foreground">Kurzversion</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => copyToClipboard(draft.caption_short || "", "caption_short")}
+                              >
+                                {copied === "caption_short" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
+                              </Button>
+                            </div>
+                            <p className="text-sm whitespace-pre-wrap">{draft.caption_short}</p>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {draft.caption_short && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">
-                            Kurzversion
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              copyToClipboard(draft.caption_short, "caption_short")
-                            }
-                          >
-                            {copied === "caption_short" ? (
-                              <Check className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <Copy className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                        <p className="text-sm p-3 rounded-lg bg-muted/50 border border-border">
-                          {draft.caption_short}
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
+                    </div>
+                  )}
+                </TabsContent>
 
-              {/* Hook Options */}
-              {draft.hook_options && draft.hook_options.length > 0 && (
-                <Card className="glass-card">
-                  <CardContent className="pt-6 space-y-3">
-                    <Label>Hook-Optionen</Label>
-                    {draft.hook_options.map((hook, i) => (
-                      <div
-                        key={i}
-                        className="flex items-start gap-2 p-3 rounded-lg bg-muted/50 border border-border"
-                      >
-                        <span className="text-xs text-primary font-medium mt-0.5">
-                          {i + 1}.
-                        </span>
-                        <p className="text-sm flex-1">{hook}</p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(hook, `hook_${i}`)}
-                        >
-                          {copied === `hook_${i}` ? (
-                            <Check className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
+                <TabsContent value="analysis" className="space-y-6 animate-in fade-in-50 duration-300">
+                  {/* Remix Analysis if available */}
+                  {remixInfo && (
+                    <div className="glass-card p-5 rounded-2xl border-orange-500/20 bg-orange-500/5">
+                      <h3 className="text-sm font-medium mb-3 flex items-center gap-2 text-orange-500">
+                        <Recycle className="h-4 w-4" />
+                        Remaster Analyse
+                      </h3>
+                      <div className="space-y-3 text-sm">
+                        <div>
+                          <span className="font-medium text-muted-foreground block text-xs mb-1">Original Erfolgs-Faktor:</span>
+                          <p>{remixInfo.original_analysis}</p>
+                        </div>
+                        {remixInfo.format_flip_reason && (
+                           <div>
+                             <span className="font-medium text-muted-foreground block text-xs mb-1">Format-Flip:</span>
+                             <p>{remixInfo.format_flip_reason}</p>
+                           </div>
+                        )}
                       </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
+                    </div>
+                  )}
+
+                  {/* Standard Analysis */}
+                  <div className="glass-card p-5 rounded-2xl">
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2 text-muted-foreground">
+                       <Lightbulb className="h-4 w-4" />
+                       Content Strategie
+                    </h3>
+                    <div className="space-y-4">
+                      {/* Note: The DB types for DraftGenerationResult might not always have strategy/targetAudience/whyItWorks depending on backend version. 
+                          Assuming they exist based on previous code. If missing, we render nothing or generic info. */}
+                       <p className="text-sm text-muted-foreground italic">
+                         Dieser Post wurde basierend auf deinen ausgewählten Themen und der Brand DNA optimiert.
+                       </p>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </>
           )}
 

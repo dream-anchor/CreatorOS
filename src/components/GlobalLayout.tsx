@@ -36,20 +36,37 @@ interface GlobalLayoutProps {
   hideBottomChat?: boolean;
 }
 
-const navItems = [
-  { name: "Dashboard", href: "/dashboard", icon: Home },
-  // Strategy
-  { name: "Brand DNA", href: "/brand", icon: Brain },
-  { name: "Themen", href: "/topics", icon: Sparkles },
-  // Creation
-  { name: "Generator", href: "/generator", icon: Zap },
-  // Management
-  { name: "Planung", href: "/calendar", icon: CalendarClock },
-  { name: "Community", href: "/community", icon: MessageCircle },
-  // Assets & Analysis
-  { name: "Medien", href: "/media", icon: ImageIcon },
-  { name: "Analytics", href: "/analytics", icon: BarChart3 },
-  { name: "Settings", href: "/settings", icon: Settings },
+const navGroups = [
+  {
+    title: "Übersicht",
+    items: [{ name: "Dashboard", href: "/dashboard", icon: Home }]
+  },
+  {
+    title: "Strategie",
+    items: [
+      { name: "Brand DNA", href: "/brand", icon: Brain },
+      { name: "Themen", href: "/topics", icon: Sparkles }
+    ]
+  },
+  {
+    title: "Kreation",
+    items: [{ name: "Generator", href: "/generator", icon: Zap }]
+  },
+  {
+    title: "Management",
+    items: [
+      { name: "Planung", href: "/calendar", icon: CalendarClock },
+      { name: "Community", href: "/community", icon: MessageCircle }
+    ]
+  },
+  {
+    title: "Analyse & Assets",
+    items: [
+      { name: "Medien", href: "/media", icon: ImageIcon },
+      { name: "Analytics", href: "/analytics", icon: BarChart3 },
+      { name: "Settings", href: "/settings", icon: Settings }
+    ]
+  }
 ];
 
 function GenerationIndicator({ onNavigate }: { onNavigate?: () => void }) {
@@ -188,7 +205,7 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const [searchParams] = useSearchParams();
   const userData = useUserData();
   const { conversations, createConversation, deleteConversation, loading: chatsLoading } = useChatConversations();
-  const [chatsOpen, setChatsOpen] = useState(true);
+  const [chatsOpen, setChatsOpen] = useState(false);
   const isActive = (href: string) => location.pathname === href;
 
   const activeConversationId = searchParams.get("chat");
@@ -226,26 +243,39 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
       <LogoHeader />
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-        {navItems.map((item) => (
-          <Link
-            key={item.name}
-            to={item.href}
-            onClick={onNavigate}
-            className={cn(
-              "flex items-center gap-3 px-4 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200",
-              isActive(item.href)
-                ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+      <nav className="flex-1 py-4 px-3 space-y-6 overflow-y-auto">
+        {navGroups.map((group, i) => (
+          <div key={i} className="space-y-1">
+            {group.title !== "Übersicht" && (
+              <h4 className="px-4 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60 mb-2">
+                {group.title}
+              </h4>
             )}
-          >
-            <item.icon className="h-[18px] w-[18px]" />
-            {item.name}
-          </Link>
+            {group.items.map((item) => (
+              <Link
+                key={item.name}
+                to={item.href}
+                onClick={onNavigate}
+                className={cn(
+                  "flex items-center gap-3 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200",
+                  isActive(item.href)
+                    ? "bg-primary/10 text-primary shadow-sm"
+                    : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                )}
+              >
+                <item.icon className={cn(
+                  "h-[18px] w-[18px] transition-colors",
+                  isActive(item.href) ? "text-primary" : "text-muted-foreground"
+                )} />
+                {item.name}
+              </Link>
+            ))}
+          </div>
         ))}
 
         {/* Chat History Section */}
-        <Collapsible open={chatsOpen} onOpenChange={setChatsOpen} className="mt-4">
+        <div className="pt-2 border-t border-border/20">
+          <Collapsible open={chatsOpen} onOpenChange={setChatsOpen}>
           <CollapsibleTrigger className="flex items-center justify-between w-full px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors">
             <span className="flex items-center gap-2">
               <MessageSquare className="h-3.5 w-3.5" />
@@ -298,6 +328,7 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
             )}
           </CollapsibleContent>
         </Collapsible>
+        </div>
       </nav>
       
       {/* Generation Indicator */}

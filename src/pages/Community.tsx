@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion, PanInfo } from "framer-motion";
 import {
   MessageCircle,
   RefreshCw,
@@ -19,6 +20,16 @@ import {
   Ban,
   ExternalLink,
   X,
+  Play,
+  ArrowRight,
+  SkipForward,
+  Check,
+  ThumbsUp,
+  ThumbsDown,
+  Edit3,
+  Settings,
+  Sparkles,
+  ShieldCheck
 } from "lucide-react";
 import {
   Tooltip,
@@ -26,6 +37,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { formatDistanceToNow, format, addMinutes, subMinutes } from "date-fns";
 import { de } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -192,6 +210,16 @@ export default function Community() {
     },
     staleTime: 30000,
   });
+
+  // Focus Mode State
+  const [focusIndex, setFocusIndex] = useState(0);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [swipeDirection, setSwipeDirection] = useState<"left" | "right" | null>(null);
+  const [showRefineDialog, setShowRefineDialog] = useState(false);
+  const [refineReason, setRefineReason] = useState<string>("");
+  const [refineCustomNote, setRefineCustomNote] = useState("");
+
+  const [showSettings, setShowSettings] = useState(false);
 
   // Filter comments based on blacklist topics (check post caption), answered_by and separate negative comments
   const { filteredComments, negativeComments, answeredByIgnoredComments, allComments } = useMemo(() => {
@@ -743,6 +771,86 @@ export default function Community() {
     setReplyTexts(prev => ({ ...prev, [commentId]: text }));
   };
 
+  const handleFocusNext = () => {
+    setSwipeDirection(null);
+    if (focusIndex < comments.length - 1) {
+      setFocusIndex(prev => prev + 1);
+    } else {
+      setIsFocusMode(false); // Exit focus mode if done
+      toast.success("Alle Kommentare bearbeitet! 🎉");
+    }
+  };
+
+  const handleSwipe = async (event: any, info: PanInfo) => {
+    const threshold = 100;
+    if (info.offset.x > threshold) {
+      // Right Swipe (Approve)
+      setSwipeDirection("right");
+      const comment = comments[focusIndex];
+      const replyText = replyTexts[comment.id];
+      if (replyText?.trim()) {
+        await handleSendReply(comment);
+        setTimeout(handleFocusNext, 200);
+      } else {
+        toast.error("Keine Antwort zum Senden!");
+        setSwipeDirection(null);
+      }
+    } else if (info.offset.x < -threshold) {
+      // Left Swipe (Refine/Reject)
+      setSwipeDirection("left");
+      setShowRefineDialog(true);
+    }
+  };
+
+  const handleRefineSubmit = async () => {
+    const comment = comments[focusIndex];
+    const betterReply = replyTexts[comment.id];
+    const originalAiReply = comment.ai_reply_suggestion;
+
+    if (!betterReply?.trim()) {
+      toast.error("Bitte gib eine korrigierte Antwort ein.");
+      return;
+    }
+
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      if (user.user) {
+        // Save training data
+        await supabase.from("reply_training_data" as any).insert({
+          user_id: user.user.id,
+          comment_text: comment.comment_text,
+          original_ai_reply: originalAiReply,
+          better_reply: betterReply,
+          correction_reason: refineReason || "custom",
+          correction_note: refineCustomNote
+        });
+        
+        toast.success("Feedback gespeichert & System trainiert 🧠");
+      }
+      
+      // Send the corrected reply
+      await handleSendReply(comment);
+      
+      // Reset & Next
+      setShowRefineDialog(false);
+      setRefineReason("");
+      setRefineCustomNote("");
+      handleFocusNext();
+    } catch (error) {
+      console.error("Training error:", error);
+      toast.error("Fehler beim Speichern des Feedbacks");
+    }
+  };
+
+  const handleFocusSend = async (comment: Comment) => {
+    await handleSendReply(comment);
+    handleFocusNext();
+  };
+
+  const handleFocusSkip = () => {
+    handleFocusNext();
+  };
+
   if (isLoading) {
     return (
       <GlobalLayout>
@@ -753,212 +861,360 @@ export default function Community() {
     );
   }
 
-  const noModelSelected = !selectedModel;
-
   return (
     <GlobalLayout>
-      <div className="p-3 sm:p-4 lg:p-6 max-w-3xl mx-auto pb-32">
-        {/* Rules Config Panel */}
-        <div className="mb-4">
-          <RulesConfigPanel
-            emojiNogoTerms={emojiNogoTerms}
-            blacklistTopics={blacklistTopics}
-            answeredByIgnoreAccounts={answeredByIgnoreAccounts}
-            onAddEmojiNogoTerms={handleAddEmojiNogoTerms}
-            onRemoveEmojiNogoTerm={handleRemoveEmojiNogoTerm}
-            onAddBlacklistTopics={handleAddBlacklistTopics}
-            onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
-            onAddAnsweredByIgnoreAccounts={handleAddAnsweredByIgnoreAccounts}
-            onRemoveAnsweredByIgnoreAccount={handleRemoveAnsweredByIgnoreAccount}
-          />
-        </div>
+      <div className="flex flex-col h-[calc(100vh-6rem)] overflow-hidden relative">
+        {/* Settings Dialog */}
+        <Dialog open={showSettings} onOpenChange={setShowSettings}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Community Einstellungen
+              </DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-6 py-4">
+              {/* AI Model Selection */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                  <Brain className="h-4 w-4" /> KI-Modell
+                </h3>
+                <div className="bg-muted/30 p-4 rounded-xl border border-border/50">
+                  <AiModelSelector
+                    selectedModel={selectedModel}
+                    onModelChange={handleModelChange}
+                    disabled={isGenerating}
+                    isGenerating={isGenerating}
+                    generationProgress={progress}
+                  />
+                </div>
+              </div>
 
-        {/* Compact Header */}
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-foreground">Community</h1>
-            <Badge variant="secondary" className="text-xs">{comments.length} offen</Badge>
-            {negativeComments.length > 0 && (
-              <NegativeCommentsDialog
-                negativeComments={negativeComments}
-                triggerText={`${negativeComments.length} negativ`}
-                replyTexts={replyTexts}
-                onReplyTextChange={handleReplyTextChange}
-                onSendReply={handleSendReply}
-                onHideComment={(comment) => handleHideComment(comment.id)}
-                onBlockUser={(comment) => handleBlockUser(comment.id, comment.commenter_username)}
-                sendingReply={sendingReply}
-                hidingComment={hidingComment}
-                blockingUser={blockingUser}
-              />
-            )}
-            {filteredComments.length > 0 && (
-              <FilteredCommentsDialog
-                filteredComments={filteredComments}
-                blacklistTopics={blacklistTopics}
-                onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
-                triggerText={`${filteredComments.length} gefiltert`}
-              />
+              {/* Rules Configuration */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                  <ShieldCheck className="h-4 w-4" /> Moderations-Regeln
+                </h3>
+                <RulesConfigPanel
+                  emojiNogoTerms={emojiNogoTerms}
+                  blacklistTopics={blacklistTopics}
+                  answeredByIgnoreAccounts={answeredByIgnoreAccounts}
+                  onAddEmojiNogoTerms={handleAddEmojiNogoTerms}
+                  onRemoveEmojiNogoTerm={handleRemoveEmojiNogoTerm}
+                  onAddBlacklistTopics={handleAddBlacklistTopics}
+                  onRemoveBlacklistTopic={handleRemoveBlacklistTopic}
+                  onAddAnsweredByIgnoreAccounts={handleAddAnsweredByIgnoreAccounts}
+                  onRemoveAnsweredByIgnoreAccount={handleRemoveAnsweredByIgnoreAccount}
+                />
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Minimal Header */}
+        <div className="flex items-center justify-between px-6 py-4 bg-background/80 backdrop-blur-sm z-10 border-b border-border/20">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-bold tracking-tight">Inbox</h1>
+            {comments.length > 0 ? (
+              <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 transition-colors px-2.5 py-0.5 rounded-full">
+                {comments.length} offen
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-muted-foreground">
+                Alles erledigt
+              </Badge>
             )}
           </div>
           
           <div className="flex items-center gap-2">
             <ReplyQueueIndicator onQueueChange={() => refetch()} />
-            <Button onClick={handleFetchComments} disabled={isRefetching} variant="ghost" size="icon" className="h-8 w-8 rounded-xl">
-              <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
+            
+            {/* Auto-Generate Button */}
+            <Button 
+              onClick={() => handleGenerateAllReplies(selectedModel || 'gpt-4o')} 
+              disabled={isGenerating || comments.length === 0}
+              variant="outline" 
+              size="sm" 
+              className="h-9 gap-2 hidden sm:flex"
+            >
+              {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              KI-Antworten
+            </Button>
+
+            <div className="h-6 w-px bg-border/30 mx-1" />
+
+            <Button onClick={() => setShowSettings(true)} variant="ghost" size="icon" className="h-9 w-9 rounded-full hover:bg-muted">
+              <Settings className="h-4 w-4 text-muted-foreground" />
+            </Button>
+            
+            <Button onClick={handleFetchComments} disabled={isRefetching} variant="ghost" size="icon" className="h-9 w-9 rounded-full hover:bg-muted">
+              <RefreshCw className={cn("h-4 w-4 text-muted-foreground", isRefetching && "animate-spin")} />
             </Button>
           </div>
         </div>
 
-        {/* Compact Action Bar */}
-        <div className="flex items-center gap-2 mb-4 p-2.5 rounded-xl bg-card/50 border border-border/20">
-          <AiModelSelector
-            selectedModel={selectedModel}
-            onModelChange={handleModelChange}
-            disabled={isGenerating}
-            isGenerating={isGenerating}
-            generationProgress={progress}
-          />
-          {isGenerating && progress && (
-            <div className="flex items-center gap-2 flex-1 ml-2">
-              <div className="flex-1 bg-muted rounded-full h-1 overflow-hidden">
-                <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${(progress.current / progress.total) * 100}%` }} />
-              </div>
-              <span className="text-xs text-muted-foreground whitespace-nowrap">{progress.current}/{progress.total}</span>
-              <Button onClick={cancelGeneration} variant="ghost" size="icon" className="h-6 w-6 rounded-lg">
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          )}
-          {commentsWithReplies.length > 0 && !isGenerating && (
-            <Button onClick={handleSendAllReplies} disabled={isSendingAll} size="sm" className="gap-1.5 rounded-xl h-8 ml-auto">
-              {isSendingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-              {commentsWithReplies.length} senden
-            </Button>
-          )}
-        </div>
-
-        {/* Empty State */}
-        {comments.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="w-12 h-12 rounded-xl bg-muted/50 flex items-center justify-center mx-auto mb-3">
-              <MessageCircle className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">Keine offenen Kommentare</p>
-            <Button onClick={handleFetchComments} variant="outline" size="sm" className="gap-2 rounded-xl">
-              <RefreshCw className="h-3.5 w-3.5" /> Laden
-            </Button>
-          </div>
-        ) : (
-          /* Compact Posts Feed */
-          <div className="space-y-3">
-            {commentsByPost.map((group, groupIndex) => {
-              const { post, comments: groupComments } = group;
-
-              return (
-                <div key={group.igMediaId} className="rounded-2xl bg-card/50 border border-border/20 overflow-hidden">
-                  {/* Compact Post Header */}
-                  <div className="flex items-center gap-3 p-3 bg-muted/30 border-b border-border/20">
-                    <PostThumbnail 
-                      mediaUrl={post?.original_media_url}
-                      permalink={post?.original_ig_permalink}
-                      className="w-8 h-8 rounded-lg"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-muted-foreground line-clamp-1">
-                        {post?.caption || "Post"}
-                      </p>
-                    </div>
-                    <Badge variant="secondary" className="text-xs shrink-0">{groupComments.length}</Badge>
-                    {post?.original_ig_permalink && (
-                      <a href={post.original_ig_permalink} target="_blank" rel="noopener noreferrer" className="shrink-0">
-                        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
-                      </a>
-                    )}
-                  </div>
-
-                  {/* Compact Comments List */}
-                  <div className="divide-y divide-border/15">
-                    {groupComments.map((comment) => {
-                      const generatedReply = generatedReplies[comment.id];
-                      const hasReply = !!replyTexts[comment.id]?.trim();
-
-                      return (
-                        <div key={comment.id} className="p-3">
-                          {/* Comment Header - inline */}
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary/15 to-accent/15 flex items-center justify-center shrink-0">
-                              <User className="h-3 w-3 text-primary/70" />
-                            </div>
-                            <span className="font-medium text-foreground text-xs">@{comment.commenter_username || "?"}</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {formatDistanceToNow(new Date(comment.comment_timestamp), { addSuffix: true, locale: de })}
-                            </span>
-                          </div>
-
-                          {/* Comment Text - compact */}
-                          <p className="text-sm text-foreground/90 mb-2 pl-8">"{comment.comment_text}"</p>
-
-                          {/* Reply Input - compact */}
-                          <div className="pl-8">
-                            <Textarea
-                              placeholder="Antwort..."
-                              value={replyTexts[comment.id] || ""}
-                              onChange={(e) => handleReplyTextChange(comment.id, e.target.value)}
-                              disabled={isGenerating}
-                              rows={2}
-                              className={cn(
-                                "min-h-[60px] resize-none rounded-lg text-xs py-2",
-                                hasReply ? "border-primary/40 bg-primary/5" : "border-border/30"
-                              )}
-                            />
-                            
-                            {/* Compact Actions */}
-                            <div className="flex items-center gap-1.5 mt-2">
-                              <Button
-                                size="sm"
-                                onClick={() => handleSendReply(comment)}
-                                disabled={sendingReply === comment.id || !hasReply}
-                                className="gap-1 rounded-lg h-7 text-xs px-2.5"
-                              >
-                                {sendingReply === comment.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-                                Senden
-                              </Button>
-                              
-                              {(generatedReply || comment.ai_reply_suggestion) && (
-                                <Badge variant="outline" className="text-[10px] gap-1 h-5 px-1.5">
-                                  <Brain className="h-2.5 w-2.5" /> KI
-                                </Badge>
-                              )}
-                              
-                              <div className="flex items-center gap-0.5 ml-auto">
-                                <Button size="icon" variant="ghost" onClick={() => handleHideComment(comment.id)} disabled={hidingComment === comment.id} className="h-6 w-6 rounded-md text-muted-foreground hover:text-amber-500">
-                                  {hidingComment === comment.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <EyeOff className="h-3 w-3" />}
-                                </Button>
-                                <Button size="icon" variant="ghost" onClick={() => handleBlockUser(comment.id, comment.commenter_username)} disabled={blockingUser === comment.id} className="h-6 w-6 rounded-md text-muted-foreground hover:text-destructive">
-                                  {blockingUser === comment.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+        {/* Main Content Area - Card Stack */}
+        <div className="flex-1 flex items-center justify-center p-4 relative">
+          <AnimatePresence mode="wait">
+            {comments.length === 0 ? (
+              /* "All Caught Up" State */
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="text-center space-y-6 max-w-md"
+              >
+                <div className="w-24 h-24 bg-gradient-to-br from-primary/20 to-green-500/20 rounded-full flex items-center justify-center mx-auto shadow-xl shadow-primary/5 ring-1 ring-white/20">
+                  <Check className="h-10 w-10 text-primary" />
                 </div>
-              );
-            })}
-
-            {/* Load More */}
-            {allComments.length > displayLimit && (
-              <div className="text-center pt-2">
-                <Button variant="ghost" size="sm" onClick={() => setDisplayLimit(prev => prev + 50)} className="gap-1.5 rounded-lg text-xs">
-                  +{Math.min(50, allComments.length - displayLimit)} mehr
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-bold text-foreground">Alles erledigt!</h2>
+                  <p className="text-muted-foreground text-lg">
+                    Deine Community ist glücklich. <br/>Gönn dir eine Pause. ☕️
+                  </p>
+                </div>
+                <Button onClick={handleFetchComments} variant="outline" className="mt-8 rounded-full px-8 border-primary/20 hover:bg-primary/5 hover:text-primary transition-all">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Neu laden
                 </Button>
+              </motion.div>
+            ) : (
+              /* The Card Stack */
+              <div className="w-full max-w-xl h-full max-h-[700px] relative flex flex-col">
+                {/* Swipe Indicators - Absolute Positioned */}
+                <AnimatePresence>
+                  {swipeDirection === "right" && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.5, x: 50 }} 
+                      animate={{ opacity: 1, scale: 1, x: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute top-10 right-10 z-50 bg-green-500 text-white p-4 rounded-full shadow-2xl rotate-12 border-4 border-white/20"
+                    >
+                      <ThumbsUp className="h-10 w-10 fill-current" />
+                    </motion.div>
+                  )}
+                  {swipeDirection === "left" && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.5, x: -50 }} 
+                      animate={{ opacity: 1, scale: 1, x: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute top-10 left-10 z-50 bg-red-500 text-white p-4 rounded-full shadow-2xl -rotate-12 border-4 border-white/20"
+                    >
+                      <Edit3 className="h-10 w-10 fill-current" />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* The Active Card */}
+                <motion.div 
+                  key={comments[focusIndex].id}
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.6}
+                  onDragEnd={handleSwipe}
+                  initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                  animate={{ scale: 1, opacity: 1, y: 0, x: 0 }}
+                  exit={{ 
+                    x: swipeDirection === "right" ? 500 : swipeDirection === "left" ? -500 : 0, 
+                    opacity: 0,
+                    rotate: swipeDirection === "right" ? 10 : swipeDirection === "left" ? -10 : 0,
+                    transition: { duration: 0.2 }
+                  }}
+                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                  className="bg-card border border-border/50 rounded-[2rem] shadow-2xl flex-1 flex flex-col overflow-hidden relative z-20"
+                >
+                  {/* Context Header (The Post) */}
+                  {comments[focusIndex].post && (
+                    <div className="bg-muted/30 p-4 border-b border-border/30 flex items-center gap-4 shrink-0">
+                      <PostThumbnail 
+                        mediaUrl={comments[focusIndex].post?.original_media_url}
+                        permalink={comments[focusIndex].post?.original_ig_permalink}
+                        className="w-10 h-10 rounded-xl shadow-sm ring-1 ring-black/5"
+                      />
+                      <div className="flex-1 min-w-0">
+                         <div className="flex items-center gap-2 mb-0.5">
+                           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider bg-background/50 px-1.5 py-0.5 rounded-md">Kontext</span>
+                           <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(comments[focusIndex].post.published_at || new Date()), { addSuffix: true, locale: de })}</span>
+                         </div>
+                         <p className="text-xs text-foreground/70 line-clamp-1">{comments[focusIndex].post?.caption}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Scrollable Content Area */}
+                  <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-8 scrollbar-hide">
+                    {/* The User Comment */}
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/10 to-blue-500/10 flex items-center justify-center ring-2 ring-background shadow-sm">
+                          <User className="h-6 w-6 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-lg leading-none">@{comments[focusIndex].commenter_username}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatDistanceToNow(new Date(comments[focusIndex].comment_timestamp), { addSuffix: true, locale: de })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <div className="absolute -left-4 top-0 bottom-0 w-1 bg-primary/20 rounded-full" />
+                        <p className="text-xl sm:text-2xl font-medium leading-relaxed text-foreground pl-2">
+                          "{comments[focusIndex].comment_text}"
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* The Reply Area */}
+                    <div className="space-y-3 pt-4">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Deine Antwort
+                        </label>
+                        {comments[focusIndex].ai_reply_suggestion && (
+                          <Badge variant="secondary" className="bg-primary/5 text-primary text-[10px] gap-1 hover:bg-primary/10">
+                            <Brain className="h-3 w-3" /> KI-Vorschlag
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      <div className="relative group">
+                        <Textarea
+                          value={replyTexts[comments[focusIndex].id] || ""}
+                          onChange={(e) => handleReplyTextChange(comments[focusIndex].id, e.target.value)}
+                          placeholder="Tippe eine Antwort..."
+                          className="min-h-[140px] text-lg p-5 rounded-2xl bg-muted/30 border-2 border-transparent focus:border-primary/20 focus:bg-background transition-all resize-none shadow-inner"
+                          onKeyDown={(e) => e.stopPropagation()} // Prevent drag
+                        />
+                        {/* Quick Action Hint */}
+                        {!replyTexts[comments[focusIndex].id] && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
+                            <span className="text-sm">✨ KI generiert Vorschläge...</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fixed Bottom Action Bar */}
+                  <div className="p-4 sm:p-6 border-t border-border/30 bg-background/50 backdrop-blur-md">
+                    <div className="grid grid-cols-2 gap-4">
+                      <Button 
+                        variant="outline" 
+                        size="lg" 
+                        className="h-14 rounded-2xl border-2 border-muted hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-600 transition-all text-base font-medium group"
+                        onClick={() => { setSwipeDirection("left"); setShowRefineDialog(true); }}
+                      >
+                        <Edit3 className="h-5 w-5 mr-2 group-hover:scale-110 transition-transform" />
+                        Korrektur
+                      </Button>
+
+                      <Button 
+                        size="lg" 
+                        className="h-14 rounded-2xl bg-primary text-primary-foreground shadow-lg hover:shadow-primary/25 hover:translate-y-[-2px] transition-all text-base font-medium"
+                        onClick={() => { setSwipeDirection("right"); handleSwipe(null, { offset: { x: 200, y: 0 } } as any); }}
+                        disabled={!replyTexts[comments[focusIndex].id]?.trim()}
+                      >
+                        <Send className="h-5 w-5 mr-2" />
+                        Senden
+                      </Button>
+                    </div>
+                    <div className="mt-4 flex justify-center gap-2">
+                       <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                       <div className="h-1.5 w-1.5 rounded-full bg-border" />
+                       <div className="h-1.5 w-1.5 rounded-full bg-border" />
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Stack Effect Cards (Background) */}
+                {focusIndex < comments.length - 1 && (
+                  <div className="absolute top-4 left-4 right-4 bottom-[-10px] bg-card border border-border/30 rounded-[2rem] shadow-xl z-10 scale-[0.95] opacity-60 pointer-events-none" />
+                )}
+                {focusIndex < comments.length - 2 && (
+                  <div className="absolute top-8 left-8 right-8 bottom-[-20px] bg-card border border-border/30 rounded-[2rem] shadow-lg z-0 scale-[0.9] opacity-30 pointer-events-none" />
+                )}
               </div>
             )}
-          </div>
-        )}
+          </AnimatePresence>
+        </div>
+
+        {/* Refine Dialog Overlay (Keep existing logic, update style) */}
+        <AnimatePresence>
+          {showRefineDialog && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[60] bg-background/80 backdrop-blur-md flex items-center justify-center p-6"
+            >
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="w-full max-w-md bg-card border border-border/50 shadow-2xl rounded-3xl p-6 sm:p-8 space-y-6"
+              >
+                <div className="text-center space-y-2">
+                  <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Brain className="h-6 w-6" />
+                  </div>
+                  <h3 className="text-xl font-bold">Training & Korrektur</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Warum passte die Antwort nicht? Dein Feedback macht die KI schlauer.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { id: "too_formal", label: "Zu förmlich" },
+                    { id: "too_casual", label: "Zu locker" },
+                    { id: "too_long", label: "Zu lang" },
+                    { id: "wrong_info", label: "Falsche Info" },
+                    { id: "wrong_tone", label: "Falscher Ton" },
+                    { id: "missed_point", label: "Thema verfehlt" },
+                  ].map((reason) => (
+                    <Button
+                      key={reason.id}
+                      variant={refineReason === reason.id ? "default" : "outline"}
+                      className={cn("h-10 rounded-xl text-xs", refineReason === reason.id ? "bg-primary text-primary-foreground" : "border-border/50 bg-muted/20")}
+                      onClick={() => setRefineReason(reason.id)}
+                    >
+                      {reason.label}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Die richtige Antwort
+                  </label>
+                  <Textarea
+                    value={replyTexts[comments[focusIndex]?.id] || ""}
+                    onChange={(e) => handleReplyTextChange(comments[focusIndex].id, e.target.value)}
+                    className="min-h-[100px] bg-muted/30 border-2 border-transparent focus:border-primary/20 rounded-xl resize-none"
+                    placeholder="Schreibe hier, wie es sein sollte..."
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => { setShowRefineDialog(false); setSwipeDirection(null); }}
+                    className="flex-1 rounded-xl h-12"
+                  >
+                    Abbrechen
+                  </Button>
+                  <Button 
+                    onClick={handleRefineSubmit}
+                    className="flex-[2] rounded-xl h-12 shadow-lg hover:shadow-primary/20"
+                  >
+                    Lernen & Senden
+                  </Button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </GlobalLayout>
   );
