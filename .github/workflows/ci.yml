@@ -1,0 +1,52 @@
+name: CI — type-check & lint
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  checks:
+    name: TypeScript & ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Determine package manager
+        id: detect
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "pm=pnpm" > $GITHUB_ENV
+          elif [ -f yarn.lock ]; then
+            echo "pm=yarn" > $GITHUB_ENV
+          else
+            echo "pm=npm" > $GITHUB_ENV
+          fi
+          echo "Detected package manager: $pm"
+      
+      - name: Install dependencies
+        run: |
+          if [ "${pm}" = "pnpm" ]; then
+            curl -fsSL https://get.pnpm.io/install.sh | sh -
+            export PATH="$HOME/.local/share/pnpm:$PATH"
+            pnpm install --frozen-lockfile
+          elif [ "${pm}" = "yarn" ]; then
+            yarn install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: TypeScript type-check
+        run: |
+          npx tsc --noEmit
+
+      - name: ESLint
+        run: |
+          npx eslint . --ext .ts,.tsx
