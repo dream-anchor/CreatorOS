@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Detect package manager
+        id: detect-pm
+        run: |
+          if [ -f "pnpm-lock.yaml" ]; then
+            echo "manager=pnpm" >> $GITHUB_OUTPUT
+            echo "install-cmd=pnpm install --frozen-lockfile" >> $GITHUB_OUTPUT
+            echo "tsc-cmd=pnpm -w tsc --noEmit" >> $GITHUB_OUTPUT
+            echo "eslint-cmd=pnpm eslint -- . --ext .ts,.tsx" >> $GITHUB_OUTPUT
+          elif [ -f "yarn.lock" ]; then
+            echo "manager=yarn" >> $GITHUB_OUTPUT
+            echo "install-cmd=yarn install --frozen-lockfile" >> $GITHUB_OUTPUT
+            echo "tsc-cmd=yarn tsc --noEmit" >> $GITHUB_OUTPUT
+            echo "eslint-cmd=yarn eslint . --ext .ts,.tsx" >> $GITHUB_OUTPUT
+          else
+            echo "manager=npm" >> $GITHUB_OUTPUT
+            echo "install-cmd=npm ci" >> $GITHUB_OUTPUT
+            echo "tsc-cmd=npx tsc --noEmit" >> $GITHUB_OUTPUT
+            echo "eslint-cmd=npx eslint . --ext .ts,.tsx" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Setup pnpm
+        if: steps.detect-pm.outputs.manager == 'pnpm'
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      
+      - name: Install dependencies
+        run: ${{ steps.detect-pm.outputs.install-cmd }}
+      
+      - name: Run TypeScript type check
+        run: ${{ steps.detect-pm.outputs.tsc-cmd }}
+      
+      - name: Run ESLint
+        run: ${{ steps.detect-pm.outputs.eslint-cmd }}
