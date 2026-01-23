@@ -415,7 +415,7 @@ export default function InstagramSettings() {
               <Alert className="bg-muted/30">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription className="text-sm">
-                  Dies erstellt einen echten Post auf deinem Instagram-Account mit dem Text "Test from PostPro ✨".
+                  Dies erstellt einen echten Post auf deinem Instagram-Account mit dem Text "Test from CreatorOS ✨".
                 </AlertDescription>
               </Alert>
 

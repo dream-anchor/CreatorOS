@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
     }
 
     const { ig_user_id, access_token } = tokenData;
-    const caption = 'Test from PostPro ✨';
+    const caption = 'Test from CreatorOS ✨';
 
     console.log('Creating media container for IG user:', ig_user_id);
 

@@ -1,4 +1,4 @@
-name: Build & Deploy to Strato (postpro)
+name: Build & Deploy to Strato (CreatorOS)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: deploy-postpro-strato
+  group: deploy-creatoros-strato
   cancel-in-progress: true
 
 jobs:
