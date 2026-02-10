@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -23,8 +24,10 @@ import {
   Loader2,
   Play,
   Plus,
+  RefreshCw,
   Scissors,
   Sparkles,
+  Trash2,
   Type,
   Upload,
   Video,
@@ -41,7 +44,7 @@ import type {
   TransitionStyle,
 } from "@/types/database";
 
-type ReelWizardStep = "upload" | "processing" | "segments" | "style" | "render";
+type ReelWizardStep = "upload" | "processing" | "segments" | "style" | "render" | "failed";
 
 interface FrameData {
   index: number;
@@ -242,7 +245,7 @@ export default function ReelGenerator() {
   const resumeProject = async (proj: VideoProject) => {
     setProject(proj);
 
-    if (proj.status === "render_complete" && proj.rendered_video_url) {
+    if (proj.status === "render_complete" && (proj.rendered_video_path || proj.rendered_video_url)) {
       setWizardStep("render");
     } else if (proj.status === "segments_ready") {
       // Load segments and go to segment review
@@ -263,7 +266,31 @@ export default function ReelGenerator() {
       setWizardStep("processing");
       runProcessing(proj, proxyUrl, proj.source_duration_ms);
     } else if (proj.status === "failed") {
-      toast.error("Dieses Projekt ist fehlgeschlagen: " + (proj.error_message || "Unbekannter Fehler"));
+      setWizardStep("failed");
+    }
+  };
+
+  const retryProject = async () => {
+    if (!project || !project.source_video_path || !project.source_duration_ms) return;
+    try {
+      // Reset project status to "uploaded"
+      await apiPatch(`/api/video/projects/${project.id}`, {
+        status: "uploaded",
+        error_message: null,
+      });
+      const updated = { ...project, status: "uploaded" as VideoProjectStatus, error_message: null };
+      setProject(updated);
+      setProcessingStatus("");
+      setProcessingProgress(0);
+
+      // Re-run processing via proxy
+      const apiBase = import.meta.env.VITE_API_URL || "";
+      const proxyUrl = `${apiBase}/api/upload/proxy?key=${encodeURIComponent(project.source_video_path)}`;
+      setWizardStep("processing");
+      runProcessing(updated, proxyUrl, project.source_duration_ms);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("Retry fehlgeschlagen: " + msg);
     }
   };
 
@@ -583,8 +610,6 @@ export default function ReelGenerator() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[ReelGenerator] Processing failed:", msg);
-      toast.error("Verarbeitung fehlgeschlagen: " + msg);
-      setProcessingStatus("Fehler: " + msg);
 
       // Update project status to failed
       if (proj.id) {
@@ -592,6 +617,10 @@ export default function ReelGenerator() {
           await apiPatch(`/api/video/projects/${proj.id}`, { status: "failed", error_message: msg });
         } catch { /* ignore */ }
       }
+
+      // Show failed view with retry option
+      setProject((prev) => prev ? { ...prev, status: "failed", error_message: msg } : prev);
+      setWizardStep("failed");
     }
   };
 
@@ -770,6 +799,7 @@ export default function ReelGenerator() {
                   segments: 2,
                   style: 3,
                   render: 4,
+                  failed: -1,
                 };
                 const current = stepOrder[wizardStep];
                 const isActive = i === current;
@@ -1481,6 +1511,49 @@ export default function ReelGenerator() {
               </Card>
             )}
           </div>
+        )}
+
+        {/* ===== FAILED STATE ===== */}
+        {wizardStep === "failed" && project && (
+          <Card className="glass-card animate-fade-in max-w-2xl mx-auto">
+            <CardContent className="py-12">
+              <div className="flex flex-col items-center gap-6 text-center">
+                <div className="h-20 w-20 rounded-full bg-red-500/10 flex items-center justify-center">
+                  <AlertTriangle className="h-10 w-10 text-red-400" />
+                </div>
+
+                <div>
+                  <h2 className="text-xl font-bold text-foreground mb-2">
+                    Verarbeitung fehlgeschlagen
+                  </h2>
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    {project.error_message || "Ein unbekannter Fehler ist aufgetreten."}
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={resetWizard}
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Zurück
+                  </Button>
+                  <Button
+                    onClick={retryProject}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                    )}
+                    Erneut versuchen
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </GlobalLayout>
