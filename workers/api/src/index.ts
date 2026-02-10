@@ -37,24 +37,30 @@ const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 // Global CORS
 app.use("*", cors());
 
-// Public routes (webhooks, callbacks, cron) - no auth required
-app.route("/api/video", videoRoutes); // render-callback is public, others are protected inside
-app.route("/api/instagram", instagramRoutes); // oauth callback is public
-app.route("/api/cron", cronRoutes); // cron jobs are public (use secret header)
-
-// Protected routes - require auth
+// Auth middleware for all /api/* routes (PUBLIC_PATHS are skipped inside)
 app.use("/api/*", authMiddleware());
+
+// All routes - auth exceptions handled by PUBLIC_PATHS in auth middleware
 app.route("/api/upload", uploadRoutes);
 app.route("/api/posts", postsRoutes);
 app.route("/api/media", mediaRoutes);
+app.route("/api/video", videoRoutes);
+app.route("/api/instagram", instagramRoutes);
 app.route("/api/community", communityRoutes);
 app.route("/api/analytics", analyticsRoutes);
 app.route("/api/training", trainingRoutes);
 app.route("/api/calendar", calendarRoutes);
 app.route("/api/chat", chatRoutes);
 app.route("/api/settings", settingsRoutes);
+app.route("/api/cron", cronRoutes);
 
 // Health check
 app.get("/", (c) => c.json({ status: "ok", service: "creatoros-api" }));
+
+// Global error handler
+app.onError((err, c) => {
+  console.error(`[error] ${c.req.method} ${c.req.path}:`, err.message);
+  return c.json({ error: err.message || "Internal Server Error" }, 500);
+});
 
 export default app;
