@@ -53,6 +53,7 @@ const App = () => (
               <Route path="/community" element={<ProtectedRoute><Community /></ProtectedRoute>} />
               <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
               <Route path="/reels" element={<ProtectedRoute><ReelGenerator /></ProtectedRoute>} />
+              <Route path="/reels/:projectId" element={<ProtectedRoute><ReelGenerator /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/settings/*" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />

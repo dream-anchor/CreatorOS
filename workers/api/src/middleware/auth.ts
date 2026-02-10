@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
   "/api/video/render-callback",
   "/api/instagram/callback",
   "/api/instagram/oauth-config",
+  "/api/upload/proxy",
   "/api/cron/",
 ];
 

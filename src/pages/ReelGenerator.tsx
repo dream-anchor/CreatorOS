@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -174,6 +175,8 @@ const TRANSITION_STYLES: { id: TransitionStyle; label: string; description: stri
 
 export default function ReelGenerator() {
   const { user } = useAuth();
+  const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
   const [wizardStep, setWizardStep] = useState<ReelWizardStep>("upload");
   const [project, setProject] = useState<VideoProject | null>(null);
   const [segments, setSegments] = useState<VideoSegment[]>([]);
@@ -203,6 +206,27 @@ export default function ReelGenerator() {
   useEffect(() => {
     loadProjectHistory();
   }, []);
+
+  // Load project from URL param (/reels/:projectId)
+  const loadedProjectIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!projectId || loadedProjectIdRef.current === projectId) return;
+    loadedProjectIdRef.current = projectId;
+    (async () => {
+      try {
+        const proj = await apiGet<VideoProject>(`/api/video/projects/${projectId}`);
+        if (proj) {
+          resumeProject(proj);
+        } else {
+          toast.error("Projekt nicht gefunden");
+          navigate("/reels", { replace: true });
+        }
+      } catch {
+        toast.error("Projekt konnte nicht geladen werden");
+        navigate("/reels", { replace: true });
+      }
+    })();
+  }, [projectId]);
 
   const loadProjectHistory = async () => {
     try {
@@ -320,6 +344,8 @@ export default function ReelGenerator() {
       const localBlobUrl = URL.createObjectURL(file);
       setProject(proj);
       setWizardStep("processing");
+      loadedProjectIdRef.current = proj.id;
+      navigate(`/reels/${proj.id}`, { replace: true });
       runProcessing(proj, localBlobUrl, durationMs);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -689,6 +715,9 @@ export default function ReelGenerator() {
     setProcessingStatus("");
     setProcessingProgress(0);
     setUploads([]);
+    loadedProjectIdRef.current = null;
+    navigate("/reels", { replace: true });
+    loadProjectHistory();
   };
 
   // ===== SEGMENT HELPERS =====
@@ -1010,7 +1039,7 @@ export default function ReelGenerator() {
                       return (
                         <button
                           key={proj.id}
-                          onClick={() => resumeProject(proj)}
+                          onClick={() => navigate(`/reels/${proj.id}`)}
                           className={cn(
                             "flex flex-col gap-3 p-4 rounded-xl border text-left transition-all duration-200",
                             "border-border hover:border-primary/50 hover:bg-muted/30 hover:scale-[1.01]",
@@ -1018,13 +1047,13 @@ export default function ReelGenerator() {
                           )}
                         >
                           {/* Thumbnail or placeholder */}
-                          {proj.rendered_video_url ? (
+                          {proj.rendered_video_path ? (
                             <div className="w-full aspect-video rounded-lg overflow-hidden bg-black">
-                              <video src={proj.rendered_video_url} className="w-full h-full object-cover" muted preload="metadata" />
+                              <video src={`${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(proj.rendered_video_path)}`} className="w-full h-full object-cover" muted preload="metadata" />
                             </div>
-                          ) : proj.source_video_url ? (
+                          ) : proj.source_video_path ? (
                             <div className="w-full aspect-video rounded-lg overflow-hidden bg-black">
-                              <video src={proj.source_video_url} className="w-full h-full object-cover" muted preload="metadata" />
+                              <video src={`${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(proj.source_video_path)}`} className="w-full h-full object-cover" muted preload="metadata" />
                             </div>
                           ) : (
                             <div className="w-full aspect-video rounded-lg bg-muted flex items-center justify-center">
@@ -1231,10 +1260,10 @@ export default function ReelGenerator() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {project?.source_video_url ? (
+                  {project?.source_video_path ? (
                     <video
                       ref={videoPreviewRef}
-                      src={project.source_video_url}
+                      src={`${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(project.source_video_path)}`}
                       controls
                       className="w-full rounded-xl aspect-video bg-black"
                     />
@@ -1274,7 +1303,7 @@ export default function ReelGenerator() {
                 <Button
                   variant="outline"
                   className="flex-1"
-                  onClick={() => setWizardStep("upload")}
+                  onClick={resetWizard}
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Zurück
@@ -1379,7 +1408,7 @@ export default function ReelGenerator() {
         {/* ===== STEP 5: RENDER ===== */}
         {wizardStep === "render" && (
           <div className="max-w-2xl mx-auto">
-            {project?.status === "render_complete" && project?.rendered_video_url ? (
+            {project?.status === "render_complete" && project?.rendered_video_path ? (
               <Card className="glass-card animate-fade-in">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-green-400">
@@ -1391,7 +1420,7 @@ export default function ReelGenerator() {
                   <div className="flex justify-center">
                     <div className="w-64 rounded-2xl overflow-hidden shadow-2xl">
                       <video
-                        src={project.rendered_video_url}
+                        src={`${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(project.rendered_video_path)}`}
                         controls
                         className="w-full aspect-[9/16] bg-black"
                       />
@@ -1404,7 +1433,7 @@ export default function ReelGenerator() {
                       className="flex-1"
                       onClick={() => {
                         const a = document.createElement("a");
-                        a.href = project.rendered_video_url!;
+                        a.href = `${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(project.rendered_video_path!)}`;
                         a.download = `reel-${project.id}.mp4`;
                         a.click();
                       }}
