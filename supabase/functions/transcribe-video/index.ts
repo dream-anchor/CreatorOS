@@ -69,7 +69,7 @@ serve(async (req) => {
     // Load project
     const { data: project, error: projectError } = await supabase
       .from("video_projects")
-      .select("id, source_video_path, source_file_size")
+      .select("id, source_video_path, source_video_url, source_file_size")
       .eq("id", project_id)
       .eq("user_id", user.id)
       .single();
@@ -98,20 +98,51 @@ serve(async (req) => {
       .update({ status: "transcribing" })
       .eq("id", project_id);
 
-    // Download video from storage
-    console.log(`[transcribe-video] Downloading video from storage: ${project.source_video_path}`);
-    const { data: fileData, error: downloadError } = await supabase.storage
-      .from("video-assets")
-      .download(project.source_video_path);
+    // Download video - try R2 public URL first, fallback to Supabase Storage
+    const videoUrl = project.source_video_url;
+    const isR2 = videoUrl && videoUrl.includes("r2.dev/");
+    console.log(`[transcribe-video] Downloading video from ${isR2 ? "R2" : "Supabase Storage"}: ${isR2 ? videoUrl : project.source_video_path}`);
 
-    if (downloadError || !fileData) {
-      console.error("[transcribe-video] Download error:", downloadError);
-      await supabase
-        .from("video_projects")
-        .update({ status: "failed", error_message: "Video-Download fehlgeschlagen" })
-        .eq("id", project_id);
+    let fileData: Blob | null = null;
+
+    if (isR2 && videoUrl) {
+      // Download from R2 public URL
+      const r2Response = await fetch(videoUrl);
+      if (!r2Response.ok) {
+        console.error(`[transcribe-video] R2 download error: ${r2Response.status}`);
+        await supabase
+          .from("video_projects")
+          .update({ status: "failed", error_message: "Video-Download von R2 fehlgeschlagen" })
+          .eq("id", project_id);
+        return new Response(
+          JSON.stringify({ error: "Video konnte nicht von R2 heruntergeladen werden", success: false }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      fileData = await r2Response.blob();
+    } else {
+      // Fallback: Download from Supabase Storage
+      const { data: storageData, error: downloadError } = await supabase.storage
+        .from("video-assets")
+        .download(project.source_video_path);
+
+      if (downloadError || !storageData) {
+        console.error("[transcribe-video] Storage download error:", downloadError);
+        await supabase
+          .from("video_projects")
+          .update({ status: "failed", error_message: "Video-Download fehlgeschlagen" })
+          .eq("id", project_id);
+        return new Response(
+          JSON.stringify({ error: "Video konnte nicht heruntergeladen werden", success: false }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      fileData = storageData;
+    }
+
+    if (!fileData) {
       return new Response(
-        JSON.stringify({ error: "Video konnte nicht heruntergeladen werden", success: false }),
+        JSON.stringify({ error: "Kein Video-Datei erhalten", success: false }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

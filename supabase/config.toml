@@ -131,3 +131,9 @@ verify_jwt = false
 
 [functions.render-reel-callback]
 verify_jwt = false
+
+[functions.get-presigned-url]
+verify_jwt = false
+
+[functions.delete-from-r2]
+verify_jwt = false

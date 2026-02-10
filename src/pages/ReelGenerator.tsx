@@ -58,14 +58,13 @@ interface UploadItem {
 function uploadWithProgress(
   url: string,
   file: File,
-  token: string,
+  contentType: string,
   onProgress: (pct: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", url, true);
-    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-    xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+    xhr.open("PUT", url, true);
+    xhr.setRequestHeader("Content-Type", contentType);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
@@ -124,8 +123,6 @@ export default function ReelGenerator() {
   const uploadSingleVideo = async (file: File) => {
     if (!user) return;
     const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const ext = file.name.split(".").pop() || "mp4";
-    const storagePath = `${user.id}/source/${Date.now()}-${uploadId}.${ext}`;
 
     const item: UploadItem = {
       id: uploadId,
@@ -154,28 +151,36 @@ export default function ReelGenerator() {
         toast.warning(`${file.name}: Größer als 25MB, Transkription könnte fehlschlagen.`);
       }
 
-      // Upload with XHR for progress tracking
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const session = (await supabase.auth.getSession()).data.session;
-      const token = session?.access_token;
-      if (!token) throw new Error("Nicht eingeloggt");
+      // Step 1: Get presigned URL from R2 Edge Function
+      const contentType = file.type || "video/mp4";
+      const { data: presignedData, error: presignedError } = await supabase.functions.invoke(
+        "get-presigned-url",
+        {
+          body: {
+            files: [{ fileName: file.name, contentType, folder: "videos" }],
+          },
+        },
+      );
 
-      const uploadUrl = `${supabaseUrl}/storage/v1/object/video-assets/${storagePath}`;
-      await uploadWithProgress(uploadUrl, file, token, (pct) => {
+      if (presignedError || !presignedData?.success) {
+        throw new Error(presignedData?.error || presignedError?.message || "Presigned URL fehlgeschlagen");
+      }
+
+      const { uploadUrl, publicUrl, r2Key } = presignedData.urls[0];
+      console.log(`[ReelGenerator] Uploading to R2: ${r2Key} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+
+      // Step 2: Upload directly to R2 with progress
+      await uploadWithProgress(uploadUrl, file, contentType, (pct) => {
         updateUpload(uploadId, { progress: pct });
       });
 
-      const { data: urlData } = supabase.storage
-        .from("video-assets")
-        .getPublicUrl(storagePath);
-
-      // Create project record
+      // Step 3: Create project record with R2 URL
       const { data: projectData, error: projectError } = await supabase
         .from("video_projects")
         .insert({
           user_id: user.id,
-          source_video_path: storagePath,
-          source_video_url: urlData.publicUrl,
+          source_video_path: r2Key,
+          source_video_url: publicUrl,
           source_duration_ms: durationMs,
           source_width: width,
           source_height: height,
@@ -206,8 +211,8 @@ export default function ReelGenerator() {
         toast.error(`${f.name}: Keine Videodatei`);
         return false;
       }
-      if (f.size > 100 * 1024 * 1024) {
-        toast.error(`${f.name}: Zu groß (max. 100MB)`);
+      if (f.size > 2 * 1024 * 1024 * 1024) {
+        toast.error(`${f.name}: Zu groß (max. 2GB)`);
         return false;
       }
       return true;
@@ -700,7 +705,7 @@ export default function ReelGenerator() {
                           Videos hierher ziehen oder klicken
                         </p>
                         <p className="text-sm text-muted-foreground mt-1">
-                          MP4, MOV, WebM - max. 100MB pro Video - Mehrfachauswahl
+                          MP4, MOV, WebM - max. 2GB pro Video - Mehrfachauswahl
                         </p>
                       </div>
                     </div>
