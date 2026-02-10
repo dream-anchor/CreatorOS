@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import type {
   VideoProject,
+  VideoProjectStatus,
   VideoSegment,
   SubtitleStyle,
   TransitionStyle,
@@ -354,7 +355,7 @@ export default function ReelGenerator() {
       if (data?.status === "render_complete") {
         clearInterval(pollingRef.current!);
         pollingRef.current = null;
-        setProject((prev) => (prev ? { ...prev, ...data } : prev));
+        setProject((prev) => (prev ? { ...prev, ...data, status: data.status as VideoProjectStatus } : prev));
         toast.success("Reel fertig gerendert!");
       } else if (data?.status === "failed") {
         clearInterval(pollingRef.current!);
