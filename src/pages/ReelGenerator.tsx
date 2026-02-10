@@ -232,9 +232,12 @@ export default function ReelGenerator() {
     } else if (proj.status === "rendering") {
       setWizardStep("render");
       startPolling();
-    } else if (proj.status === "uploaded" && proj.source_video_url && proj.source_duration_ms) {
+    } else if (proj.status === "uploaded" && proj.source_video_path && proj.source_duration_ms) {
+      // Use proxy URL for CORS-safe video access from R2
+      const apiBase = import.meta.env.VITE_API_URL || "";
+      const proxyUrl = `${apiBase}/api/upload/proxy?key=${encodeURIComponent(proj.source_video_path)}`;
       setWizardStep("processing");
-      runProcessing(proj, proj.source_video_url, proj.source_duration_ms);
+      runProcessing(proj, proxyUrl, proj.source_duration_ms);
     } else if (proj.status === "failed") {
       toast.error("Dieses Projekt ist fehlgeschlagen: " + (proj.error_message || "Unbekannter Fehler"));
     }
@@ -313,10 +316,11 @@ export default function ReelGenerator() {
       updateUpload(uploadId, { status: "done", progress: 100, project: proj });
       toast.success(`${file.name} hochgeladen (${(durationMs / 1000).toFixed(0)}s)`);
 
-      // Auto-start analysis
+      // Auto-start analysis using local file blob (avoids R2 CORS issues)
+      const localBlobUrl = URL.createObjectURL(file);
       setProject(proj);
       setWizardStep("processing");
-      runProcessing(proj, publicUrl, durationMs);
+      runProcessing(proj, localBlobUrl, durationMs);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       updateUpload(uploadId, { status: "error", error: msg });
@@ -373,7 +377,10 @@ export default function ReelGenerator() {
     durationMs: number
   ): Promise<FrameData[]> => {
     const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
+    // Only set crossOrigin for http(s) URLs, not for blob: URLs
+    if (videoUrl.startsWith("http")) {
+      video.crossOrigin = "anonymous";
+    }
     video.src = videoUrl;
 
     await new Promise<void>((resolve, reject) => {

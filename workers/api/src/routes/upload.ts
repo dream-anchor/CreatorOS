@@ -52,4 +52,23 @@ app.post("/delete", async (c) => {
   return c.json({ success: true });
 });
 
+/** GET /api/upload/proxy?key=... - Proxy R2 files with CORS headers */
+app.get("/proxy", async (c) => {
+  const key = c.req.query("key");
+  if (!key) return c.json({ error: "key is required" }, 400);
+
+  const object = await c.env.R2_BUCKET.get(key);
+  if (!object) return c.json({ error: "File not found" }, 404);
+
+  const headers = new Headers();
+  headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  headers.set("Cache-Control", "public, max-age=3600");
+
+  if (object.size) headers.set("Content-Length", String(object.size));
+
+  return new Response(object.body, { headers });
+});
+
 export { app as uploadRoutes };
