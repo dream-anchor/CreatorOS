@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Log, LogLevel } from "@/types/database";
 import { Loader2, AlertCircle, Info, AlertTriangle, ScrollText } from "lucide-react";
@@ -28,14 +28,8 @@ export default function LogsPage() {
 
   const loadLogs = async () => {
     try {
-      const { data, error } = await supabase
-        .from("logs")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(100);
-
-      if (error) throw error;
-      setLogs((data as Log[]) || []);
+      const data = await apiGet<Log[]>("/api/logs", { limit: "100" });
+      setLogs(data || []);
     } catch (error: any) {
       console.error("Error:", error);
     } finally {

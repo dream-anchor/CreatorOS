@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, CheckCircle, AlertCircle, Instagram, Key, Shield, Wifi, XCircle, RefreshCw, Send } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { apiGet, apiPost, apiDelete, invokeFunction } from '@/lib/api';
 import { toast } from 'sonner';
 
 interface ConnectionTestResult {
@@ -74,18 +74,12 @@ export default function InstagramSettings() {
   const checkExistingToken = async () => {
     setIsCheckingToken(true);
     try {
-      const { data, error } = await supabase
-        .from('instagram_tokens')
-        .select('ig_user_id, created_at')
-        .maybeSingle();
-
-      if (error) {
-        console.error('Error checking token:', error);
-      } else if (data) {
+      const data = await apiGet<{ ig_user_id: string; created_at: string } | null>('/api/settings/instagram-token');
+      if (data) {
         setExistingToken(data);
       }
     } catch (err) {
-      console.error('Unexpected error:', err);
+      console.error('Error checking token:', err);
     } finally {
       setIsCheckingToken(false);
     }
@@ -118,22 +112,15 @@ export default function InstagramSettings() {
     setTestResult(null);
     setTestPostResult(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        toast.error('Du bist nicht angemeldet');
-        return;
-      }
-
-      const response = await supabase.functions.invoke('store-instagram-token', {
+      const { error: fnError } = await invokeFunction('store-instagram-token', {
         body: {
           ig_user_id: igUserId.trim(),
           access_token: accessToken.trim()
         }
       });
 
-      if (response.error) {
-        throw new Error(response.error.message || 'Fehler beim Speichern');
+      if (fnError) {
+        throw new Error(fnError.message || 'Fehler beim Speichern');
       }
 
       toast.success('Instagram Token erfolgreich gespeichert!');
@@ -154,12 +141,7 @@ export default function InstagramSettings() {
     setTestResult(null);
     setTestPostResult(null);
     try {
-      const { error } = await supabase
-        .from('instagram_tokens')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (error) throw error;
+      await apiDelete('/api/settings/instagram-token');
 
       toast.success('Token gelöscht');
       setExistingToken(null);
@@ -175,20 +157,17 @@ export default function InstagramSettings() {
     setIsTesting(true);
     setTestResult(null);
     try {
-      const response = await supabase.functions.invoke('test-instagram-connection', {
+      const { data, error: fnError } = await invokeFunction('test-instagram-connection', {
         body: {}
       });
 
-      if (response.error) {
-        const errorData = response.error;
+      if (fnError) {
         setTestResult({
           success: false,
-          error: errorData.message || 'Verbindungstest fehlgeschlagen',
+          error: fnError.message || 'Verbindungstest fehlgeschlagen',
         });
         return;
       }
-
-      const data = response.data as ConnectionTestResult;
       setTestResult(data);
 
       if (data.success) {
@@ -209,19 +188,17 @@ export default function InstagramSettings() {
     setIsTestingPost(true);
     setTestPostResult(null);
     try {
-      const response = await supabase.functions.invoke('test-instagram-post', {
+      const { data, error: fnError } = await invokeFunction('test-instagram-post', {
         body: {}
       });
 
-      if (response.error) {
+      if (fnError) {
         setTestPostResult({
           success: false,
-          error: response.error.message || 'Test-Post fehlgeschlagen',
+          error: fnError.message || 'Test-Post fehlgeschlagen',
         });
         return;
       }
-
-      const data = response.data as TestPostResult;
       setTestPostResult(data);
 
       if (data.success) {

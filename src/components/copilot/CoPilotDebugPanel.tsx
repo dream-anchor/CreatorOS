@@ -11,7 +11,7 @@ import {
   Database,
   Link2
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { de } from "date-fns/locale";
@@ -44,7 +44,7 @@ export function CoPilotDebugPanel({ data }: CoPilotDebugPanelProps) {
   const handleForceQueue = async () => {
     setIsForcing(true);
     try {
-      const { data: result, error } = await supabase.functions.invoke("process-reply-queue");
+      const { data: result, error } = await invokeFunction("process-reply-queue");
       if (error) throw error;
       toast.success(`Queue verarbeitet! ${result?.processed || 0} gesendet.`);
     } catch (error) {

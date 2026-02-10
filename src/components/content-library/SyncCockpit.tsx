@@ -9,7 +9,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPatch } from "@/lib/api";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 import { de } from "date-fns/locale";
@@ -51,28 +51,21 @@ export function SyncCockpit({ userId }: SyncCockpitProps) {
   const loadSyncData = async () => {
     try {
       // Load settings
-      const { data: settings } = await supabase
-        .from("settings")
-        .select("auto_sync_enabled, last_sync_at")
-        .eq("user_id", userId)
-        .maybeSingle();
+      const settings = await apiGet<{ auto_sync_enabled?: boolean; last_sync_at?: string }>("/api/settings");
 
       if (settings) {
         setAutoSyncEnabled(settings.auto_sync_enabled ?? true);
-        setLastSyncAt(settings.last_sync_at);
+        setLastSyncAt(settings.last_sync_at || null);
       }
 
       // Load sync logs
-      const { data: logs } = await supabase
-        .from("logs")
-        .select("*")
-        .eq("user_id", userId)
-        .in("event_type", ["instagram_history_imported", "instagram_smart_sync", "instagram_sync_error"])
-        .order("created_at", { ascending: false })
-        .limit(10);
+      const logs = await apiGet<SyncLog[]>("/api/logs", {
+        event_types: "instagram_history_imported,instagram_smart_sync,instagram_sync_error",
+        limit: "10",
+      });
 
       if (logs) {
-        setSyncLogs(logs as SyncLog[]);
+        setSyncLogs(logs);
       }
     } catch (error) {
       console.error("Error loading sync data:", error);
@@ -84,12 +77,7 @@ export function SyncCockpit({ userId }: SyncCockpitProps) {
   const toggleAutoSync = async (enabled: boolean) => {
     setToggling(true);
     try {
-      const { error } = await supabase
-        .from("settings")
-        .update({ auto_sync_enabled: enabled })
-        .eq("user_id", userId);
-
-      if (error) throw error;
+      await apiPatch("/api/settings", { auto_sync_enabled: enabled });
 
       setAutoSyncEnabled(enabled);
       toast.success(enabled ? "Automatischer Import aktiviert" : "Automatischer Import pausiert");

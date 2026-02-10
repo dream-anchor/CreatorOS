@@ -3,7 +3,7 @@ import { GlobalLayout } from "@/components/GlobalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, invokeFunction } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Topic, Post, DraftGenerationResult, TopPerformingPost, RemasterResult } from "@/types/database";
 import { toast } from "sonner";
@@ -116,13 +116,8 @@ export default function GeneratorPage() {
 
   const loadTopics = async () => {
     try {
-      const { data, error } = await supabase
-        .from("topics")
-        .select("*")
-        .order("priority", { ascending: false });
-
-      if (error) throw error;
-      setTopics((data as Topic[]) || []);
+      const data = await apiGet<Topic[]>("/api/training/topics", { order: "priority:desc" });
+      setTopics(data || []);
     } catch (error: any) {
       toast.error("Fehler: " + error.message);
     } finally {
@@ -133,7 +128,7 @@ export default function GeneratorPage() {
   const loadRemixCandidates = async () => {
     setLoadingCandidates(true);
     try {
-      const { data, error } = await supabase.functions.invoke("generate-draft", {
+      const { data, error } = await invokeFunction("generate-draft", {
         body: { get_remix_candidates: true },
       });
 
@@ -164,8 +159,8 @@ export default function GeneratorPage() {
     try {
       const postType = POST_TYPES.find(t => t.id === selectedPostType);
       
-      const { data, error } = await supabase.functions.invoke("generate-draft", {
-        body: { 
+      const { data, error } = await invokeFunction("generate-draft", {
+        body: {
           topic_id: selectedTopicId,
           post_type: selectedPostType,
           post_structure: postType?.structure,
@@ -201,8 +196,8 @@ export default function GeneratorPage() {
     setWizardStep("remix_generate");
 
     try {
-      const { data, error } = await supabase.functions.invoke("generate-draft", {
-        body: { 
+      const { data, error } = await invokeFunction("generate-draft", {
+        body: {
           remix_mode: true,
           remix_post_id: selectedRemixPost.id,
           model: selectedModel,

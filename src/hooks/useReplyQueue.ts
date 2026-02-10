@@ -1,10 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet } from "@/lib/api";
 
 interface QueuedCommentIds {
   pending: Set<string>;
   waiting: Set<string>;
   failed: Set<string>;
+}
+
+interface QueueItem {
+  comment_id: string;
+  status: string;
+  scheduled_for: string | null;
 }
 
 export function useReplyQueue() {
@@ -17,12 +23,9 @@ export function useReplyQueue() {
 
   const loadQueuedComments = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from("comment_reply_queue")
-        .select("comment_id, status, scheduled_for")
-        .in("status", ["pending", "waiting_for_post", "failed"]);
-
-      if (error) throw error;
+      const data = await apiGet<QueueItem[]>("/api/community/reply-queue", {
+        status: "pending,waiting_for_post,failed",
+      });
 
       const pending = new Set<string>();
       const waiting = new Set<string>();
@@ -31,7 +34,7 @@ export function useReplyQueue() {
 
       (data || []).forEach((item) => {
         if (!item.comment_id) return;
-        
+
         if (item.status === "pending") {
           pending.add(item.comment_id);
           if (item.scheduled_for) {
@@ -54,24 +57,11 @@ export function useReplyQueue() {
   useEffect(() => {
     loadQueuedComments();
 
-    // Subscribe to realtime changes
-    const channel = supabase
-      .channel("queue-status-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "comment_reply_queue",
-        },
-        () => {
-          loadQueuedComments();
-        }
-      )
-      .subscribe();
+    // Poll for changes every 30 seconds (replaces Supabase Realtime)
+    const interval = setInterval(loadQueuedComments, 30000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [loadQueuedComments]);
 

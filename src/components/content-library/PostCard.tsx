@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 import {
   TrendingUp,
   Heart,
@@ -60,13 +61,13 @@ export function PostCard({
     setRefreshing(true);
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const token = getToken();
+      if (!token) {
         toast.error("Nicht angemeldet");
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke('refresh-media-url', {
+      const { data, error } = await invokeFunction('refresh-media-url', {
         body: {
           post_id: post.id,
           ig_media_id: post.ig_media_id,

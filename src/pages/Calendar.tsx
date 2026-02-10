@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiPatch, apiDelete, getPresignedUrl, uploadToR2, deleteFromR2 } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Post, Asset } from "@/types/database";
 import { toast } from "sonner";
@@ -92,31 +92,18 @@ export default function CalendarPage() {
           const ext = file.name.split(".").pop();
           const path = `${user.id}/${expandedPost.id}/${crypto.randomUUID()}.${ext}`;
 
-          const { error: uploadError } = await supabase.storage
-            .from("post-assets")
-            .upload(path, file);
+          const { urls } = await getPresignedUrl([{ fileName: path, contentType: file.type, folder: "post-assets" }]);
+          await uploadToR2(urls[0].uploadUrl, file, file.type);
 
-          if (uploadError) throw uploadError;
+          const newAsset = await apiPost<Asset>("/api/posts/assets", {
+            user_id: user.id,
+            post_id: expandedPost.id,
+            storage_path: urls[0].key,
+            public_url: urls[0].publicUrl,
+            source: "upload",
+          });
 
-          const { data: urlData } = supabase.storage
-            .from("post-assets")
-            .getPublicUrl(path);
-
-          const { data: newAsset, error: dbError } = await supabase
-            .from("assets")
-            .insert({
-              user_id: user.id,
-              post_id: expandedPost.id,
-              storage_path: path,
-              public_url: urlData.publicUrl,
-              source: "upload",
-            })
-            .select()
-            .single();
-
-          if (dbError) throw dbError;
-
-          setPostAssets((prev) => [...prev, newAsset as Asset]);
+          setPostAssets((prev) => [...prev, newAsset]);
         }
         toast.success(`${imageFiles.length} Bild(er) hinzugefügt`);
       } catch (error: any) {
@@ -141,11 +128,7 @@ export default function CalendarPage() {
 
   const loadPosts = async () => {
     try {
-      const { data, error } = await supabase
-        .from("posts")
-        .select("*, assets(*)")
-        .in("status", ["APPROVED", "SCHEDULED", "PUBLISHED"])
-        .order("scheduled_at", { ascending: true });
+      const data = await apiGet<any[]>("/api/posts", { status: "APPROVED,SCHEDULED,PUBLISHED", include: "assets", order: "scheduled_at:asc" });
 
       const postsWithSortedAssets = (data || []).map(post => ({
         ...post,
@@ -210,19 +193,10 @@ export default function CalendarPage() {
   const handleDeleteAsset = async (asset: Asset) => {
     try {
       // Delete from storage
-      const { error: storageError } = await supabase.storage
-        .from("post-assets")
-        .remove([asset.storage_path]);
-
-      if (storageError) throw storageError;
+      await deleteFromR2(asset.storage_path);
 
       // Delete from database
-      const { error: dbError } = await supabase
-        .from("assets")
-        .delete()
-        .eq("id", asset.id);
-
-      if (dbError) throw dbError;
+      await apiDelete(`/api/posts/assets/${asset.id}`);
 
       setPostAssets((prev) => prev.filter((a) => a.id !== asset.id));
       toast.success("Bild gelöscht");
@@ -240,31 +214,18 @@ export default function CalendarPage() {
       const ext = file.name.split(".").pop();
       const path = `${user.id}/${expandedPost.id}/${crypto.randomUUID()}.${ext}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("post-assets")
-        .upload(path, file);
+      const { urls } = await getPresignedUrl([{ fileName: path, contentType: file.type, folder: "post-assets" }]);
+      await uploadToR2(urls[0].uploadUrl, file, file.type);
 
-      if (uploadError) throw uploadError;
+      const newAsset = await apiPost<Asset>("/api/posts/assets", {
+        user_id: user.id,
+        post_id: expandedPost.id,
+        storage_path: urls[0].key,
+        public_url: urls[0].publicUrl,
+        source: "upload",
+      });
 
-      const { data: urlData } = supabase.storage
-        .from("post-assets")
-        .getPublicUrl(path);
-
-      const { data: newAsset, error: dbError } = await supabase
-        .from("assets")
-        .insert({
-          user_id: user.id,
-          post_id: expandedPost.id,
-          storage_path: path,
-          public_url: urlData.publicUrl,
-          source: "upload",
-        })
-        .select()
-        .single();
-
-      if (dbError) throw dbError;
-
-      setPostAssets((prev) => [...prev, newAsset as Asset]);
+      setPostAssets((prev) => [...prev, newAsset]);
       toast.success("Bild hinzugefügt");
     } catch (error: any) {
       toast.error("Fehler beim Hochladen: " + error.message);
@@ -318,35 +279,19 @@ export default function CalendarPage() {
       const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}:00`);
 
       // Save post with updated caption and collaborators
-      const { error } = await supabase
-        .from("posts")
-        .update({
-          status: "SCHEDULED",
-          scheduled_at: scheduledAt.toISOString(),
-          caption: editCaption,
-          collaborators: collaborators,
-        })
-        .eq("id", expandedPost.id);
-
-      if (error) throw error;
+      await apiPatch(`/api/posts/${expandedPost.id}`, {
+        status: "SCHEDULED",
+        scheduled_at: scheduledAt.toISOString(),
+        caption: editCaption,
+        collaborators: collaborators,
+      });
 
       // Save the new asset order by updating created_at timestamps
       // Assets are ordered by created_at in the query, so we update them in sequence
       for (let i = 0; i < postAssets.length; i++) {
         const newTimestamp = new Date(Date.now() + i * 1000).toISOString();
-        await supabase
-          .from("assets")
-          .update({ created_at: newTimestamp })
-          .eq("id", postAssets[i].id);
+        await apiPatch(`/api/posts/assets/${postAssets[i].id}`, { created_at: newTimestamp });
       }
-
-      await supabase.from("logs").insert({
-        user_id: user!.id,
-        post_id: expandedPost.id,
-        event_type: "post_scheduled",
-        level: "info",
-        details: { scheduled_at: scheduledAt.toISOString() },
-      });
 
       toast.success("Post geplant!");
       setExpandedPostId(null);
@@ -363,15 +308,10 @@ export default function CalendarPage() {
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("posts")
-        .update({
-          status: "APPROVED",
-          scheduled_at: null,
-        })
-        .eq("id", expandedPost.id);
-
-      if (error) throw error;
+      await apiPatch(`/api/posts/${expandedPost.id}`, {
+        status: "APPROVED",
+        scheduled_at: null,
+      });
 
       toast.success("Planung aufgehoben");
       setExpandedPostId(null);
@@ -390,23 +330,12 @@ export default function CalendarPage() {
     try {
       // Delete associated assets first
       for (const asset of postAssets) {
-        await supabase.storage
-          .from("post-assets")
-          .remove([asset.storage_path]);
-        
-        await supabase
-          .from("assets")
-          .delete()
-          .eq("id", asset.id);
+        await deleteFromR2(asset.storage_path);
+        await apiDelete(`/api/posts/assets/${asset.id}`);
       }
 
       // Delete the post
-      const { error } = await supabase
-        .from("posts")
-        .delete()
-        .eq("id", expandedPost.id);
-
-      if (error) throw error;
+      await apiDelete(`/api/posts/${expandedPost.id}`);
 
       toast.success("Post gelöscht");
       setExpandedPostId(null);
@@ -473,15 +402,10 @@ export default function CalendarPage() {
 
       const newStatus = post.status === "APPROVED" ? "SCHEDULED" : post.status;
 
-      const { error } = await supabase
-        .from("posts")
-        .update({
-          scheduled_at: newScheduledAt.toISOString(),
-          status: newStatus,
-        })
-        .eq("id", post.id);
-
-      if (error) throw error;
+      await apiPatch(`/api/posts/${post.id}`, {
+        scheduled_at: newScheduledAt.toISOString(),
+        status: newStatus,
+      });
 
       toast.success(`Post auf ${format(targetDay, "d. MMM", { locale: de })} verschoben`);
       loadPosts();

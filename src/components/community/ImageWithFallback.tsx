@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Camera, RefreshCw } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface ImageWithFallbackProps {
@@ -29,7 +29,7 @@ export function ImageWithFallback({
     if (!postId || !igMediaId) return null;
 
     try {
-      const { data, error } = await supabase.functions.invoke('refresh-media-url', {
+      const { data, error } = await invokeFunction<any>('refresh-media-url', {
         body: { post_id: postId, ig_media_id: igMediaId }
       });
 

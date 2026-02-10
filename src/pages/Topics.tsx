@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiPatch, apiDelete, invokeFunction } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Topic } from "@/types/database";
 import { toast } from "sonner";
@@ -78,13 +78,8 @@ export default function TopicsPage() {
 
   const loadTopics = async () => {
     try {
-      const { data, error } = await supabase
-        .from("topics")
-        .select("*")
-        .order("priority", { ascending: false });
-
-      if (error) throw error;
-      setTopics((data as Topic[]) || []);
+      const data = await apiGet<Topic[]>("/api/training/topics", { order: "priority:desc" });
+      setTopics(data || []);
     } catch (error: any) {
       toast.error("Fehler: " + error.message);
     } finally {
@@ -142,15 +137,10 @@ export default function TopicsPage() {
       };
 
       if (editingTopic) {
-        const { error } = await supabase
-          .from("topics")
-          .update(topicData)
-          .eq("id", editingTopic.id);
-        if (error) throw error;
+        await apiPatch(`/api/training/topics/${editingTopic.id}`, topicData);
         toast.success("Thema aktualisiert");
       } else {
-        const { error } = await supabase.from("topics").insert(topicData);
-        if (error) throw error;
+        await apiPost("/api/training/topics", topicData);
         toast.success("Thema erstellt");
       }
 
@@ -167,8 +157,7 @@ export default function TopicsPage() {
     if (!confirm("Thema wirklich löschen?")) return;
 
     try {
-      const { error } = await supabase.from("topics").delete().eq("id", id);
-      if (error) throw error;
+      await apiDelete(`/api/training/topics/${id}`);
       toast.success("Thema gelöscht");
       loadTopics();
     } catch (error: any) {
@@ -197,8 +186,7 @@ export default function TopicsPage() {
         };
       });
 
-      const { error } = await supabase.from("topics").insert(newTopics);
-      if (error) throw error;
+      await apiPost("/api/training/topics", newTopics);
 
       toast.success(`${newTopics.length} Themen importiert`);
       setCsvDialogOpen(false);
@@ -225,14 +213,7 @@ export default function TopicsPage() {
       // Search posts by caption containing the topic keywords
       const keywords = wizardTopic.toLowerCase().split(' ');
       
-      const { data: posts, error } = await supabase
-        .from("posts")
-        .select("id, caption, created_at")
-        .not("caption", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
+      const posts = await apiGet<any[]>("/api/posts", { fields: "id,caption,created_at", has_caption: "true", order: "created_at:desc", limit: "50" });
 
       // Filter posts that contain any of the keywords
       const matchingPosts = (posts || [])
@@ -265,15 +246,15 @@ export default function TopicsPage() {
     setWizardStep('research');
 
     try {
-      const { data, error } = await supabase.functions.invoke('topic-research', {
-        body: { 
+      const { data, error } = await invokeFunction<any>('topic-research', {
+        body: {
           topic: wizardTopic,
           context: wizardContext
         }
       });
 
       if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      if (data?.error) throw new Error(data.error);
 
       setResearchResults(data.research);
       setWizardStep('results');
@@ -296,20 +277,14 @@ export default function TopicsPage() {
     setSaving(true);
     try {
       // First, create the topic
-      const { data: topicData, error: topicError } = await supabase
-        .from("topics")
-        .insert({
-          title: wizardTopic,
-          description: `KI-generierte Ideen zum Thema "${wizardTopic}"`,
-          keywords: [wizardTopic.toLowerCase()],
-          priority: 3,
-          evergreen: false,
-          user_id: user!.id,
-        })
-        .select()
-        .single();
-
-      if (topicError) throw topicError;
+      const topicData = await apiPost<{ id: string }>("/api/training/topics", {
+        title: wizardTopic,
+        description: `KI-generierte Ideen zum Thema "${wizardTopic}"`,
+        keywords: [wizardTopic.toLowerCase()],
+        priority: 3,
+        evergreen: false,
+        user_id: user!.id,
+      });
 
       // Create drafts for selected ideas
       const selectedIdeasArray = Array.from(selectedIdeas);
@@ -324,11 +299,7 @@ export default function TopicsPage() {
         };
       });
 
-      const { error: draftsError } = await supabase
-        .from("posts")
-        .insert(drafts);
-
-      if (draftsError) throw draftsError;
+      await apiPost("/api/posts", drafts);
 
       toast.success(`Thema und ${selectedIdeasArray.length} Entwürfe erstellt!`);
       setWizardOpen(false);
@@ -346,32 +317,22 @@ export default function TopicsPage() {
     setSaving(true);
     try {
       // First, create the topic if it doesn't exist
-      const { data: topicData, error: topicError } = await supabase
-        .from("topics")
-        .insert({
-          title: wizardTopic,
-          description: `Recycling-Thema basierend auf Archiv`,
-          keywords: [wizardTopic.toLowerCase()],
-          priority: 3,
-          evergreen: false,
-          user_id: user!.id,
-        })
-        .select()
-        .single();
-
-      if (topicError) throw topicError;
+      const topicData = await apiPost<{ id: string }>("/api/training/topics", {
+        title: wizardTopic,
+        description: `Recycling-Thema basierend auf Archiv`,
+        keywords: [wizardTopic.toLowerCase()],
+        priority: 3,
+        evergreen: false,
+        user_id: user!.id,
+      });
 
       // Create a new draft inspired by the old post
-      const { error: draftError } = await supabase
-        .from("posts")
-        .insert({
-          user_id: user!.id,
-          topic_id: topicData.id,
-          caption: `[RECYCLING-IDEE basierend auf altem Post]\n\nOriginal:\n${post.caption}\n\n---\nNEUE VERSION:\n[Hier deine neue Version schreiben]`,
-          status: 'IDEA' as const,
-        });
-
-      if (draftError) throw draftError;
+      await apiPost("/api/posts", {
+        user_id: user!.id,
+        topic_id: topicData.id,
+        caption: `[RECYCLING-IDEE basierend auf altem Post]\n\nOriginal:\n${post.caption}\n\n---\nNEUE VERSION:\n[Hier deine neue Version schreiben]`,
+        status: 'IDEA' as const,
+      });
 
       toast.success("Als Entwurf gespeichert!");
       setWizardOpen(false);

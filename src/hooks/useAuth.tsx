@@ -1,66 +1,34 @@
 import { useSyncExternalStore } from "react";
-import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  getUser,
+  isLoading,
+  onAuthChange,
+  type AuthUser,
+} from "@/lib/auth";
 
-// Cache for session state to prevent flash on page reload
-let cachedSession: Session | null = null;
-let cachedUser: User | null = null;
-let isInitialized = false;
-let listeners: Set<() => void> = new Set();
+interface AuthState {
+  user: AuthUser | null;
+  loading: boolean;
+}
 
-// Cached snapshot object - only recreate when values change
-let cachedSnapshot = { user: cachedUser, session: cachedSession, loading: !isInitialized };
+let cachedSnapshot: AuthState = { user: getUser(), loading: isLoading() };
 
 function updateSnapshot() {
-  cachedSnapshot = { user: cachedUser, session: cachedSession, loading: !isInitialized };
+  cachedSnapshot = { user: getUser(), loading: isLoading() };
 }
 
 function subscribe(callback: () => void) {
-  listeners.add(callback);
-  return () => listeners.delete(callback);
+  const unsubscribe = onAuthChange(() => {
+    updateSnapshot();
+    callback();
+  });
+  return unsubscribe;
 }
 
 function getSnapshot() {
   return cachedSnapshot;
 }
 
-// Initialize auth state once
-if (!isInitialized) {
-  // Check localStorage for existing session hint
-  const storedSession = localStorage.getItem("sb-utecdkwvjraucimdflnw-auth-token");
-  if (storedSession) {
-    try {
-      const parsed = JSON.parse(storedSession);
-      if (parsed?.user) {
-        cachedUser = parsed.user;
-        cachedSession = parsed;
-        updateSnapshot();
-      }
-    } catch (e) {
-      // Ignore parse errors
-    }
-  }
-
-  // Set up auth listener
-  supabase.auth.onAuthStateChange((event, session) => {
-    cachedSession = session;
-    cachedUser = session?.user ?? null;
-    isInitialized = true;
-    updateSnapshot();
-    listeners.forEach(listener => listener());
-  });
-
-  // Get actual session
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    cachedSession = session;
-    cachedUser = session?.user ?? null;
-    isInitialized = true;
-    updateSnapshot();
-    listeners.forEach(listener => listener());
-  });
-}
-
 export function useAuth() {
-  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  return state;
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

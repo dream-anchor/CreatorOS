@@ -4,7 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiPatch, apiDelete, invokeFunction } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, PanInfo } from "framer-motion";
@@ -97,6 +98,7 @@ interface AnsweredByIgnoreAccount {
 
 export default function Community() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { isGenerating, progress, startGeneration, cancelGeneration } = useGenerationContext();
   
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
@@ -112,12 +114,7 @@ export default function Community() {
   const { data: emojiNogoTerms = [], refetch: refetchEmoji } = useQuery({
     queryKey: ['emoji-nogo-terms'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("emoji_nogo_terms")
-        .select("id, term")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as EmojiNogoTerm[];
+      return apiGet<EmojiNogoTerm[]>("/api/emoji-nogo-terms");
     },
   });
 
@@ -125,12 +122,7 @@ export default function Community() {
   const { data: blacklistTopics = [], refetch: refetchBlacklist } = useQuery({
     queryKey: ['blacklist-topics'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("blacklist_topics")
-        .select("id, topic")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as BlacklistTopic[];
+      return apiGet<BlacklistTopic[]>("/api/blacklist-topics");
     },
   });
 
@@ -138,12 +130,7 @@ export default function Community() {
   const { data: answeredByIgnoreAccounts = [], refetch: refetchIgnoreAccounts } = useQuery({
     queryKey: ['answered-by-ignore-accounts'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("answered_by_ignore_accounts")
-        .select("id, username")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as AnsweredByIgnoreAccount[];
+      return apiGet<AnsweredByIgnoreAccount[]>("/api/answered-by-ignore-accounts");
     },
   });
 
@@ -154,59 +141,8 @@ export default function Community() {
   const { data: rawComments = [], isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['community-comments'],
     queryFn: async () => {
-      // First fetch comments - get all unreplied comments
-      const { data: commentsData, error: commentsError } = await supabase
-        .from("instagram_comments")
-        .select(`
-          id, 
-          comment_text, 
-          commenter_username, 
-          comment_timestamp, 
-          ai_reply_suggestion, 
-          ig_comment_id, 
-          ig_media_id,
-          sentiment_score,
-          is_critical,
-          replied_by_usernames
-        `)
-        .eq("is_replied", false)
-        .eq("is_hidden", false)
-        .order("comment_timestamp", { ascending: false });
-      
-      if (commentsError) throw commentsError;
-      
-      // Get unique ig_media_ids
-      const igMediaIds = [...new Set(commentsData.map(c => c.ig_media_id).filter(Boolean))];
-      
-      // Fetch posts by ig_media_id
-      let postsMap: Record<string, { id: string; caption: string | null; original_media_url: string | null; original_ig_permalink: string | null; published_at: string | null }> = {};
-      
-      if (igMediaIds.length > 0) {
-        const { data: postsData, error: postsError } = await supabase
-          .from("posts")
-          .select("id, caption, original_media_url, original_ig_permalink, ig_media_id, published_at")
-          .in("ig_media_id", igMediaIds);
-        
-        if (!postsError && postsData) {
-          postsData.forEach(post => {
-            if (post.ig_media_id) {
-              postsMap[post.ig_media_id] = {
-                id: post.id,
-                caption: post.caption,
-                original_media_url: post.original_media_url,
-                original_ig_permalink: post.original_ig_permalink,
-                published_at: post.published_at,
-              };
-            }
-          });
-        }
-      }
-      
-      // Merge posts into comments
-      return commentsData.map(comment => ({
-        ...comment,
-        post: postsMap[comment.ig_media_id] || null,
-      })) as Comment[];
+      // Fetch unreplied, non-hidden comments with their posts via API
+      return apiGet<Comment[]>("/api/community/comments", { is_replied: "false", is_hidden: "false" });
     },
     staleTime: 30000,
   });
@@ -313,19 +249,15 @@ export default function Community() {
   // Handlers for rules config
   const handleAddEmojiNogoTerms = async (terms: string[]) => {
     try {
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) return;
+      if (!user) return;
 
       const inserts = terms.map(term => ({
-        user_id: user.user!.id,
+        user_id: user.id,
         term,
       }));
 
-      const { error } = await supabase
-        .from("emoji_nogo_terms")
-        .insert(inserts);
+      await apiPost("/api/emoji-nogo-terms", inserts);
 
-      if (error) throw error;
       refetchEmoji();
       toast.success(`${terms.length} Begriff(e) hinzugefügt`);
     } catch (err) {
@@ -336,12 +268,8 @@ export default function Community() {
 
   const handleRemoveEmojiNogoTerm = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from("emoji_nogo_terms")
-        .delete()
-        .eq("id", id);
+      await apiDelete(`/api/emoji-nogo-terms/${id}`);
 
-      if (error) throw error;
       refetchEmoji();
     } catch (err) {
       console.error("Remove emoji nogo error:", err);
@@ -351,19 +279,15 @@ export default function Community() {
 
   const handleAddBlacklistTopics = async (topics: string[]) => {
     try {
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) return;
+      if (!user) return;
 
       const inserts = topics.map(topic => ({
-        user_id: user.user!.id,
+        user_id: user.id,
         topic,
       }));
 
-      const { error } = await supabase
-        .from("blacklist_topics")
-        .insert(inserts);
+      await apiPost("/api/blacklist-topics", inserts);
 
-      if (error) throw error;
       refetchBlacklist();
       toast.success(`${topics.length} Thema/Themen hinzugefügt`);
     } catch (err) {
@@ -374,12 +298,8 @@ export default function Community() {
 
   const handleRemoveBlacklistTopic = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from("blacklist_topics")
-        .delete()
-        .eq("id", id);
+      await apiDelete(`/api/blacklist-topics/${id}`);
 
-      if (error) throw error;
       refetchBlacklist();
     } catch (err) {
       console.error("Remove blacklist topic error:", err);
@@ -390,19 +310,15 @@ export default function Community() {
   // Handlers for answered_by_ignore_accounts
   const handleAddAnsweredByIgnoreAccounts = async (usernames: string[]) => {
     try {
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) return;
+      if (!user) return;
 
       const inserts = usernames.map(username => ({
-        user_id: user.user!.id,
+        user_id: user.id,
         username: username.toLowerCase(),
       }));
 
-      const { error } = await supabase
-        .from("answered_by_ignore_accounts")
-        .insert(inserts);
+      await apiPost("/api/answered-by-ignore-accounts", inserts);
 
-      if (error) throw error;
       refetchIgnoreAccounts();
       toast.success(`${usernames.length} Account(s) hinzugefügt`);
     } catch (err) {
@@ -413,12 +329,8 @@ export default function Community() {
 
   const handleRemoveAnsweredByIgnoreAccount = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from("answered_by_ignore_accounts")
-        .delete()
-        .eq("id", id);
+      await apiDelete(`/api/answered-by-ignore-accounts/${id}`);
 
-      if (error) throw error;
       refetchIgnoreAccounts();
     } catch (err) {
       console.error("Remove ignore account error:", err);
@@ -493,7 +405,7 @@ export default function Community() {
     toast.info("🔄 Lade Kommentare von Instagram...");
     
     try {
-      const { error } = await supabase.functions.invoke("fetch-comments");
+      const { error } = await invokeFunction("fetch-comments");
       if (error) throw error;
       
       toast.success("✅ Kommentare geladen!");
@@ -525,24 +437,13 @@ export default function Community() {
     setSendProgress({ current: 0, total: toSend.length });
 
     try {
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) throw new Error("Nicht eingeloggt");
+      if (!user) throw new Error("Nicht eingeloggt");
 
       // Get next scheduled post for Golden Window
-      const { data: nextPost } = await supabase
-        .from("posts")
-        .select("scheduled_at")
-        .gt("scheduled_at", new Date().toISOString())
-        .order("scheduled_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+      const nextPost = await apiGet<{ scheduled_at: string } | null>("/api/posts/next-scheduled");
 
       // Get existing pending count for alternating
-      const { count: existingCount } = await supabase
-        .from("comment_reply_queue")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.user.id)
-        .eq("status", "pending");
+      const { count: existingCount } = await apiGet<{ count: number }>("/api/community/reply-queue/pending-count");
 
       let sentCount = 0;
       let errorCount = 0;
@@ -550,7 +451,7 @@ export default function Community() {
       for (let i = 0; i < toSend.length; i++) {
         const comment = toSend[i];
         const replyText = replyTexts[comment.id]?.trim();
-        
+
         if (!replyText) continue;
 
         setSendProgress({ current: i + 1, total: toSend.length });
@@ -563,32 +464,28 @@ export default function Community() {
             const postTime = new Date(nextPost.scheduled_at);
             const currentIndex = (existingCount || 0) + i;
             const isEven = currentIndex % 2 === 0;
-            const targetTime = isEven 
-              ? subMinutes(postTime, 15 + Math.floor(i / 2) * 5) 
+            const targetTime = isEven
+              ? subMinutes(postTime, 15 + Math.floor(i / 2) * 5)
               : addMinutes(postTime, 15 + Math.floor(i / 2) * 5);
             scheduledFor = targetTime.toISOString();
             status = "pending";
           }
 
           // Add to reply queue
-          const { error: queueError } = await supabase
-            .from("comment_reply_queue")
-            .insert({
-              user_id: user.user.id,
-              ig_comment_id: comment.ig_comment_id,
-              comment_id: comment.id,
-              reply_text: replyText,
-              status,
-              scheduled_for: scheduledFor,
-            });
-
-          if (queueError) throw queueError;
+          await apiPost("/api/community/reply-queue", {
+            user_id: user.id,
+            ig_comment_id: comment.ig_comment_id,
+            comment_id: comment.id,
+            reply_text: replyText,
+            status,
+            scheduled_for: scheduledFor,
+          });
 
           // Mark comment as replied
-          await supabase
-            .from("instagram_comments")
-            .update({ is_replied: true, ai_reply_suggestion: replyText })
-            .eq("id", comment.id);
+          await apiPatch(`/api/community/comments/${comment.id}`, {
+            is_replied: true,
+            ai_reply_suggestion: replyText,
+          });
 
           sentCount++;
         } catch (err) {
@@ -628,37 +525,26 @@ export default function Community() {
     setSendingReply(comment.id);
     
     try {
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) throw new Error("Nicht eingeloggt");
+      if (!user) throw new Error("Nicht eingeloggt");
 
       // Get next scheduled post for Golden Window
-      const { data: nextPost } = await supabase
-        .from("posts")
-        .select("scheduled_at")
-        .gt("scheduled_at", new Date().toISOString())
-        .order("scheduled_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+      const nextPost = await apiGet<{ scheduled_at: string } | null>("/api/posts/next-scheduled");
 
       let scheduledFor: string | null = null;
       let schedulingInfo = "sofort";
 
       if (nextPost?.scheduled_at) {
         const postTime = new Date(nextPost.scheduled_at);
-        
+
         // Get count of existing pending replies to alternate
-        const { count } = await supabase
-          .from("comment_reply_queue")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", user.user.id)
-          .eq("status", "pending");
+        const { count } = await apiGet<{ count: number }>("/api/community/reply-queue/pending-count");
 
         // Alternate: even = before, odd = after
         const isEven = (count || 0) % 2 === 0;
-        const targetTime = isEven 
-          ? subMinutes(postTime, 15) 
+        const targetTime = isEven
+          ? subMinutes(postTime, 15)
           : addMinutes(postTime, 15);
-        
+
         scheduledFor = targetTime.toISOString();
         schedulingInfo = `${format(targetTime, "HH:mm", { locale: de })} (${isEven ? "vor" : "nach"} Post)`;
       }
@@ -666,24 +552,20 @@ export default function Community() {
       // Add to reply queue with scheduling
       // If no post scheduled, use waiting_for_post status (trigger will activate on post schedule)
       const status = scheduledFor ? "pending" : "waiting_for_post";
-      const { error: queueError } = await supabase
-        .from("comment_reply_queue")
-        .insert({
-          user_id: user.user.id,
-          ig_comment_id: comment.ig_comment_id,
-          comment_id: comment.id,
-          reply_text: replyText,
-          status,
-          scheduled_for: scheduledFor,
-        });
-      
-      if (queueError) throw queueError;
-      
+      await apiPost("/api/community/reply-queue", {
+        user_id: user.id,
+        ig_comment_id: comment.ig_comment_id,
+        comment_id: comment.id,
+        reply_text: replyText,
+        status,
+        scheduled_for: scheduledFor,
+      });
+
       // Mark comment as replied
-      await supabase
-        .from("instagram_comments")
-        .update({ is_replied: true, ai_reply_suggestion: replyText })
-        .eq("id", comment.id);
+      await apiPatch(`/api/community/comments/${comment.id}`, {
+        is_replied: true,
+        ai_reply_suggestion: replyText,
+      });
       
       toast.success(scheduledFor 
         ? `✅ Geplant für ${schedulingInfo}` 
@@ -715,7 +597,7 @@ export default function Community() {
     setHidingComment(commentId);
     
     try {
-      const { data, error } = await supabase.functions.invoke("moderate-comment", {
+      const { data, error } = await invokeFunction("moderate-comment", {
         body: { comment_id: commentId, action: "hide" },
       });
       
@@ -743,7 +625,7 @@ export default function Community() {
     setBlockingUser(commentId);
     
     try {
-      const { data, error } = await supabase.functions.invoke("moderate-comment", {
+      const { data, error } = await invokeFunction("moderate-comment", {
         body: { comment_id: commentId, action: "block" },
       });
       
@@ -813,18 +695,17 @@ export default function Community() {
     }
 
     try {
-      const { data: user } = await supabase.auth.getUser();
-      if (user.user) {
+      if (user) {
         // Save training data
-        await supabase.from("reply_training_data" as any).insert({
-          user_id: user.user.id,
+        await apiPost("/api/training", {
+          user_id: user.id,
           comment_text: comment.comment_text,
           original_ai_reply: originalAiReply,
           better_reply: betterReply,
           correction_reason: refineReason || "custom",
           correction_note: refineCustomNote
         });
-        
+
         toast.success("Feedback gespeichert & System trainiert 🧠");
       }
       

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, invokeFunction } from "@/lib/api";
+import { getUser } from "@/lib/auth";
 
 interface ImportResult {
   success: boolean;
@@ -38,28 +39,27 @@ export function ImportProvider({ children }: { children: ReactNode }) {
   // Load last import status on mount
   React.useEffect(() => {
     const loadLastImport = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getUser();
       if (!user) return;
 
       // Get last sync time
-      const { data: settings } = await supabase
-        .from('settings')
-        .select('last_sync_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      let settings: any = null;
+      try {
+        settings = await apiGet<any>("/api/settings");
+      } catch {}
 
-      if (settings?.last_sync_at) {
-        setLastSyncAt(settings.last_sync_at);
-        
+      if (settings?.settings?.last_sync_at) {
+        setLastSyncAt(settings.settings.last_sync_at);
+
         // Try to get details from logs
-        const { data: logs } = await supabase
-          .from('logs')
-          .select('details, created_at')
-          .eq('user_id', user.id)
-          .in('event_type', ['instagram_history_imported', 'instagram_smart_sync'])
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let logs: any = null;
+        try {
+          const logsArr = await apiGet<any[]>("/api/logs", {
+            event_types: "instagram_history_imported,instagram_smart_sync",
+            limit: "1",
+          });
+          logs = logsArr?.[0] || null;
+        } catch {}
 
         if (logs?.details) {
           const details = logs.details as any;
@@ -128,10 +128,10 @@ export function ImportProvider({ children }: { children: ReactNode }) {
         batchCount++;
         setStatusMessage(`Importiere Batch ${batchCount}... (${totalImported} bisher)`);
         
-        const { data, error } = await supabase.functions.invoke('fetch-instagram-history', {
-          body: { 
+        const { data, error } = await invokeFunction('fetch-instagram-history', {
+          body: {
             cursor: nextCursor,
-            mode: 'full' 
+            mode: 'full'
           }
         });
 
@@ -184,7 +184,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
         setStatusMessage("Analysiere Stil-DNA...");
         
         try {
-          const { error: analyzeError } = await supabase.functions.invoke('analyze-style', {});
+          const { error: analyzeError } = await invokeFunction('analyze-style', { body: {} });
           if (!analyzeError) {
             toast.success("Stil-Profil aktualisiert!");
           }

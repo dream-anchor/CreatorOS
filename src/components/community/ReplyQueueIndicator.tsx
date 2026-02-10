@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiDelete, invokeFunction, apiPatch } from "@/lib/api";
 import { toast } from "sonner";
 import { Send, Clock, AlertCircle, CheckCircle2, Zap, RefreshCw, Trash2, Pencil, X, Check } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
@@ -82,13 +82,9 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
   const loadQueue = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("comment_reply_queue")
-        .select("*")
-        .in("status", ["pending", "waiting_for_post", "failed"])
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
+      const data = await apiGet<QueueItem[]>("/api/community/queue-reply", {
+        status: "pending,waiting_for_post,failed",
+      });
       setQueueItems(data || []);
     } catch (err) {
       console.error("Error loading queue:", err);
@@ -100,9 +96,7 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
   // Load emoji nogo terms
   const loadEmojiNogoTerms = useCallback(async () => {
     try {
-      const { data } = await supabase
-        .from("emoji_nogo_terms")
-        .select("term");
+      const data = await apiGet<Array<{ term: string }>>("/api/settings/emoji-nogo-terms");
       setEmojiNogoTerms(data?.map((t) => t.term) || []);
     } catch (err) {
       console.error("Error loading emoji nogo terms:", err);
@@ -113,32 +107,21 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
     loadQueue();
     loadEmojiNogoTerms();
     
-    // Subscribe to realtime changes
-    const channel = supabase
-      .channel("reply-queue-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "comment_reply_queue",
-        },
-        () => {
-          loadQueue();
-          onQueueChange?.();
-        }
-      )
-      .subscribe();
+    // Poll for changes instead of realtime subscription
+    const pollInterval = setInterval(() => {
+      loadQueue();
+      onQueueChange?.();
+    }, 15000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
     };
   }, [onQueueChange, loadEmojiNogoTerms]);
 
   const forceProcessQueue = async () => {
     setIsForcing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("process-reply-queue");
+      const { data, error } = await invokeFunction("process-reply-queue");
       
       if (error) throw error;
       
@@ -162,12 +145,7 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
 
   const deleteQueueItem = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from("comment_reply_queue")
-        .delete()
-        .eq("id", id);
-      
-      if (error) throw error;
+      await apiDelete(`/api/community/queue-reply/${id}`);
       
       toast.success("Eintrag gelöscht");
       await loadQueue();
@@ -202,13 +180,8 @@ export function ReplyQueueIndicator({ onQueueChange }: ReplyQueueIndicatorProps)
         toast.info("Verbotene Emojis wurden entfernt");
       }
       
-      const { error } = await supabase
-        .from("comment_reply_queue")
-        .update({ reply_text: sanitizedText })
-        .eq("id", editingId);
-      
-      if (error) throw error;
-      
+      await apiPatch(`/api/community/queue-reply/${editingId}`, { reply_text: sanitizedText });
+
       toast.success("Antwort aktualisiert");
       setEditingId(null);
       setEditingText("");

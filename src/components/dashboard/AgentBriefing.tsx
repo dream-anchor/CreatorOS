@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet } from "@/lib/api";
 import { Link } from "react-router-dom";
 import { 
   MessageCircle, 
@@ -35,44 +35,26 @@ export function AgentBriefing({ userName }: AgentBriefingProps) {
   useEffect(() => {
     loadBriefingData();
 
-    // Subscribe to realtime changes
-    const channel = supabase
-      .channel('briefing-updates')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'comment_reply_queue' },
-        () => loadBriefingData()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'posts' },
-        () => loadBriefingData()
-      )
-      .subscribe();
+    // Poll for changes every 60 seconds (replaces Supabase Realtime)
+    const interval = setInterval(loadBriefingData, 60000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, []);
 
   const loadBriefingData = async () => {
     try {
-      const [queueRes, postsRes] = await Promise.all([
-        supabase
-          .from("comment_reply_queue")
-          .select("id", { count: "exact" })
-          .in("status", ["pending", "waiting_for_post"]),
-        supabase
-          .from("posts")
-          .select("status, scheduled_at"),
+      const [queueData, posts] = await Promise.all([
+        apiGet<{ count: number }>("/api/community/reply-queue/pending-count"),
+        apiGet<Array<{ status: string; scheduled_at: string | null }>>("/api/posts", { fields: "status,scheduled_at" }),
       ]);
 
-      const posts = postsRes.data || [];
-      const scheduledCount = posts.filter(p => p.status === "SCHEDULED").length;
-      const pendingReviewCount = posts.filter(p => p.status === "READY_FOR_REVIEW").length;
+      const scheduledCount = (posts || []).filter(p => p.status === "SCHEDULED").length;
+      const pendingReviewCount = (posts || []).filter(p => p.status === "READY_FOR_REVIEW").length;
 
       // Find next gap in the next 14 days
-      const scheduledDates = posts
+      const scheduledDates = (posts || [])
         .filter(p => p.scheduled_at)
         .map(p => startOfDay(new Date(p.scheduled_at!)).getTime());
 
@@ -89,7 +71,7 @@ export function AgentBriefing({ userName }: AgentBriefingProps) {
       }
 
       setBriefing({
-        queueCount: queueRes.count || 0,
+        queueCount: queueData?.count || 0,
         scheduledCount,
         pendingReviewCount,
         nextGap,

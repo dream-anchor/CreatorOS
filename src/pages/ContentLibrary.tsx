@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, invokeFunction } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
@@ -71,7 +71,7 @@ export default function ContentLibraryPage() {
     
     for (const post of postsToRefresh) {
       try {
-        const { data } = await supabase.functions.invoke('refresh-media-url', {
+        const { data } = await invokeFunction<any>('refresh-media-url', {
           body: {
             post_id: post.id,
             ig_media_id: post.ig_media_id,
@@ -93,15 +93,9 @@ export default function ContentLibraryPage() {
     try {
       if (showRefreshToast) setRefreshing(true);
       
-      const { data, error } = await supabase
-        .from("posts")
-        .select("*")
-        .eq("is_imported", true)
-        .order("likes_count", { ascending: false });
+      const data = await apiGet<Post[]>("/api/posts", { is_imported: "true", order: "likes_count:desc" });
 
-      if (error) throw error;
-      
-      setPosts((data as Post[]) || []);
+      setPosts(data || []);
       setDebugInfo(`Abfrage abgeschlossen: ${data?.length || 0} Posts mit is_imported=true gefunden`);
       
       if (showRefreshToast) {

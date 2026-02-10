@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Check, Edit2, Loader2, X } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiPost } from "@/lib/api";
+import { getUser } from "@/lib/auth";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { de } from "date-fns/locale";
@@ -33,20 +34,14 @@ export function CoPilotCommentCard({ comment, onApprove }: CoPilotCommentCardPro
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from("comment_reply_queue").insert({
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+      const user = getUser();
+      await apiPost("/api/community/queue-reply", {
+        user_id: user?.id,
         ig_comment_id: comment.ig_comment_id,
         comment_id: comment.id,
         reply_text: replyText.trim(),
         status: "pending",
       });
-
-      if (error) throw error;
-
-      await supabase
-        .from("instagram_comments")
-        .update({ is_replied: true, ai_reply_suggestion: replyText.trim() })
-        .eq("id", comment.id);
 
       onApprove(comment.id);
     } catch (error) {

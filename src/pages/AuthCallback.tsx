@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { invokeFunction } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
@@ -55,19 +55,17 @@ const AuthCallback = () => {
         console.log('[AuthCallback] Exchanging code for token...');
         console.log('[AuthCallback] redirect_uri:', redirectUri);
 
-        const response = await supabase.functions.invoke('instagram-auth', {
-          body: { 
+        const { data, error: fnError } = await invokeFunction('instagram-auth', {
+          body: {
             code,
             redirect_uri: redirectUri
           }
         });
 
-        if (response.error) {
-          console.error('[AuthCallback] Edge function error:', response.error);
-          throw new Error(response.error.message || 'Fehler bei der Authentifizierung');
+        if (fnError) {
+          console.error('[AuthCallback] API error:', fnError);
+          throw new Error(fnError.message || 'Fehler bei der Authentifizierung');
         }
-
-        const data = response.data as any;
         
         if (!data.success) {
           console.error('[AuthCallback] Auth failed:', data);

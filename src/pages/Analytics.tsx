@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, invokeFunction } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2, BarChart3, AlertCircle } from "lucide-react";
 import { subDays, format } from "date-fns";
@@ -50,26 +50,22 @@ export default function AnalyticsPage() {
   }, [user, selectedRange]);
 
   const checkConnection = async () => {
-    const { data } = await supabase
-      .from("meta_connections")
-      .select("id")
-      .eq("user_id", user?.id)
-      .maybeSingle();
-    setHasConnection(!!data);
+    try {
+      const data = await apiGet<{ id?: string } | null>("/api/settings/meta-connection");
+      setHasConnection(!!data?.id);
+    } catch {
+      setHasConnection(false);
+    }
   };
 
   const loadStats = async () => {
     try {
       const startDate = subDays(new Date(), parseInt(selectedRange));
-      
-      const { data, error } = await supabase
-        .from("daily_account_stats")
-        .select("*")
-        .eq("user_id", user?.id)
-        .gte("date", format(startDate, "yyyy-MM-dd"))
-        .order("date", { ascending: true });
 
-      if (error) throw error;
+      const data = await apiGet<DailyStats[]>("/api/analytics/daily-stats", {
+        since: format(startDate, "yyyy-MM-dd"),
+        order: "date:asc",
+      });
       setDailyStats(data || []);
     } catch (error) {
       console.error("Error loading stats:", error);
@@ -82,16 +78,10 @@ export default function AnalyticsPage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await supabase.functions.invoke("fetch-daily-insights", {
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-      });
+      const { data, error } = await invokeFunction("fetch-daily-insights", {});
 
-      if (response.error) {
-        throw new Error(response.error.message);
+      if (error) {
+        throw error;
       }
 
       toast.success("Analytics erfolgreich synchronisiert!");

@@ -17,7 +17,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, invokeFunction } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -55,7 +55,7 @@ export default function MobileUploadTab() {
   const [isLoadingApiKey, setIsLoadingApiKey] = useState(false);
   const [isApiKeyVisible, setIsApiKeyVisible] = useState(false);
 
-  const endpointUrl = `https://utecdkwvjraucimdflnw.supabase.co/functions/v1/shortcut-upload`;
+  const endpointUrl = `${import.meta.env.VITE_API_URL || ''}/api/upload/shortcut-upload`;
 
   // Load upload logs
   useEffect(() => {
@@ -63,18 +63,14 @@ export default function MobileUploadTab() {
 
     const loadLogs = async () => {
       setIsLoadingLogs(true);
-      const { data, error } = await supabase
-        .from("logs")
-        .select("id, created_at, event_type, level, post_id, details")
-        .eq("user_id", user.id)
-        .in("event_type", ["shortcut_upload", "shortcut_upload_error"])
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (error) {
+      try {
+        const data = await apiGet<UploadLogEntry[]>("/api/logs", {
+          event_types: "shortcut_upload,shortcut_upload_error",
+          limit: "10",
+        });
+        setUploadLogs(data || []);
+      } catch (error) {
         console.error("Error loading logs:", error);
-      } else {
-        setUploadLogs((data as UploadLogEntry[]) || []);
       }
       setIsLoadingLogs(false);
     };
@@ -101,26 +97,14 @@ export default function MobileUploadTab() {
     (async () => {
       setIsLoadingApiKey(true);
       try {
-        const { data, error } = await supabase.functions.invoke("get-shortcut-api-key", {
-          method: "GET",
-        });
+        const { data, error } = await invokeFunction("get-shortcut-api-key");
 
         if (!isActive) return;
 
         if (error) {
           console.error("Error loading shortcut API key:", error);
           setApiKey(null);
-          // Show specific error based on status
-          const status = (error as any)?.status;
-          if (status === 401) {
-            toast.error("Bitte erneut einloggen");
-          } else if (status === 403) {
-            toast.error("Kein Zugriff – bitte mit Owner-Konto einloggen");
-          } else if (status === 405) {
-            toast.error("Backend-Methode nicht erlaubt (405)");
-          } else {
-            toast.error("API-Key konnte nicht geladen werden");
-          }
+          toast.error("API-Key konnte nicht geladen werden");
           return;
         }
 
@@ -196,17 +180,13 @@ export default function MobileUploadTab() {
     if (!user) return;
     setIsLoadingLogs(true);
     
-    const { data, error } = await supabase
-      .from("logs")
-      .select("id, created_at, event_type, level, post_id, details")
-      .eq("user_id", user.id)
-      .in("event_type", ["shortcut_upload", "shortcut_upload_error"])
-      .order("created_at", { ascending: false })
-      .limit(10);
-
-    if (!error) {
-      setUploadLogs((data as UploadLogEntry[]) || []);
-    }
+    try {
+      const data = await apiGet<UploadLogEntry[]>("/api/logs", {
+        event_types: "shortcut_upload,shortcut_upload_error",
+        limit: "10",
+      });
+      setUploadLogs(data || []);
+    } catch {}
     setIsLoadingLogs(false);
   };
 

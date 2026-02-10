@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
 
 interface UseImageWithFallbackProps {
   src: string | null | undefined;
@@ -30,7 +30,7 @@ export function useImageWithFallback({
     if (!postId || !igMediaId) return null;
 
     try {
-      const { data, error } = await supabase.functions.invoke('refresh-media-url', {
+      const { data, error } = await invokeFunction('refresh-media-url', {
         body: { post_id: postId, ig_media_id: igMediaId }
       });
 

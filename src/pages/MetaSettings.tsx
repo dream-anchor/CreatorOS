@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiDelete, invokeFunction } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { MetaConnection } from "@/types/database";
 import { toast } from "sonner";
@@ -76,13 +76,8 @@ export default function MetaSettingsPage() {
 
   const loadConnection = async () => {
     try {
-      const { data, error } = await supabase
-        .from("meta_connections")
-        .select("id, user_id, page_id, page_name, ig_user_id, ig_username, token_expires_at, connected_at, updated_at")
-        .maybeSingle();
-
-      if (error) throw error;
-      if (data) setConnection(data as MetaConnection);
+      const data = await apiGet<MetaConnection | null>("/api/settings/meta-connection");
+      if (data) setConnection(data);
     } catch (error: unknown) {
       console.error("Error:", error);
     } finally {
@@ -113,8 +108,8 @@ export default function MetaSettingsPage() {
     setSelectingAccount(account.ig_user_id);
     
     try {
-      const response = await supabase.functions.invoke('instagram-auth', {
-        body: { 
+      const { data, error: fnError } = await invokeFunction('instagram-auth', {
+        body: {
           action: 'select_account',
           selected_account: {
             ...account,
@@ -123,14 +118,12 @@ export default function MetaSettingsPage() {
         }
       });
 
-      if (response.error) {
-        throw new Error(response.error.message || 'Fehler beim Speichern');
+      if (fnError) {
+        throw new Error(fnError.message || 'Fehler beim Speichern');
       }
 
-      const data = response.data as any;
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Speichern fehlgeschlagen');
+      if (!data?.success) {
+        throw new Error(data?.error || 'Speichern fehlgeschlagen');
       }
 
       // Clear stored accounts
@@ -154,12 +147,7 @@ export default function MetaSettingsPage() {
     setDisconnecting(true);
 
     try {
-      const { error } = await supabase
-        .from("meta_connections")
-        .delete()
-        .eq("id", connection.id);
-
-      if (error) throw error;
+      await apiDelete(`/api/settings/meta-connection/${connection.id}`);
 
       setConnection(null);
       toast.success("Verbindung getrennt");

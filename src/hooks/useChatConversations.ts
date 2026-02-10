@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
 
 export interface ChatConversation {
   id: string;
@@ -28,24 +28,10 @@ export function useChatConversations() {
 
   const fetchConversations = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from("chat_conversations")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("updated_at", { ascending: false })
-        .limit(20);
-
-      if (error) {
-        console.error("Error fetching conversations:", error);
-        return;
-      }
-
-      setConversations((data || []) as ChatConversation[]);
+      const data = await apiGet<ChatConversation[]>("/api/chat/conversations");
+      setConversations(data || []);
     } catch (err) {
-      console.error("Error in fetchConversations:", err);
+      console.error("Error fetching conversations:", err);
     } finally {
       setLoading(false);
     }
@@ -57,65 +43,33 @@ export function useChatConversations() {
 
   const createConversation = useCallback(async (title: string): Promise<string | null> => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
+      const data = await apiPost<ChatConversation>("/api/chat/conversations", {
+        title: title.slice(0, 100),
+      });
 
-      const { data, error } = await supabase
-        .from("chat_conversations")
-        .insert({
-          user_id: user.id,
-          title: title.slice(0, 100),
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Error creating conversation:", error);
-        return null;
-      }
-
-      // Refresh the list
       await fetchConversations();
-      return (data as ChatConversation).id;
+      return data.id;
     } catch (err) {
-      console.error("Error in createConversation:", err);
+      console.error("Error creating conversation:", err);
       return null;
     }
   }, [fetchConversations]);
 
   const updateConversationTitle = useCallback(async (id: string, title: string) => {
     try {
-      const { error } = await supabase
-        .from("chat_conversations")
-        .update({ title: title.slice(0, 100) })
-        .eq("id", id);
-
-      if (error) {
-        console.error("Error updating conversation title:", error);
-        return;
-      }
-
+      await apiPatch(`/api/chat/conversations/${id}`, { title: title.slice(0, 100) });
       await fetchConversations();
     } catch (err) {
-      console.error("Error in updateConversationTitle:", err);
+      console.error("Error updating conversation title:", err);
     }
   }, [fetchConversations]);
 
   const deleteConversation = useCallback(async (id: string) => {
     try {
-      const { error } = await supabase
-        .from("chat_conversations")
-        .delete()
-        .eq("id", id);
-
-      if (error) {
-        console.error("Error deleting conversation:", error);
-        return;
-      }
-
+      await apiDelete(`/api/chat/conversations/${id}`);
       await fetchConversations();
     } catch (err) {
-      console.error("Error in deleteConversation:", err);
+      console.error("Error deleting conversation:", err);
     }
   }, [fetchConversations]);
 
@@ -141,20 +95,10 @@ export function useChatMessages(conversationId: string | null) {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
-
-      if (error) {
-        console.error("Error fetching messages:", error);
-        return;
-      }
-
-      setMessages((data || []) as ChatMessage[]);
+      const data = await apiGet<ChatMessage[]>(`/api/chat/conversations/${conversationId}/messages`);
+      setMessages(data || []);
     } catch (err) {
-      console.error("Error in fetchMessages:", err);
+      console.error("Error fetching messages:", err);
     } finally {
       setLoading(false);
     }
@@ -172,36 +116,16 @@ export function useChatMessages(conversationId: string | null) {
     if (!conversationId) return null;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
+      const data = await apiPost<ChatMessage>(`/api/chat/conversations/${conversationId}/messages`, {
+        role,
+        content,
+        attachments: attachments || {},
+      });
 
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .insert({
-          conversation_id: conversationId,
-          user_id: user.id,
-          role,
-          content,
-          attachments: attachments || {},
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Error adding message:", error);
-        return null;
-      }
-
-      // Also update conversation's updated_at
-      await supabase
-        .from("chat_conversations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", conversationId);
-
-      setMessages(prev => [...prev, data as ChatMessage]);
-      return data as ChatMessage;
+      setMessages(prev => [...prev, data]);
+      return data;
     } catch (err) {
-      console.error("Error in addMessage:", err);
+      console.error("Error adding message:", err);
       return null;
     }
   }, [conversationId]);

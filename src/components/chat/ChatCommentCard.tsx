@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Check, Edit2, Loader2, RefreshCw, X } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiPost, invokeFunction } from "@/lib/api";
+import { getUser } from "@/lib/auth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -39,21 +40,14 @@ export function ChatCommentCard({ comment, onApprove }: ChatCommentCardProps) {
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from("comment_reply_queue").insert({
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+      const user = getUser();
+      await apiPost("/api/community/queue-reply", {
+        user_id: user?.id,
         ig_comment_id: comment.ig_comment_id,
         comment_id: comment.id,
         reply_text: replyText.trim(),
         status: "pending",
       });
-
-      if (error) throw error;
-
-      // Mark comment as replied
-      await supabase
-        .from("instagram_comments")
-        .update({ is_replied: true, ai_reply_suggestion: replyText.trim() })
-        .eq("id", comment.id);
 
       onApprove(comment.id);
     } catch (error) {
@@ -67,7 +61,7 @@ export function ChatCommentCard({ comment, onApprove }: ChatCommentCardProps) {
   const handleRegenerate = async () => {
     setIsRegenerating(true);
     try {
-      const { data, error } = await supabase.functions.invoke("regenerate-reply", {
+      const { data, error } = await invokeFunction("regenerate-reply", {
         body: { commentId: comment.id }
       });
 

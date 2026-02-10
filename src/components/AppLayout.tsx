@@ -5,7 +5,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { CoPilot } from "./community/CoPilot";
 import { Button } from "./ui/button";
 import { LogOut } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { signOut } from "@/lib/auth";
 import { toast } from "sonner";
 
 interface AppLayoutProps {
@@ -19,7 +19,7 @@ export function AppLayout({ children, title, description, actions }: AppLayoutPr
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     toast.success("Erfolgreich abgemeldet");
     navigate("/login");
   };

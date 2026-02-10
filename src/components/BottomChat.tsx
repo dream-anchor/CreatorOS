@@ -11,7 +11,7 @@ import {
   Calendar
 } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { parseNavigationIntent } from "@/hooks/useNavigation";
@@ -80,10 +80,12 @@ export function BottomChat() {
 
   // Global drag & drop handler
   useEffect(() => {
+    const isReelsPage = () => window.location.pathname.startsWith('/reels');
+
     const handleDragEnter = (e: DragEvent) => {
-      // Don't handle if calendar dialog is open
-      if (calendarDialogOpenRef.current) return;
-      
+      // Don't handle if calendar dialog is open or on reels page
+      if (calendarDialogOpenRef.current || isReelsPage()) return;
+
       e.preventDefault();
       dragCounterRef.current++;
       if (e.dataTransfer?.types.includes('Files')) {
@@ -92,15 +94,15 @@ export function BottomChat() {
     };
 
     const handleDragOver = (e: DragEvent) => {
-      // Don't handle if calendar dialog is open
-      if (calendarDialogOpenRef.current) return;
+      // Don't handle if calendar dialog is open or on reels page
+      if (calendarDialogOpenRef.current || isReelsPage()) return;
       e.preventDefault();
     };
 
     const handleDragLeave = (e: DragEvent) => {
-      // Don't handle if calendar dialog is open
-      if (calendarDialogOpenRef.current) return;
-      
+      // Don't handle if calendar dialog is open or on reels page
+      if (calendarDialogOpenRef.current || isReelsPage()) return;
+
       e.preventDefault();
       dragCounterRef.current--;
       if (dragCounterRef.current === 0) {
@@ -109,9 +111,9 @@ export function BottomChat() {
     };
 
     const handleDrop = (e: DragEvent) => {
-      // Don't handle if calendar dialog is open - let calendar handle it
-      if (calendarDialogOpenRef.current) return;
-      
+      // Don't handle if calendar dialog is open or on reels page
+      if (calendarDialogOpenRef.current || isReelsPage()) return;
+
       e.preventDefault();
       dragCounterRef.current = 0;
       setIsDragging(false);
@@ -179,7 +181,7 @@ export function BottomChat() {
 
       setLoadingHint("🎨 Analysiere Bilder & erstelle Text...");
 
-      const { data, error } = await supabase.functions.invoke("process-smart-upload", {
+      const { data, error } = await invokeFunction("process-smart-upload", {
         body: {
           files: fileData,
           rawText: rawText,
@@ -229,7 +231,7 @@ export function BottomChat() {
     setIsLoading(true);
     
     try {
-      const { data, error } = await supabase.functions.invoke("analyze-comments");
+      const { data, error } = await invokeFunction("analyze-comments");
       
       if (error) throw error;
       
@@ -315,7 +317,7 @@ export function BottomChat() {
         .concat(userMessage)
         .map(m => ({ role: m.role, content: m.content }));
 
-      const { data, error } = await supabase.functions.invoke("copilot-chat", {
+      const { data, error } = await invokeFunction("copilot-chat", {
         body: { messages: messageHistory },
       });
 

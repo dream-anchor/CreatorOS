@@ -12,7 +12,7 @@ import {
   Check,
   MessageCircle
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -106,7 +106,7 @@ export function DashboardChat({ className, expanded = false }: DashboardChatProp
           content: m.content,
         }));
 
-      const { data, error } = await supabase.functions.invoke("copilot-chat", {
+      const { data, error } = await invokeFunction("copilot-chat", {
         body: { messages: messageHistory },
       });
 

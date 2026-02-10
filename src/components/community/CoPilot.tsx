@@ -5,7 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Sparkles, X, Send, Loader2, ExternalLink, MessageCircle, User, AlertTriangle, Copy, Maximize2, Minimize2, Check } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction, apiPost } from "@/lib/api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { getInstagramUrl } from "@/lib/instagram-utils";
@@ -116,7 +116,7 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
         content: m.content,
       }));
 
-      const { data, error } = await supabase.functions.invoke("copilot-chat", {
+      const { data, error } = await invokeFunction("copilot-chat", {
         body: { messages: messageHistory },
       });
 
@@ -184,12 +184,7 @@ export function CoPilot({ onNavigateToPost, onNavigateToComment }: CoPilotProps)
 
   const handleApproveDraft = async (draftId: string) => {
     try {
-      const { error } = await supabase
-        .from('content_plan')
-        .update({ status: 'approved' })
-        .eq('id', draftId);
-      
-      if (error) throw error;
+      await apiPost(`/api/posts/${draftId}/approve`, { status: 'approved' });
       toast.success("Entwurf genehmigt und eingeplant!");
     } catch (err) {
       toast.error("Fehler beim Genehmigen");

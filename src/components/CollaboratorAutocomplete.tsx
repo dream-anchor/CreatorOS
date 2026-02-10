@@ -3,7 +3,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { X, Plus, Users, Loader2, Check, AlertTriangle, Search } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, invokeFunction } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
@@ -72,14 +73,8 @@ export function CollaboratorAutocomplete({ collaborators, onChange }: Collaborat
   const loadCollaborators = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("collaborators")
-        .select("*")
-        .order("use_count", { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-      setAllCollaborators((data || []) as Collaborator[]);
+      const data = await apiGet<Collaborator[]>("/api/collaborators");
+      setAllCollaborators(data || []);
     } catch (error) {
       console.error("Error loading collaborators:", error);
     } finally {
@@ -97,12 +92,12 @@ export function CollaboratorAutocomplete({ collaborators, onChange }: Collaborat
     setValidationError(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const token = getToken();
+      if (!token) {
         throw new Error("Nicht eingeloggt");
       }
 
-      const response = await supabase.functions.invoke('validate-instagram-user', {
+      const response = await invokeFunction('validate-instagram-user', {
         body: { username: cleanUsername }
       });
 
@@ -145,14 +140,10 @@ export function CollaboratorAutocomplete({ collaborators, onChange }: Collaborat
       
       // If profile was validated, update use_count
       if (profile) {
-        supabase
-          .from("collaborators")
-          .update({ 
-            use_count: allCollaborators.find(c => c.username === cleanUsername)?.use_count ?? 0 + 1,
-            last_used_at: new Date().toISOString()
-          })
-          .eq("username", cleanUsername)
-          .then(() => loadCollaborators());
+        apiPost("/api/collaborators/use", {
+          username: cleanUsername,
+          use_count: (allCollaborators.find(c => c.username === cleanUsername)?.use_count ?? 0) + 1,
+        }).then(() => loadCollaborators());
       }
     }
     setInputValue("");

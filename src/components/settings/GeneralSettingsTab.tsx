@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiDelete } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Loader2, Sliders, Save, Trash2, AlertTriangle } from "lucide-react";
@@ -46,18 +46,15 @@ export default function GeneralSettingsTab() {
 
   const loadData = async () => {
     try {
-      const [settingsRes, profileRes] = await Promise.all([
-        supabase.from("settings").select("*").single(),
-        supabase.from("profiles").select("*").single(),
-      ]);
+      const data = await apiGet<any>("/api/settings");
 
-      if (settingsRes.data) {
-        setSettings(settingsRes.data as Settings);
-        setPostsPerWeek(settingsRes.data.posts_per_week || 3);
+      if (data?.settings) {
+        setSettings(data.settings as Settings);
+        setPostsPerWeek(data.settings.posts_per_week || 3);
       }
-      if (profileRes.data) {
-        setProfile(profileRes.data as Profile);
-        setDisplayName(profileRes.data.display_name || "");
+      if (data?.profile) {
+        setProfile(data.profile as Profile);
+        setDisplayName(data.profile.display_name || "");
       }
     } catch (error) {
       console.error("Error:", error);
@@ -71,33 +68,14 @@ export default function GeneralSettingsTab() {
     setSaving(true);
 
     try {
-      // Update profile - use id as conflict target
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: user.id,
-            display_name: displayName || null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'id' }
-        );
-
-      if (profileError) throw profileError;
-
-      // Update settings - use user_id as conflict target
-      const { error: settingsError } = await supabase
-        .from("settings")
-        .upsert(
-          {
-            user_id: user.id,
-            posts_per_week: postsPerWeek,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' }
-        );
-
-      if (settingsError) throw settingsError;
+      await apiPost("/api/settings", {
+        profile: {
+          display_name: displayName || null,
+        },
+        settings: {
+          posts_per_week: postsPerWeek,
+        },
+      });
 
       toast.success("Einstellungen gespeichert");
     } catch (error: any) {
@@ -114,14 +92,8 @@ export default function GeneralSettingsTab() {
     setDeleting(true);
 
     try {
-      // Delete drafts and scheduled posts (but NOT published or imported)
-      const { error, count } = await supabase
-        .from("posts")
-        .delete({ count: "exact" })
-        .in("status", ["DRAFT", "IDEA", "READY_FOR_REVIEW", "APPROVED", "SCHEDULED", "FAILED", "REJECTED"])
-        .or("is_imported.is.null,is_imported.eq.false");
-
-      if (error) throw error;
+      const result = await apiDelete<{ count: number }>("/api/posts/drafts");
+      const count = result?.count || 0;
 
       toast.success(`Workspace bereinigt – ${count || 0} Entwürfe gelöscht`);
       

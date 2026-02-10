@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPatch } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { BrandRules } from "@/types/database";
 import { Loader2, Plus, X, Sparkles, Brain, CheckCircle2, Clock, Database, ExternalLink, PenLine, AlertCircle, MessageSquare } from "lucide-react";
@@ -88,30 +88,25 @@ export default function BrandPage() {
     setSaveStatus("saving");
 
     try {
-      const { error } = await supabase
-        .from("brand_rules")
-        .update({
-          tone_style: brand.tone_style,
-          do_list: brand.do_list,
-          dont_list: brand.dont_list,
-          emoji_level: brand.emoji_level,
-          hashtag_min: brand.hashtag_min,
-          hashtag_max: brand.hashtag_max,
-          language_primary: brand.language_primary,
-          content_pillars: brand.content_pillars as unknown as null,
-          disclaimers: brand.disclaimers,
-          writing_style: brand.writing_style,
-          example_posts: brand.example_posts,
-          taboo_words: brand.taboo_words,
-          ai_model: brand.ai_model,
-          style_system_prompt: brand.style_system_prompt,
-          reply_style_system_prompt: brand.reply_style_system_prompt,
-          reply_style_description: brand.reply_style_description,
-          formality_mode: brand.formality_mode,
-        })
-        .eq("id", brand.id);
-
-      if (error) throw error;
+      await apiPatch(`/api/settings/brand-rules/${brand.id}`, {
+        tone_style: brand.tone_style,
+        do_list: brand.do_list,
+        dont_list: brand.dont_list,
+        emoji_level: brand.emoji_level,
+        hashtag_min: brand.hashtag_min,
+        hashtag_max: brand.hashtag_max,
+        language_primary: brand.language_primary,
+        content_pillars: brand.content_pillars as unknown as null,
+        disclaimers: brand.disclaimers,
+        writing_style: brand.writing_style,
+        example_posts: brand.example_posts,
+        taboo_words: brand.taboo_words,
+        ai_model: brand.ai_model,
+        style_system_prompt: brand.style_system_prompt,
+        reply_style_system_prompt: brand.reply_style_system_prompt,
+        reply_style_description: brand.reply_style_description,
+        formality_mode: brand.formality_mode,
+      });
       
       setSaveStatus("saved");
       
@@ -129,15 +124,15 @@ export default function BrandPage() {
 
   const loadBrandRules = async () => {
     try {
-      const { data, error } = await supabase
-        .from("brand_rules")
-        .select("*")
-        .single();
-
-      if (error && error.code !== "PGRST116") throw error;
-      if (data) {
-        setBrand(data as BrandRules);
-        isInitialLoad.current = true; // Reset flag after setting data
+      try {
+        const data = await apiGet<BrandRules>("/api/settings/brand-rules");
+        if (data) {
+          setBrand(data);
+          isInitialLoad.current = true; // Reset flag after setting data
+        }
+      } catch (err: any) {
+        // 404 is ok - no brand rules yet
+        if (!err.message?.includes("404")) throw err;
       }
     } catch (error: any) {
       console.error("Fehler beim Laden:", error.message);
@@ -148,13 +143,9 @@ export default function BrandPage() {
 
   const loadPostCount = async () => {
     try {
-      const { count, error } = await supabase
-        .from("posts")
-        .select("*", { count: "exact", head: true })
-        .eq("is_imported", true);
-
-      if (!error && count !== null) {
-        setPostCount(count);
+      const data = await apiGet<{ count: number }>("/api/posts/count", { is_imported: "true" });
+      if (data?.count !== undefined) {
+        setPostCount(data.count);
       }
     } catch (error) {
       console.error("Error loading post count:", error);
@@ -163,13 +154,9 @@ export default function BrandPage() {
 
   const loadReplyCount = async () => {
     try {
-      const { count, error } = await supabase
-        .from("reply_queue")
-        .select("*", { count: "exact", head: true })
-        .or('status.eq.sent,status.eq.imported');
-
-      if (!error && count !== null) {
-        setReplyCount(count);
+      const data = await apiGet<{ count: number }>("/api/community/reply-count", { status: "sent,imported" });
+      if (data?.count !== undefined) {
+        setReplyCount(data.count);
       }
     } catch (error) {
       console.error("Error loading reply count:", error);

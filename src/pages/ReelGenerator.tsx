@@ -1,8 +1,8 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { GlobalLayout } from "@/components/GlobalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiPatch, invokeFunction as apiInvokeFunction } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,8 +15,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  Clock,
   Download,
   Film,
+  FolderOpen,
   Loader2,
   Play,
   Plus,
@@ -28,6 +30,8 @@ import {
   Wand2,
   X,
 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { de } from "date-fns/locale";
 import type {
   VideoProject,
   VideoProjectStatus,
@@ -188,8 +192,53 @@ export default function ReelGenerator() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
 
+  // Project history
+  const [projectHistory, setProjectHistory] = useState<VideoProject[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
   // Render polling
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Load project history on mount
+  useEffect(() => {
+    loadProjectHistory();
+  }, []);
+
+  const loadProjectHistory = async () => {
+    try {
+      const projects = await apiGet<VideoProject[]>("/api/video/projects");
+      setProjectHistory(projects || []);
+    } catch (err) {
+      console.error("[ReelGenerator] Error loading project history:", err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const resumeProject = async (proj: VideoProject) => {
+    setProject(proj);
+
+    if (proj.status === "render_complete" && proj.rendered_video_url) {
+      setWizardStep("render");
+    } else if (proj.status === "segments_ready") {
+      // Load segments and go to segment review
+      try {
+        const fullProject = await apiGet<VideoProject & { segments: VideoSegment[] }>(`/api/video/projects/${proj.id}`);
+        if (fullProject?.segments) setSegments(fullProject.segments);
+        setWizardStep("segments");
+      } catch {
+        toast.error("Segmente konnten nicht geladen werden");
+      }
+    } else if (proj.status === "rendering") {
+      setWizardStep("render");
+      startPolling();
+    } else if (proj.status === "uploaded" && proj.source_video_url && proj.source_duration_ms) {
+      setWizardStep("processing");
+      runProcessing(proj, proj.source_video_url, proj.source_duration_ms);
+    } else if (proj.status === "failed") {
+      toast.error("Dieses Projekt ist fehlgeschlagen: " + (proj.error_message || "Unbekannter Fehler"));
+    }
+  };
 
   // ===== STEP 1: VIDEO UPLOAD =====
 
@@ -226,7 +275,7 @@ export default function ReelGenerator() {
 
       // Step 1: Get presigned URL from R2 Edge Function
       const contentType = file.type || "video/mp4";
-      const { data: presignedData, error: presignedError } = await supabase.functions.invoke(
+      const { data: presignedData, error: presignedError } = await apiInvokeFunction<any>(
         "get-presigned-url",
         {
           body: {
@@ -239,7 +288,7 @@ export default function ReelGenerator() {
         throw new Error(presignedData?.error || presignedError?.message || "Presigned URL fehlgeschlagen");
       }
 
-      const { uploadUrl, publicUrl, r2Key } = presignedData.urls[0];
+      const { uploadUrl, publicUrl, key: r2Key } = presignedData.urls[0];
       console.log(`[ReelGenerator] Uploading to R2: ${r2Key} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
 
       // Step 2: Upload directly to R2 with progress
@@ -248,23 +297,17 @@ export default function ReelGenerator() {
       });
 
       // Step 3: Create project record with R2 URL
-      const { data: projectData, error: projectError } = await supabase
-        .from("video_projects")
-        .insert({
-          user_id: user.id,
-          source_video_path: r2Key,
-          source_video_url: publicUrl,
-          source_duration_ms: durationMs,
-          source_width: width,
-          source_height: height,
-          source_file_size: file.size,
-          status: "uploaded",
-          target_duration_sec: targetDuration,
-        })
-        .select()
-        .single();
-
-      if (projectError) throw projectError;
+      const projectData = await apiPost<any>("/api/video/projects", {
+        user_id: user.id,
+        source_video_path: r2Key,
+        source_video_url: publicUrl,
+        source_duration_ms: durationMs,
+        source_width: width,
+        source_height: height,
+        source_file_size: file.size,
+        status: "uploaded",
+        target_duration_sec: targetDuration,
+      });
 
       const proj = projectData as unknown as VideoProject;
       updateUpload(uploadId, { status: "done", progress: 100, project: proj });
@@ -362,33 +405,10 @@ export default function ReelGenerator() {
   ): Promise<{ data: unknown; error: null } | { data: null; error: string }> => {
     console.log(`[ReelGenerator] Invoking ${fnName}`, { bodyKeys: Object.keys(body) });
     try {
-      const { data, error } = await supabase.functions.invoke(fnName, { body });
+      const { data, error } = await apiInvokeFunction(fnName, { body });
 
       if (error) {
-        // Extract detailed error info
-        const errorName = (error as { name?: string }).name || "UnknownError";
-        const errorContext = (error as { context?: unknown }).context;
-        console.error(`[ReelGenerator] ${fnName} returned error:`, {
-          name: errorName,
-          message: error.message,
-          context: errorContext,
-          fullError: error,
-        });
-
-        // If it's a FunctionsHttpError, try to read the response body
-        if (errorName === "FunctionsHttpError") {
-          try {
-            const responseBody = errorContext instanceof Response
-              ? await (errorContext as Response).json()
-              : errorContext;
-            console.error(`[ReelGenerator] ${fnName} HTTP error body:`, responseBody);
-            const serverMsg = (responseBody as { error?: string })?.error;
-            return { data: null, error: serverMsg || error.message || `HTTP-Fehler bei ${fnName}` };
-          } catch {
-            // couldn't parse response body
-          }
-        }
-
+        console.error(`[ReelGenerator] ${fnName} returned error:`, error.message);
         return { data: null, error: error.message || `Fehler bei ${fnName}` };
       }
 
@@ -471,7 +491,7 @@ export default function ReelGenerator() {
         setProcessingStatus("Audio wird hochgeladen...");
         setProcessingProgress(62);
 
-        const { data: audioPsData, error: audioPsErr } = await supabase.functions.invoke(
+        const { data: audioPsData, error: audioPsErr } = await apiInvokeFunction<any>(
           "get-presigned-url",
           {
             body: {
@@ -515,12 +535,10 @@ export default function ReelGenerator() {
       setSegments(segData?.segments || []);
 
       // Refresh project
-      const { data: refreshed } = await supabase
-        .from("video_projects")
-        .select("*")
-        .eq("id", proj.id)
-        .single();
-      if (refreshed) setProject(refreshed as unknown as VideoProject);
+      try {
+        const refreshed = await apiGet<VideoProject>(`/api/video/projects/${proj.id}`);
+        if (refreshed) setProject(refreshed);
+      } catch { /* ignore refresh error */ }
 
       setWizardStep("segments");
       toast.success("Analyse abgeschlossen!");
@@ -532,10 +550,9 @@ export default function ReelGenerator() {
 
       // Update project status to failed
       if (proj.id) {
-        await supabase
-          .from("video_projects")
-          .update({ status: "failed", error_message: msg })
-          .eq("id", proj.id);
+        try {
+          await apiPatch(`/api/video/projects/${proj.id}`, { status: "failed", error_message: msg });
+        } catch { /* ignore */ }
       }
     }
   };
@@ -552,17 +569,14 @@ export default function ReelGenerator() {
     setLoading(true);
     try {
       for (const seg of segments) {
-        await supabase
-          .from("video_segments")
-          .update({
-            is_included: seg.is_included,
-            subtitle_text: seg.subtitle_text,
-            segment_index: seg.segment_index,
-            start_ms: seg.start_ms,
-            end_ms: seg.end_ms,
-            is_user_modified: true,
-          })
-          .eq("id", seg.id);
+        await apiPatch(`/api/video/segments/${seg.id}`, {
+          is_included: seg.is_included,
+          subtitle_text: seg.subtitle_text,
+          segment_index: seg.segment_index,
+          start_ms: seg.start_ms,
+          end_ms: seg.end_ms,
+          is_user_modified: true,
+        });
       }
       setWizardStep("style");
     } catch (err: unknown) {
@@ -602,11 +616,10 @@ export default function ReelGenerator() {
 
     pollingRef.current = setInterval(async () => {
       if (!project) return;
-      const { data } = await supabase
-        .from("video_projects")
-        .select("status, rendered_video_url, error_message")
-        .eq("id", project.id)
-        .single();
+      let data: any = null;
+      try {
+        data = await apiGet<any>(`/api/video/projects/${project.id}`, { fields: "status,rendered_video_url,error_message" });
+      } catch { return; }
 
       if (data?.status === "render_complete") {
         clearInterval(pollingRef.current!);
@@ -625,29 +638,20 @@ export default function ReelGenerator() {
     if (!project || !user) return;
     setLoading(true);
     try {
-      const { data: post, error } = await supabase
-        .from("posts")
-        .insert({
-          user_id: user.id,
-          status: "READY_FOR_REVIEW",
-          format: "reel",
-          caption: "",
-          hashtags: "",
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+      const post = await apiPost<{ id: string }>("/api/posts", {
+        user_id: user.id,
+        status: "READY_FOR_REVIEW",
+        format: "reel",
+        caption: "",
+        hashtags: "",
+      });
 
       // Link project to post
-      await supabase
-        .from("video_projects")
-        .update({ post_id: post.id, status: "published" })
-        .eq("id", project.id);
+      await apiPatch(`/api/video/projects/${project.id}`, { post_id: post.id, status: "published" });
 
       // Create asset record
       if (project.rendered_video_url && project.rendered_video_path) {
-        await supabase.from("assets").insert({
+        await apiPost("/api/posts/assets", {
           user_id: user.id,
           post_id: post.id,
           storage_path: project.rendered_video_path,
@@ -763,6 +767,7 @@ export default function ReelGenerator() {
 
         {/* ===== STEP 1: UPLOAD ===== */}
         {wizardStep === "upload" && (
+          <>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-4">
               <Card className="glass-card animate-fade-in">
@@ -956,6 +961,90 @@ export default function ReelGenerator() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Project History */}
+          {projectHistory.length > 0 && (
+            <Card className="glass-card animate-fade-in mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FolderOpen className="h-5 w-5 text-primary" />
+                  Meine Projekte
+                </CardTitle>
+                <CardDescription>
+                  Alle bisherigen Reel-Projekte – klicke um fortzufahren oder das Ergebnis anzusehen.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {historyLoading ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {projectHistory.map((proj) => {
+                      const statusConfig: Record<string, { label: string; color: string }> = {
+                        uploaded: { label: "Hochgeladen", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+                        analyzing_frames: { label: "Analysiert...", color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+                        transcribing: { label: "Transkribiert...", color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+                        selecting_segments: { label: "Segmente...", color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+                        segments_ready: { label: "Segmente bereit", color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
+                        rendering: { label: "Rendert...", color: "bg-primary/20 text-primary border-primary/30" },
+                        render_complete: { label: "Fertig", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+                        published: { label: "Veröffentlicht", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+                        failed: { label: "Fehlgeschlagen", color: "bg-red-500/20 text-red-400 border-red-500/30" },
+                      };
+                      const status = statusConfig[proj.status] || { label: proj.status, color: "bg-muted text-muted-foreground" };
+
+                      return (
+                        <button
+                          key={proj.id}
+                          onClick={() => resumeProject(proj)}
+                          className={cn(
+                            "flex flex-col gap-3 p-4 rounded-xl border text-left transition-all duration-200",
+                            "border-border hover:border-primary/50 hover:bg-muted/30 hover:scale-[1.01]",
+                            proj.status === "render_complete" && "border-green-500/20"
+                          )}
+                        >
+                          {/* Thumbnail or placeholder */}
+                          {proj.rendered_video_url ? (
+                            <div className="w-full aspect-video rounded-lg overflow-hidden bg-black">
+                              <video src={proj.rendered_video_url} className="w-full h-full object-cover" muted preload="metadata" />
+                            </div>
+                          ) : proj.source_video_url ? (
+                            <div className="w-full aspect-video rounded-lg overflow-hidden bg-black">
+                              <video src={proj.source_video_url} className="w-full h-full object-cover" muted preload="metadata" />
+                            </div>
+                          ) : (
+                            <div className="w-full aspect-video rounded-lg bg-muted flex items-center justify-center">
+                              <Film className="h-8 w-8 text-muted-foreground/30" />
+                            </div>
+                          )}
+
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <Badge className={cn("text-xs", status.color)}>
+                                {status.label}
+                              </Badge>
+                              {proj.source_duration_ms && (
+                                <span className="text-xs text-muted-foreground font-mono">
+                                  {Math.floor(proj.source_duration_ms / 1000)}s
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {formatDistanceToNow(new Date(proj.created_at), { addSuffix: true, locale: de })}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+          </>
         )}
 
         {/* ===== STEP 2: PROCESSING ===== */}

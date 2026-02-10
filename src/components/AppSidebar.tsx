@@ -15,7 +15,7 @@ import {
   ChevronDown,
   Video,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { signOut } from "@/lib/auth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ThemeToggle } from "./ThemeToggle";
@@ -94,7 +94,7 @@ export function AppSidebar() {
   });
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     toast.success("Erfolgreich abgemeldet");
     navigate("/login");
   };

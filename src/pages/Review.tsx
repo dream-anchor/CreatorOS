@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPatch, apiPost, invokeFunction, getPresignedUrl, uploadToR2 } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Post, Asset } from "@/types/database";
 import { toast } from "sonner";
@@ -62,20 +62,14 @@ export default function ReviewPage() {
 
   const loadPosts = async () => {
     try {
-      const { data, error } = await supabase
-        .from("posts")
-        .select("*, assets(*)")
-        .eq("status", "READY_FOR_REVIEW")
-        .order("scheduled_at", { ascending: true });
+      const data = await apiGet<any[]>("/api/posts", { status: "READY_FOR_REVIEW", include: "assets", order: "scheduled_at:asc" });
 
-      if (error) throw error;
-      
       // Parse slides from JSON
       const parsedPosts = (data || []).map((post: any) => ({
         ...post,
         slides: post.slides ? (typeof post.slides === 'string' ? JSON.parse(post.slides) : post.slides) : null,
       }));
-      
+
       setPosts(parsedPosts as ExtendedPost[]);
       setCurrentIndex(0);
       setCurrentSlideIndex(0);
@@ -97,24 +91,12 @@ export default function ReviewPage() {
     setSwipeDirection("right");
 
     try {
-      const { error } = await supabase
-        .from("posts")
-        .update({
-          status: "APPROVED",
-          caption: editedCaption || currentPost.caption,
-          hashtags: editedHashtags || currentPost.hashtags,
-          approved_at: new Date().toISOString(),
-          approved_by: user!.id,
-        })
-        .eq("id", currentPost.id);
-
-      if (error) throw error;
-
-      await supabase.from("logs").insert({
-        user_id: user!.id,
-        post_id: currentPost.id,
-        event_type: "post_approved",
-        level: "info",
+      await apiPatch(`/api/posts/${currentPost.id}`, {
+        status: "APPROVED",
+        caption: editedCaption || currentPost.caption,
+        hashtags: editedHashtags || currentPost.hashtags,
+        approved_at: new Date().toISOString(),
+        approved_by: user!.id,
       });
 
       toast.success("Post eingeplant! ✨");
@@ -141,22 +123,9 @@ export default function ReviewPage() {
     setSwipeDirection("left");
 
     try {
-      const { error } = await supabase
-        .from("posts")
-        .update({
-          status: "REJECTED",
-          error_message: rejectReason || "Vom Nutzer abgelehnt",
-        })
-        .eq("id", currentPost.id);
-
-      if (error) throw error;
-
-      await supabase.from("logs").insert({
-        user_id: user!.id,
-        post_id: currentPost.id,
-        event_type: "post_rejected",
-        level: "warn",
-        details: { reason: rejectReason },
+      await apiPatch(`/api/posts/${currentPost.id}`, {
+        status: "REJECTED",
+        error_message: rejectReason || "Vom Nutzer abgelehnt",
       });
 
       toast.success("Post verworfen");
@@ -196,21 +165,14 @@ export default function ReviewPage() {
       const fileExt = file.name.split(".").pop();
       const fileName = `${user!.id}/${currentPost.id}/${Date.now()}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("post-assets")
-        .upload(fileName, file);
+      const { urls } = await getPresignedUrl([{ fileName, contentType: file.type, folder: "post-assets" }]);
+      await uploadToR2(urls[0].uploadUrl, file, file.type);
 
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from("post-assets")
-        .getPublicUrl(fileName);
-
-      await supabase.from("assets").insert({
+      await apiPost("/api/posts/assets", {
         user_id: user!.id,
         post_id: currentPost.id,
-        storage_path: fileName,
-        public_url: urlData.publicUrl,
+        storage_path: urls[0].key,
+        public_url: urls[0].publicUrl,
         source: "upload",
       });
 
@@ -228,10 +190,10 @@ export default function ReviewPage() {
     
     setGenerating(true);
     try {
-      const { data, error } = await supabase.functions.invoke("generate-asset", {
-        body: { 
-          postId: currentPost.id, 
-          prompt: currentPost.caption?.slice(0, 200) || "Professional Instagram post" 
+      const { data, error } = await invokeFunction("generate-asset", {
+        body: {
+          postId: currentPost.id,
+          prompt: currentPost.caption?.slice(0, 200) || "Professional Instagram post"
         },
       });
 

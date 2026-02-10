@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
 import { toast } from "sonner";
 import { AI_MODELS } from "@/components/community/AiModelSelector";
 
@@ -95,7 +95,7 @@ export function GenerationProvider({ children }: GenerationProviderProps) {
           console.log(`[GenerationContext] Processing batch ${i + 1}/${batches.length} (${batch.length} comments)`);
 
           try {
-            const { data, error: batchError } = await supabase.functions.invoke("batch-generate-replies", {
+            const { data, error: batchError } = await invokeFunction("batch-generate-replies", {
               body: { comment_ids: batch, model },
             });
 

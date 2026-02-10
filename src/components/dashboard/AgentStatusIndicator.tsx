@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface AgentStatusIndicatorProps {
@@ -30,36 +30,15 @@ export function AgentStatusIndicator({ className }: AgentStatusIndicatorProps) {
       });
     }, 1000);
 
-    // Subscribe to queue changes
-    const channel = supabase
-      .channel('agent-status')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'comment_reply_queue'
-        },
-        () => {
-          checkStatus();
-        }
-      )
-      .subscribe();
-
     return () => {
       clearInterval(countdownInterval);
-      supabase.removeChannel(channel);
     };
   }, []);
 
   const checkStatus = async () => {
     try {
-      const { count } = await supabase
-        .from("comment_reply_queue")
-        .select("id", { count: "exact" })
-        .in("status", ["pending", "waiting_for_post"]);
-      
-      setQueueCount(count || 0);
+      const data = await apiGet<{ count: number }>("/api/community/reply-queue/pending-count");
+      setQueueCount(data?.count || 0);
       setLastCheck(new Date());
       setIsActive(true);
     } catch (error) {

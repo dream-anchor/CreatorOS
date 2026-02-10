@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { signOut } from "@/lib/auth";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { LogOut, Sparkles } from "lucide-react";
@@ -11,7 +11,7 @@ const Index = () => {
   const { user, loading } = useAuth();
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     toast.success("Erfolgreich abgemeldet");
     navigate("/login");
   };

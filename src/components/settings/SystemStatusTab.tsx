@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
 import { toast } from "sonner";
 import {
   RefreshCw,
@@ -23,7 +23,7 @@ export default function SystemStatusTab() {
     toast.info("🔧 Lade letzte 20 Posts direkt von Instagram...");
 
     try {
-      const { data, error } = await supabase.functions.invoke("fetch-instagram-history", {
+      const { data, error } = await invokeFunction("fetch-instagram-history", {
         body: { mode: "force_resync" },
       });
 
@@ -57,7 +57,7 @@ export default function SystemStatusTab() {
     toast.info("🔧 Repariere Post-Metadaten...");
 
     try {
-      const { data, error } = await supabase.functions.invoke("repair-post-metadata");
+      const { data, error } = await invokeFunction("repair-post-metadata");
 
       if (error) {
         toast.error(`❌ Metadaten-Reparatur fehlgeschlagen: ${error.message}`);

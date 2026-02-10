@@ -3,7 +3,9 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BottomChat } from "@/components/BottomChat";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet } from "@/lib/api";
+import { signOut } from "@/lib/auth";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { useGenerationContext } from "@/contexts/GenerationContext";
 import { useChatConversations } from "@/hooks/useChatConversations";
@@ -135,6 +137,7 @@ interface UserData {
 }
 
 function useUserData() {
+  const { user } = useAuth();
   const [userData, setUserData] = useState<UserData>({
     email: null,
     displayName: null,
@@ -143,24 +146,34 @@ function useUserData() {
   });
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    if (!user) return;
 
-      const [profileRes, metaRes] = await Promise.all([
-        supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
-        supabase.from("meta_connections").select("ig_username, profile_picture_url").eq("user_id", user.id).maybeSingle(),
-      ]);
+    // Set initial data from auth user
+    setUserData((prev) => ({
+      ...prev,
+      email: user.email || null,
+      displayName: user.displayName || null,
+      igProfilePicUrl: user.profileImageUrl || null,
+    }));
 
-      setUserData({
-        email: user.email || null,
-        displayName: profileRes.data?.display_name || null,
-        igUsername: metaRes.data?.ig_username || null,
-        igProfilePicUrl: metaRes.data?.profile_picture_url || null,
+    // Fetch additional settings (profile + meta connection data)
+    apiGet<{
+      display_name?: string;
+      ig_username?: string;
+      profile_picture_url?: string;
+    }>("/api/settings")
+      .then((settings) => {
+        setUserData({
+          email: user.email || null,
+          displayName: settings.display_name || user.displayName || null,
+          igUsername: settings.ig_username || null,
+          igProfilePicUrl: settings.profile_picture_url || user.profileImageUrl || null,
+        });
+      })
+      .catch(() => {
+        // Keep data from auth user on error
       });
-    };
-    fetchUserData();
-  }, []);
+  }, [user]);
 
   return userData;
 }
@@ -215,7 +228,7 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const activeConversationId = searchParams.get("chat");
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     toast.success("Erfolgreich abgemeldet");
     navigate("/login");
   };

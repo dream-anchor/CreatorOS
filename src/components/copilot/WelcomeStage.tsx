@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { 
   MessageCircle, 
@@ -28,21 +28,21 @@ export function WelcomeStage() {
   const loadData = async () => {
     if (!user) return;
 
-    const [profileRes, commentsRes, postsRes] = await Promise.all([
-      supabase.from("profiles").select("display_name").maybeSingle(),
-      supabase.from("instagram_comments").select("id", { count: "exact", head: true }).eq("is_replied", false),
-      supabase.from("posts").select("id, status")
+    const [settingsData, commentsData, postsData] = await Promise.all([
+      apiGet<any>("/api/settings").catch(() => null),
+      apiGet<any>("/api/community/comments", { is_replied: "false", count_only: "true" }).catch(() => null),
+      apiGet<any[]>("/api/posts").catch(() => [])
     ]);
 
-    if (profileRes.data) {
-      setDisplayName(profileRes.data.display_name);
+    if (settingsData?.profile?.display_name) {
+      setDisplayName(settingsData.profile.display_name);
     }
 
-    const posts = postsRes.data || [];
+    const posts = postsData || [];
     setStats({
-      pendingComments: commentsRes.count || 0,
-      scheduledPosts: posts.filter(p => p.status === "SCHEDULED").length,
-      draftPosts: posts.filter(p => p.status === "DRAFT" || p.status === "IDEA").length
+      pendingComments: commentsData?.count || 0,
+      scheduledPosts: posts.filter((p: any) => p.status === "SCHEDULED").length,
+      draftPosts: posts.filter((p: any) => p.status === "DRAFT" || p.status === "IDEA").length
     });
   };
 

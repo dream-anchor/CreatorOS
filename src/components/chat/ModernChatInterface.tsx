@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
 import { toast } from "sonner";
 import { parseNavigationIntent } from "@/hooks/useNavigation";
 import { ChatMessage } from "./ChatMessage";
@@ -142,7 +142,7 @@ export function ModernChatInterface() {
       const fileData = await Promise.all(fileDataPromises);
       setLoadingHint("Analysiere Bilder & erstelle Text...");
 
-      const { data, error } = await supabase.functions.invoke("process-smart-upload", {
+      const { data, error } = await invokeFunction("process-smart-upload", {
         body: { files: fileData, rawText },
       });
 
@@ -248,7 +248,7 @@ export function ModernChatInterface() {
         .concat(userMessage)
         .map(m => ({ role: m.role, content: m.content }));
 
-      const { data, error } = await supabase.functions.invoke("copilot-chat", {
+      const { data, error } = await invokeFunction("copilot-chat", {
         body: { messages: messageHistory, model: selectedModel },
       });
 

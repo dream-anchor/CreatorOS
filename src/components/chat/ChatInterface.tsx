@@ -14,7 +14,7 @@ import {
   MessageSquare,
   Zap
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction, apiGet } from "@/lib/api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ChatCommentCard } from "./ChatCommentCard";
@@ -95,25 +95,25 @@ export function ChatInterface() {
 
     try {
       // Check queue table
-      const { data: queueData, error: queueError } = await supabase
-        .from("comment_reply_queue")
-        .select("id, status, scheduled_for, error_message, created_at")
-        .order("created_at", { ascending: false })
-        .limit(10);
+      let queueData: any[] | null = null;
+      let queueError: Error | null = null;
+      try {
+        queueData = await apiGet<any[]>("/api/community/queue-reply", { limit: "10" });
+      } catch (err) {
+        queueError = err instanceof Error ? err : new Error(String(err));
+      }
 
       // Check last log entry for cron
-      const { data: logsData, error: logsError } = await supabase
-        .from("logs")
-        .select("id, event_type, created_at, details")
-        .in("event_type", ["reply_queue_processed", "cron_tick", "scheduler_tick"])
-        .order("created_at", { ascending: false })
-        .limit(5);
+      let logsData: any[] | null = null;
+      try {
+        logsData = await apiGet<any[]>("/api/logs", { event_types: "reply_queue_processed,cron_tick,scheduler_tick", limit: "5" });
+      } catch {}
 
       // Check connection status
-      const { data: connData } = await supabase
-        .from("meta_connections")
-        .select("ig_username, connected_at")
-        .maybeSingle();
+      let connData: any = null;
+      try {
+        connData = await apiGet<any>("/api/settings/meta-connection");
+      } catch {}
 
       const debugData = {
         queue: {
@@ -169,27 +169,7 @@ export function ChatInterface() {
     setLoadingHint("💬 Lade Kommentare...");
 
     try {
-      const { data: comments, error } = await supabase
-        .from("instagram_comments")
-        .select(`
-          id,
-          comment_text,
-          commenter_username,
-          comment_timestamp,
-          ai_reply_suggestion,
-          is_replied,
-          ig_comment_id,
-          post_id,
-          posts!instagram_comments_post_id_fkey (
-            caption,
-            original_media_url
-          )
-        `)
-        .eq("is_replied", false)
-        .order("comment_timestamp", { ascending: false })
-        .limit(5);
-
-      if (error) throw error;
+      const comments = await apiGet<any[]>("/api/community/comments", { is_replied: "false", limit: "5" });
 
       if (!comments || comments.length === 0) {
         const noCommentsMessage: Message = {
@@ -286,7 +266,7 @@ export function ChatInterface() {
           content: m.content,
         }));
 
-      const { data, error } = await supabase.functions.invoke("copilot-chat", {
+      const { data, error } = await invokeFunction("copilot-chat", {
         body: { messages: messageHistory },
       });
 

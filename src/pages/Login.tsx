@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { signInWithPassword } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,11 +31,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw error;
+      await signInWithPassword(email, password);
       toast.success("Erfolgreich angemeldet!");
       navigate("/dashboard");
     } catch (error: any) {

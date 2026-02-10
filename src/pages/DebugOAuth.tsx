@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import { invokeFunction } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2, Bug, CheckCircle, XCircle, RefreshCw, Server, ExternalLink, Link as LinkIcon, Copy } from 'lucide-react';
 
@@ -34,8 +34,7 @@ export default function DebugOAuth() {
   const [finalLoading, setFinalLoading] = useState(false);
   const [finalInfo, setFinalInfo] = useState<OAuthFinalInfo | null>(null);
 
-  const supabaseUrl = useMemo(() => import.meta.env.VITE_SUPABASE_URL as string | undefined, []);
-  const apikey = useMemo(() => import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined, []);
+  const apiUrl = useMemo(() => import.meta.env.VITE_API_URL as string | undefined, []);
 
   const copyToClipboard = async (value: string) => {
     try {
@@ -51,15 +50,13 @@ export default function DebugOAuth() {
     setError(null);
 
     try {
-      // Intentionally WITHOUT user JWT: endpoint only returns non-sensitive config.
-      if (!supabaseUrl || !apikey) {
-        throw new Error('Backend nicht konfiguriert (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY fehlt)');
+      if (!apiUrl) {
+        throw new Error('Backend nicht konfiguriert (VITE_API_URL fehlt)');
       }
 
-      const res = await fetch(`${supabaseUrl}/functions/v1/meta-oauth-config`, {
+      const res = await fetch(`${apiUrl}/api/instagram/oauth-config`, {
         method: 'GET',
         headers: {
-          apikey,
           'Content-Type': 'application/json',
         },
       });
@@ -83,9 +80,8 @@ export default function DebugOAuth() {
   const fetchFinalAuthorizeUrl = async () => {
     setFinalLoading(true);
     try {
-      const res = await supabase.functions.invoke('meta-oauth-config', { body: {} });
-      if (res.error) throw new Error(res.error.message || 'Fehler beim Abrufen der finalen OAuth URL');
-      const data = res.data as any;
+      const { data, error: fnError } = await invokeFunction('meta-oauth-config', { body: {} });
+      if (fnError) throw new Error(fnError.message || 'Fehler beim Abrufen der finalen OAuth URL');
       if (!data?.auth_url) throw new Error('Keine auth_url erhalten');
 
       setFinalInfo({

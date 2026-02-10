@@ -26,7 +26,7 @@ import {
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { CommentWithContext } from "./CommentCard";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api";
 import { toast } from "sonner";
 
 interface PostGroup {
@@ -71,7 +71,7 @@ export function PostCard({
   const handleRepairMetadata = async () => {
     setIsRepairing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("repair-post-metadata", {
+      const { data, error } = await invokeFunction("repair-post-metadata", {
         body: {
           ig_media_id: group.igMediaId,
           post_id: group.postId,

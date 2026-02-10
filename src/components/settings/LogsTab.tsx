@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2, ScrollText, AlertCircle, CheckCircle2, Info } from "lucide-react";
 import { format } from "date-fns";
@@ -27,14 +27,8 @@ export default function LogsTab() {
 
   const loadLogs = async () => {
     try {
-      const { data, error } = await supabase
-        .from("logs")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-      setLogs((data as LogEntry[]) || []);
+      const data = await apiGet<LogEntry[]>("/api/logs", { limit: "50" });
+      setLogs(data || []);
     } catch (error) {
       console.error("Error loading logs:", error);
     } finally {

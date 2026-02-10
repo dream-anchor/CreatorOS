@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiDelete, invokeFunction, getPresignedUrl, uploadToR2, deleteFromR2 } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
@@ -77,13 +77,8 @@ export default function MediaArchivePage() {
 
   const loadAssets = async () => {
     try {
-      const { data, error } = await supabase
-        .from("media_assets")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setAssets((data as MediaAsset[]) || []);
+      const data = await apiGet<MediaAsset[]>("/api/media", { order: "created_at:desc" });
+      setAssets(data || []);
     } catch (error: any) {
       toast.error("Fehler: " + error.message);
     } finally {
@@ -165,31 +160,17 @@ export default function MediaArchivePage() {
         const fileExt = file.name.split(".").pop();
         const fileName = `${user!.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from("media-archive")
-          .upload(fileName, file);
+        const { urls } = await getPresignedUrl([{ fileName, contentType: file.type, folder: "media-archive" }]);
+        await uploadToR2(urls[0].uploadUrl, file, file.type);
 
-        if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase.storage
-          .from("media-archive")
-          .getPublicUrl(fileName);
-
-        const { data: insertData, error: insertError } = await supabase
-          .from("media_assets")
-          .insert({
-            user_id: user!.id,
-            storage_path: fileName,
-            public_url: urlData.publicUrl,
-            filename: file.name,
-            tags: [],
-            analyzed: false,
-            // Explicitly mark as user upload (not AI generated)
-          })
-          .select("id")
-          .single();
-
-        if (insertError) throw insertError;
+        const insertData = await apiPost<{ id: string }>("/api/media", {
+          user_id: user!.id,
+          storage_path: urls[0].key,
+          public_url: urls[0].publicUrl,
+          filename: file.name,
+          tags: [],
+          analyzed: false,
+        });
 
         uploadedAssets.push({
           id: insertData.id,
@@ -209,19 +190,19 @@ export default function MediaArchivePage() {
       
       for (const asset of uploadedAssets) {
         try {
-          const { data, error } = await supabase.functions.invoke("analyze-media-vision", {
-            body: { 
-              mode: "auto", 
+          const { data, error } = await invokeFunction("analyze-media-vision", {
+            body: {
+              mode: "auto",
               asset_id: asset.id,
-              image_url: asset.public_url 
+              image_url: asset.public_url
             }
           });
 
           if (error) {
             console.error(`Analysis error for ${asset.id}:`, error);
             failCount++;
-          } else if (data && !data.success) {
-            console.error(`Analysis failed for ${asset.id}:`, data.error);
+          } else if (data && !(data as any).success) {
+            console.error(`Analysis failed for ${asset.id}:`, (data as any).error);
             failCount++;
           } else {
             successCount++;
@@ -263,9 +244,8 @@ export default function MediaArchivePage() {
   const handleDelete = async (asset: MediaAsset) => {
     setDeleting(asset.id);
     try {
-      await supabase.storage.from("media-archive").remove([asset.storage_path]);
-      const { error } = await supabase.from("media_assets").delete().eq("id", asset.id);
-      if (error) throw error;
+      await deleteFromR2(asset.storage_path);
+      await apiDelete(`/api/media/${asset.id}`);
       toast.success("Bild gelöscht");
       loadAssets();
     } catch (error: any) {
@@ -278,7 +258,7 @@ export default function MediaArchivePage() {
   const handleAnalyzeLibrary = async () => {
     setAnalyzing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("analyze-media-vision", {
+      const { data, error } = await invokeFunction<any>("analyze-media-vision", {
         body: { mode: "batch" }
       });
 
@@ -293,7 +273,7 @@ export default function MediaArchivePage() {
       }
 
       if (data?.analyzed > 0) {
-        toast.success(`✨ ${data.analyzed} Bilder analysiert!`);
+        toast.success(`${data.analyzed} Bilder analysiert!`);
         if (data?.errors > 0 && data?.errorDetails) {
           toast.error(`${data.errors} Fehler: ${data.errorDetails.slice(0, 2).join(", ")}`);
         }
@@ -318,17 +298,17 @@ export default function MediaArchivePage() {
     toast.info("⚡️ Analyse gestartet...");
     
     try {
-      const { data, error } = await supabase.functions.invoke("analyze-media-vision", {
-        body: { 
-          mode: "auto", 
+      const { data, error } = await invokeFunction<any>("analyze-media-vision", {
+        body: {
+          mode: "auto",
           asset_id: asset.id,
-          image_url: asset.public_url 
+          image_url: asset.public_url
         }
       });
 
       if (error) {
         if (error.message?.includes("429") || error.message?.toLowerCase().includes("rate")) {
-          toast.error("⏳ Zu schnell! Bitte kurz warten und erneut versuchen.");
+          toast.error("Zu schnell! Bitte kurz warten und erneut versuchen.");
         } else {
           toast.error(`Analyse-Fehler: ${error.message || "Unbekannt"}`);
         }
@@ -337,14 +317,14 @@ export default function MediaArchivePage() {
 
       if (data && !data.success) {
         if (data.error?.includes("429") || data.error?.toLowerCase().includes("rate")) {
-          toast.error("⏳ Zu schnell! Bitte kurz warten und erneut versuchen.");
+          toast.error("Zu schnell! Bitte kurz warten und erneut versuchen.");
         } else {
           toast.error(`Analyse fehlgeschlagen: ${data.error || "Unbekannter Fehler"}`);
         }
         return;
       }
 
-      toast.success("✨ Bild erfolgreich analysiert!");
+      toast.success("Bild erfolgreich analysiert!");
       loadAssets();
     } catch (error: any) {
       if (error.message?.includes("429") || error.message?.toLowerCase().includes("rate")) {
