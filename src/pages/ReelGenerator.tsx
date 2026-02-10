@@ -57,7 +57,7 @@ interface UploadItem {
 
 function uploadWithProgress(
   url: string,
-  file: File,
+  file: File | Blob,
   contentType: string,
   onProgress: (pct: number) => void,
 ): Promise<void> {
@@ -75,6 +75,83 @@ function uploadWithProgress(
     xhr.onerror = () => reject(new Error("Netzwerkfehler beim Upload"));
     xhr.send(file);
   });
+}
+
+/** Encode an AudioBuffer as a 16-bit PCM WAV file (mono, 16 kHz) */
+function audioBufferToWav(buffer: AudioBuffer): Blob {
+  const numChannels = 1;
+  const sampleRate = buffer.sampleRate;
+  const samples = buffer.getChannelData(0);
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = samples.length * (bitsPerSample / 8);
+  const headerSize = 44;
+  const arrayBuffer = new ArrayBuffer(headerSize + dataSize);
+  const view = new DataView(arrayBuffer);
+
+  // RIFF header
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true); // subchunk1 size
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeString(36, "data");
+  view.setUint32(40, dataSize, true);
+
+  // PCM samples (float32 → int16)
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    offset += 2;
+  }
+
+  return new Blob([arrayBuffer], { type: "audio/wav" });
+}
+
+/** Extract audio from a video URL as a 16kHz mono WAV blob using OfflineAudioContext */
+async function extractAudioAsWav(videoUrl: string): Promise<Blob> {
+  console.log("[extractAudio] Fetching video for audio extraction...");
+  const response = await fetch(videoUrl);
+  if (!response.ok) throw new Error(`Video fetch fehlgeschlagen: ${response.status}`);
+
+  const videoArrayBuffer = await response.arrayBuffer();
+  console.log(`[extractAudio] Video fetched: ${(videoArrayBuffer.byteLength / 1024 / 1024).toFixed(1)}MB`);
+
+  // Decode audio from the video at original sample rate
+  const tempCtx = new AudioContext();
+  const decodedBuffer = await tempCtx.decodeAudioData(videoArrayBuffer);
+  await tempCtx.close();
+
+  console.log(`[extractAudio] Decoded: ${decodedBuffer.duration.toFixed(1)}s, ${decodedBuffer.sampleRate}Hz, ${decodedBuffer.numberOfChannels}ch`);
+
+  // Resample to 16kHz mono using OfflineAudioContext
+  const TARGET_SAMPLE_RATE = 16000;
+  const targetLength = Math.ceil(decodedBuffer.duration * TARGET_SAMPLE_RATE);
+  const offlineCtx = new OfflineAudioContext(1, targetLength, TARGET_SAMPLE_RATE);
+
+  const source = offlineCtx.createBufferSource();
+  source.buffer = decodedBuffer;
+  source.connect(offlineCtx.destination);
+  source.start(0);
+
+  const resampledBuffer = await offlineCtx.startRendering();
+  console.log(`[extractAudio] Resampled to ${TARGET_SAMPLE_RATE}Hz mono: ${resampledBuffer.length} samples`);
+
+  const wavBlob = audioBufferToWav(resampledBuffer);
+  console.log(`[extractAudio] WAV size: ${(wavBlob.size / 1024 / 1024).toFixed(1)}MB`);
+
+  return wavBlob;
 }
 
 const SUBTITLE_STYLES: { id: SubtitleStyle; label: string; description: string }[] = [
@@ -146,10 +223,6 @@ export default function ReelGenerator() {
       const height = videoEl.videoHeight;
       URL.revokeObjectURL(videoEl.src);
       updateUpload(uploadId, { durationMs });
-
-      if (file.size > 25 * 1024 * 1024) {
-        toast.warning(`${file.name}: Größer als 25MB, Transkription könnte fehlschlagen.`);
-      }
 
       // Step 1: Get presigned URL from R2 Edge Function
       const contentType = file.type || "video/mp4";
@@ -385,11 +458,45 @@ export default function ReelGenerator() {
       }
       setProcessingProgress(55);
 
-      // Phase C: Transcribe audio
+      // Phase C: Extract audio client-side, upload to R2, then transcribe
+      setProcessingStatus("Audio wird extrahiert...");
+      setProcessingProgress(57);
+
+      let audioR2Url: string | undefined;
+      try {
+        const wavBlob = await extractAudioAsWav(videoUrl);
+        console.log(`[ReelGenerator] Audio extracted: ${(wavBlob.size / 1024 / 1024).toFixed(1)}MB`);
+
+        // Upload audio WAV to R2 via presigned URL
+        setProcessingStatus("Audio wird hochgeladen...");
+        setProcessingProgress(62);
+
+        const { data: audioPsData, error: audioPsErr } = await supabase.functions.invoke(
+          "get-presigned-url",
+          {
+            body: {
+              files: [{ fileName: `audio-${proj.id}.wav`, contentType: "audio/wav", folder: "audio" }],
+            },
+          },
+        );
+
+        if (audioPsErr || !audioPsData?.success) {
+          console.warn("[ReelGenerator] Audio presigned URL failed, falling back to full video:", audioPsErr);
+        } else {
+          const { uploadUrl: audioUploadUrl, publicUrl: audioPublicUrl } = audioPsData.urls[0];
+          await uploadWithProgress(audioUploadUrl, wavBlob, "audio/wav", () => {});
+          audioR2Url = audioPublicUrl;
+          console.log(`[ReelGenerator] Audio uploaded to R2: ${audioR2Url}`);
+        }
+      } catch (audioErr) {
+        console.warn("[ReelGenerator] Client-side audio extraction failed, falling back to full video:", audioErr);
+      }
+
       setProcessingStatus("Audio wird transkribiert...");
-      setProcessingProgress(60);
+      setProcessingProgress(68);
       const transcriptResult = await invokeFunction("transcribe-video", {
         project_id: proj.id,
+        ...(audioR2Url ? { audio_url: audioR2Url } : {}),
       });
       if (transcriptResult.error) throw new Error(transcriptResult.error);
       setProcessingProgress(80);
