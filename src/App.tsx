@@ -22,6 +22,7 @@ import ContentLibrary from "./pages/ContentLibrary";
 import MediaArchive from "./pages/MediaArchive";
 import Community from "./pages/Community";
 import Analytics from "./pages/Analytics";
+import ReelGenerator from "./pages/ReelGenerator";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -51,6 +52,7 @@ const App = () => (
               <Route path="/media" element={<ProtectedRoute><MediaArchive /></ProtectedRoute>} />
               <Route path="/community" element={<ProtectedRoute><Community /></ProtectedRoute>} />
               <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+              <Route path="/reels" element={<ProtectedRoute><ReelGenerator /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/settings/*" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />

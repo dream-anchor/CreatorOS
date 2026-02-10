@@ -13,6 +13,7 @@ import {
   BarChart3,
   FileText,
   ChevronDown,
+  Video,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -52,6 +53,7 @@ const navigation: NavSection[] = [
     defaultOpen: true,
     items: [
       { name: "Magic Create", href: "/generator", icon: Sparkles, highlight: true },
+      { name: "Reel Studio", href: "/reels", icon: Video },
       { name: "Planung", href: "/calendar", icon: CalendarClock },
       { name: "Review", href: "/review", icon: FileText },
       { name: "Meine Bilder", href: "/media", icon: ImageIcon },

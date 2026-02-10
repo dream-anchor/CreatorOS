@@ -24,6 +24,7 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  Video,
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,10 @@ const navGroups = [
   },
   {
     title: "Kreation",
-    items: [{ name: "Generator", href: "/generator", icon: Zap }]
+    items: [
+      { name: "Generator", href: "/generator", icon: Zap },
+      { name: "Reel Studio", href: "/reels", icon: Video },
+    ]
   },
   {
     title: "Management",

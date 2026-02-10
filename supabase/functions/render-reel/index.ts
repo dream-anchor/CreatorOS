@@ -18,27 +18,35 @@ interface Segment {
 function buildSubtitleHtml(text: string, style: string): string {
   const styles: Record<string, string> = {
     bold_center: `
-      <div style="font-family: 'Arial Black', sans-serif; font-size: 48px; color: white; text-align: center; text-shadow: 2px 2px 8px rgba(0,0,0,0.8); padding: 20px;">
+      <div style="font-family: 'Montserrat', sans-serif; font-size: 48px; font-weight: 800;
+        color: white; text-align: center; text-shadow: 2px 2px 8px rgba(0,0,0,0.8);
+        padding: 10px 20px; line-height: 1.2; word-wrap: break-word; max-width: 900px;">
         ${text}
       </div>`,
     bottom_bar: `
-      <div style="font-family: Arial, sans-serif; font-size: 36px; color: white; background: rgba(0,0,0,0.7); padding: 12px 24px; text-align: center; border-radius: 8px;">
+      <div style="background: rgba(0,0,0,0.7); padding: 12px 24px; border-radius: 8px;
+        font-family: 'Inter', sans-serif; font-size: 36px; font-weight: 600;
+        color: white; text-align: center; max-width: 900px;">
         ${text}
       </div>`,
     karaoke: `
-      <div style="font-family: 'Impact', sans-serif; font-size: 52px; color: #FFD700; text-align: center; text-shadow: 3px 3px 6px rgba(0,0,0,0.9); padding: 20px; text-transform: uppercase;">
+      <div style="font-family: 'Montserrat', sans-serif; font-size: 44px; font-weight: 800;
+        color: #FFD700; text-align: center; text-shadow: 2px 2px 6px rgba(0,0,0,0.9);
+        padding: 10px 20px; line-height: 1.2; max-width: 900px;">
         ${text}
       </div>`,
     minimal: `
-      <div style="font-family: 'Helvetica Neue', sans-serif; font-size: 32px; color: white; text-align: center; opacity: 0.9; padding: 16px;">
+      <div style="font-family: 'Inter', sans-serif; font-size: 28px; font-weight: 500;
+        color: rgba(255,255,255,0.9); text-align: left; text-shadow: 1px 1px 4px rgba(0,0,0,0.6);
+        padding: 8px 16px; max-width: 900px;">
         ${text}
       </div>`,
   };
   return styles[style] || styles.bold_center;
 }
 
-function mapTransition(style: string): Record<string, string> | undefined {
-  const transitions: Record<string, Record<string, string>> = {
+function mapTransition(style: string): Record<string, unknown> | undefined {
+  const transitions: Record<string, Record<string, unknown>> = {
     smooth: { in: "fade", out: "fade" },
     fade: { in: "fade" },
     zoom: { in: "zoom" },
@@ -195,7 +203,7 @@ serve(async (req) => {
         return {
           asset: {
             type: "html",
-            html: `<html><body>${buildSubtitleHtml(seg.subtitle_text!, subtitle_style)}</body></html>`,
+            html: `<html><body style="margin:0; display:flex; align-items:flex-end; justify-content:center; height:100%;">${buildSubtitleHtml(seg.subtitle_text!, subtitle_style)}</body></html>`,
             width: 1080,
             height: 400,
           },

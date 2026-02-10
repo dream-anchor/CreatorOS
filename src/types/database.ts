@@ -1,5 +1,5 @@
 export type PostStatus = 'IDEA' | 'DRAFT' | 'READY_FOR_REVIEW' | 'APPROVED' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED' | 'REJECTED';
-export type PostFormat = 'single' | 'carousel';
+export type PostFormat = 'single' | 'carousel' | 'reel';
 export type AssetSource = 'upload' | 'generate';
 export type UserRole = 'owner' | 'editor' | 'reviewer';
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -178,4 +178,103 @@ export interface RemasterResult extends DraftGenerationResult {
   format_flip_reason: string | null;
   new_hooks: string[];
   reuse_original_image: boolean;
+}
+
+// ========= REEL GENERATION TYPES =========
+
+export type VideoProjectStatus =
+  | 'uploaded'
+  | 'analyzing_frames'
+  | 'transcribing'
+  | 'selecting_segments'
+  | 'segments_ready'
+  | 'rendering'
+  | 'render_complete'
+  | 'published'
+  | 'failed';
+
+export type SubtitleStyle = 'bold_center' | 'bottom_bar' | 'karaoke' | 'minimal';
+export type TransitionStyle = 'smooth' | 'cut' | 'fade' | 'zoom';
+
+export interface FrameAnalysisItem {
+  frame_index: number;
+  timestamp_ms: number;
+  score: number;
+  description: string;
+  tags: string[];
+  has_face: boolean;
+  has_text: boolean;
+  energy_level: 'low' | 'medium' | 'high';
+}
+
+export interface TranscriptWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface Transcript {
+  text: string;
+  words: TranscriptWord[];
+  language: string;
+}
+
+export interface VideoProject {
+  id: string;
+  user_id: string;
+  post_id: string | null;
+  source_video_path: string;
+  source_video_url: string | null;
+  source_duration_ms: number | null;
+  source_width: number | null;
+  source_height: number | null;
+  source_file_size: number | null;
+  status: VideoProjectStatus;
+  error_message: string | null;
+  frame_analysis: FrameAnalysisItem[];
+  transcript: Transcript | null;
+  target_duration_sec: number;
+  subtitle_style: SubtitleStyle;
+  transition_style: TransitionStyle;
+  background_music_url: string | null;
+  shotstack_render_id: string | null;
+  rendered_video_path: string | null;
+  rendered_video_url: string | null;
+  created_at: string;
+  updated_at: string;
+  segments?: VideoSegment[];
+  renders?: VideoRender[];
+}
+
+export interface VideoSegment {
+  id: string;
+  project_id: string;
+  user_id: string;
+  segment_index: number;
+  start_ms: number;
+  end_ms: number;
+  score: number | null;
+  reason: string | null;
+  transcript_text: string | null;
+  is_user_modified: boolean;
+  is_included: boolean;
+  subtitle_text: string | null;
+  created_at: string;
+}
+
+export interface VideoRender {
+  id: string;
+  project_id: string;
+  user_id: string;
+  shotstack_render_id: string;
+  shotstack_status: string;
+  config_snapshot: Record<string, unknown>;
+  output_url: string | null;
+  stored_video_path: string | null;
+  stored_video_url: string | null;
+  duration_sec: number | null;
+  started_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+  created_at: string;
 }
