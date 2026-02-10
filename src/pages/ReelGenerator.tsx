@@ -312,6 +312,11 @@ export default function ReelGenerator() {
       const proj = projectData as unknown as VideoProject;
       updateUpload(uploadId, { status: "done", progress: 100, project: proj });
       toast.success(`${file.name} hochgeladen (${(durationMs / 1000).toFixed(0)}s)`);
+
+      // Auto-start analysis
+      setProject(proj);
+      setWizardStep("processing");
+      runProcessing(proj, publicUrl, durationMs);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       updateUpload(uploadId, { status: "error", error: msg });
