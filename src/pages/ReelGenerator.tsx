@@ -277,16 +277,89 @@ export default function ReelGenerator() {
     return frames;
   };
 
+  /** Helper: invoke an Edge Function with detailed error logging */
+  const invokeFunction = async (
+    fnName: string,
+    body: Record<string, unknown>,
+  ): Promise<{ data: unknown; error: null } | { data: null; error: string }> => {
+    console.log(`[ReelGenerator] Invoking ${fnName}`, { bodyKeys: Object.keys(body) });
+    try {
+      const { data, error } = await supabase.functions.invoke(fnName, { body });
+
+      if (error) {
+        // Extract detailed error info
+        const errorName = (error as { name?: string }).name || "UnknownError";
+        const errorContext = (error as { context?: unknown }).context;
+        console.error(`[ReelGenerator] ${fnName} returned error:`, {
+          name: errorName,
+          message: error.message,
+          context: errorContext,
+          fullError: error,
+        });
+
+        // If it's a FunctionsHttpError, try to read the response body
+        if (errorName === "FunctionsHttpError") {
+          try {
+            const responseBody = errorContext instanceof Response
+              ? await (errorContext as Response).json()
+              : errorContext;
+            console.error(`[ReelGenerator] ${fnName} HTTP error body:`, responseBody);
+            const serverMsg = (responseBody as { error?: string })?.error;
+            return { data: null, error: serverMsg || error.message || `HTTP-Fehler bei ${fnName}` };
+          } catch {
+            // couldn't parse response body
+          }
+        }
+
+        return { data: null, error: error.message || `Fehler bei ${fnName}` };
+      }
+
+      console.log(`[ReelGenerator] ${fnName} success`, data);
+      return { data, error: null };
+    } catch (fetchErr) {
+      console.error(`[ReelGenerator] ${fnName} fetch exception:`, fetchErr);
+      return {
+        data: null,
+        error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+      };
+    }
+  };
+
   const runProcessing = async (proj: VideoProject, videoUrl: string, durationMs: number) => {
     try {
+      // Phase 0: Quick connectivity test
+      setProcessingStatus("Verbindung wird getestet...");
+      setProcessingProgress(5);
+      console.log("[ReelGenerator] Testing Edge Function connectivity...");
+
+      const testResult = await invokeFunction("analyze-video-frames", {
+        project_id: proj.id,
+        frames: [],
+      });
+      // The function returns 400 "project_id und frames sind erforderlich" for empty frames,
+      // but that means the function IS reachable. A FunctionsFetchError means it's NOT.
+      // We accept any response except a total fetch failure.
+      if (testResult.error && testResult.error.includes("Failed to send a request")) {
+        throw new Error(
+          "Edge Function nicht erreichbar. Bitte überprüfe, ob 'analyze-video-frames' in Supabase deployt ist. " +
+          "(Dashboard → Edge Functions → Status prüfen)"
+        );
+      }
+      console.log("[ReelGenerator] Connectivity test passed");
+
       // Phase A: Extract frames client-side
       setProcessingStatus("Frames werden extrahiert...");
       setProcessingProgress(10);
       const frames = await extractFrames(videoUrl, durationMs);
+      console.log(`[ReelGenerator] Extracted ${frames.length} frames`);
+
+      // Log estimated payload size
+      const sampleSize = frames[0]?.base64?.length || 0;
+      console.log(`[ReelGenerator] Sample frame base64 size: ${(sampleSize / 1024).toFixed(0)}KB`);
       setProcessingProgress(25);
 
-      // Phase B: Send frames to analysis in batches
-      const BATCH_SIZE = 10;
+      // Phase B: Send frames to analysis in small batches (3 per batch to avoid payload limits)
+      const BATCH_SIZE = 3;
       for (let i = 0; i < frames.length; i += BATCH_SIZE) {
         const batch = frames.slice(i, i + BATCH_SIZE);
         const batchNum = Math.floor(i / BATCH_SIZE) + 1;
@@ -296,34 +369,38 @@ export default function ReelGenerator() {
         );
         setProcessingProgress(25 + (i / frames.length) * 30);
 
-        const { error } = await supabase.functions.invoke("analyze-video-frames", {
-          body: { project_id: proj.id, frames: batch },
+        const batchPayloadSize = JSON.stringify({ project_id: proj.id, frames: batch }).length;
+        console.log(`[ReelGenerator] Batch ${batchNum}/${totalBatches}: ${batch.length} frames, ~${(batchPayloadSize / 1024).toFixed(0)}KB`);
+
+        const result = await invokeFunction("analyze-video-frames", {
+          project_id: proj.id,
+          frames: batch,
         });
-        if (error) throw new Error(error.message || "Frame-Analyse fehlgeschlagen");
+        if (result.error) throw new Error(result.error);
       }
       setProcessingProgress(55);
 
       // Phase C: Transcribe audio
       setProcessingStatus("Audio wird transkribiert...");
       setProcessingProgress(60);
-      const { error: transcriptError } = await supabase.functions.invoke(
-        "transcribe-video",
-        { body: { project_id: proj.id } }
-      );
-      if (transcriptError) throw new Error(transcriptError.message || "Transkription fehlgeschlagen");
+      const transcriptResult = await invokeFunction("transcribe-video", {
+        project_id: proj.id,
+      });
+      if (transcriptResult.error) throw new Error(transcriptResult.error);
       setProcessingProgress(80);
 
       // Phase D: AI segment selection
       setProcessingStatus("KI wählt beste Segmente...");
       setProcessingProgress(85);
-      const { data: segmentData, error: segmentError } = await supabase.functions.invoke(
-        "select-reel-segments",
-        { body: { project_id: proj.id, target_duration_sec: targetDuration } }
-      );
-      if (segmentError) throw new Error(segmentError.message || "Segment-Auswahl fehlgeschlagen");
+      const segmentResult = await invokeFunction("select-reel-segments", {
+        project_id: proj.id,
+        target_duration_sec: targetDuration,
+      });
+      if (segmentResult.error) throw new Error(segmentResult.error);
 
       setProcessingProgress(100);
-      setSegments(segmentData.segments || []);
+      const segData = segmentResult.data as { segments?: VideoSegment[] };
+      setSegments(segData?.segments || []);
 
       // Refresh project
       const { data: refreshed } = await supabase
@@ -337,6 +414,7 @@ export default function ReelGenerator() {
       toast.success("Analyse abgeschlossen!");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error("[ReelGenerator] Processing failed:", msg);
       toast.error("Verarbeitung fehlgeschlagen: " + msg);
       setProcessingStatus("Fehler: " + msg);
 
@@ -389,14 +467,12 @@ export default function ReelGenerator() {
     if (!project) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("render-reel", {
-        body: {
-          project_id: project.id,
-          subtitle_style: subtitleStyle,
-          transition_style: transitionStyle,
-        },
+      const result = await invokeFunction("render-reel", {
+        project_id: project.id,
+        subtitle_style: subtitleStyle,
+        transition_style: transitionStyle,
       });
-      if (error) throw new Error(error.message || "Render-Start fehlgeschlagen");
+      if (result.error) throw new Error(result.error);
 
       toast.success("Reel wird gerendert...");
       setWizardStep("render");
