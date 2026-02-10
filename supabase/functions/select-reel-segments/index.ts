@@ -226,7 +226,7 @@ Wähle die besten Segmente für ein ${target_duration_sec}-Sekunden Reel.`,
           },
         ],
         tool_choice: { type: "function", function: { name: "select_reel_segments" } },
-        max_completion_tokens: 2000,
+        max_completion_tokens: 4000,
       }),
     });
 
@@ -244,34 +244,93 @@ Wähle die besten Segmente für ein ${target_duration_sec}-Sekunden Reel.`,
     }
 
     const aiData = await response.json();
+    console.log("[select-reel-segments] AI response structure:", JSON.stringify({
+      finish_reason: aiData.choices?.[0]?.finish_reason,
+      has_tool_calls: !!aiData.choices?.[0]?.message?.tool_calls,
+      tool_calls_count: aiData.choices?.[0]?.message?.tool_calls?.length,
+      has_content: !!aiData.choices?.[0]?.message?.content,
+      content_preview: aiData.choices?.[0]?.message?.content?.slice(0, 200),
+    }));
+
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
-
-    if (!toolCall || toolCall.function?.name !== "select_reel_segments") {
-      console.error("[select-reel-segments] No tool call returned");
-      await supabase
-        .from("video_projects")
-        .update({ status: "failed", error_message: "KI hat keine Segmente zurückgegeben" })
-        .eq("id", project_id);
-      return new Response(
-        JSON.stringify({ error: "KI hat keine Segmente ausgewählt", success: false }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     let selectedSegments: SegmentSelection[];
-    try {
-      const args = JSON.parse(toolCall.function.arguments);
-      selectedSegments = args.segments || [];
-    } catch (parseError) {
-      console.error("[select-reel-segments] Parse error:", parseError);
-      await supabase
-        .from("video_projects")
-        .update({ status: "failed", error_message: "Segment-Daten konnten nicht geparst werden" })
-        .eq("id", project_id);
-      return new Response(
-        JSON.stringify({ error: "Parse-Fehler bei Segment-Auswahl", success: false }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+
+    if (toolCall && toolCall.function?.name === "select_reel_segments") {
+      // Primary path: proper tool call response
+      try {
+        const args = JSON.parse(toolCall.function.arguments);
+        selectedSegments = args.segments || [];
+      } catch (parseError) {
+        console.error("[select-reel-segments] Tool call parse error:", parseError);
+        console.error("[select-reel-segments] Raw arguments:", toolCall.function.arguments);
+        await supabase
+          .from("video_projects")
+          .update({ status: "failed", error_message: "Segment-Daten konnten nicht geparst werden" })
+          .eq("id", project_id);
+        return new Response(
+          JSON.stringify({ error: "Parse-Fehler bei Segment-Auswahl", success: false }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    } else {
+      // Fallback: try to extract segments from message content (some models return JSON in text)
+      console.warn("[select-reel-segments] No tool call returned, trying to parse from message content");
+      const content = aiData.choices?.[0]?.message?.content || "";
+      console.log("[select-reel-segments] Full content:", content.slice(0, 500));
+
+      // Try to find JSON array in the response
+      const jsonMatch = content.match(/\[\s*\{[\s\S]*?\}\s*\]/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].start_ms !== undefined) {
+            selectedSegments = parsed.map((s: Record<string, unknown>, i: number) => ({
+              segment_index: (s.segment_index as number) ?? i,
+              start_ms: s.start_ms as number,
+              end_ms: s.end_ms as number,
+              score: (s.score as number) ?? 7,
+              reason: (s.reason as string) || "KI-ausgewählt",
+              transcript_text: (s.transcript_text as string) || "",
+              subtitle_text: (s.subtitle_text as string) || "",
+            }));
+            console.log(`[select-reel-segments] Extracted ${selectedSegments.length} segments from content text`);
+          } else {
+            throw new Error("Parsed JSON doesn't contain valid segments");
+          }
+        } catch (e) {
+          console.error("[select-reel-segments] Content JSON parse failed:", e);
+          await supabase
+            .from("video_projects")
+            .update({ status: "failed", error_message: "KI hat keine Segmente zurückgegeben" })
+            .eq("id", project_id);
+          return new Response(
+            JSON.stringify({ error: "KI hat keine Segmente ausgewählt", success: false }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        // Also try parsing the whole content as JSON object with segments key
+        try {
+          const parsed = JSON.parse(content);
+          if (parsed.segments && Array.isArray(parsed.segments)) {
+            selectedSegments = parsed.segments;
+            console.log(`[select-reel-segments] Extracted ${selectedSegments.length} segments from content JSON object`);
+          } else {
+            throw new Error("No segments key");
+          }
+        } catch {
+          console.error("[select-reel-segments] No valid segments found in response");
+          console.error("[select-reel-segments] Full AI response:", JSON.stringify(aiData).slice(0, 1000));
+          await supabase
+            .from("video_projects")
+            .update({ status: "failed", error_message: "KI hat keine Segmente zurückgegeben" })
+            .eq("id", project_id);
+          return new Response(
+            JSON.stringify({ error: "KI hat keine Segmente ausgewählt", success: false }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
     }
 
     console.log(`[select-reel-segments] AI selected ${selectedSegments.length} segments`);
