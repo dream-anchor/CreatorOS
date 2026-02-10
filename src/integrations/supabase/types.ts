@@ -1144,6 +1144,204 @@ export type Database = {
         }
         Relationships: []
       }
+      video_projects: {
+        Row: {
+          background_music_url: string | null
+          created_at: string
+          error_message: string | null
+          frame_analysis: Json | null
+          id: string
+          post_id: string | null
+          rendered_video_path: string | null
+          rendered_video_url: string | null
+          shotstack_render_id: string | null
+          source_duration_ms: number | null
+          source_file_size: number | null
+          source_height: number | null
+          source_video_path: string
+          source_video_url: string | null
+          source_width: number | null
+          status: string
+          subtitle_style: string | null
+          target_duration_sec: number | null
+          transcript: Json | null
+          transition_style: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          background_music_url?: string | null
+          created_at?: string
+          error_message?: string | null
+          frame_analysis?: Json | null
+          id?: string
+          post_id?: string | null
+          rendered_video_path?: string | null
+          rendered_video_url?: string | null
+          shotstack_render_id?: string | null
+          source_duration_ms?: number | null
+          source_file_size?: number | null
+          source_height?: number | null
+          source_video_path: string
+          source_video_url?: string | null
+          source_width?: number | null
+          status?: string
+          subtitle_style?: string | null
+          target_duration_sec?: number | null
+          transcript?: Json | null
+          transition_style?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          background_music_url?: string | null
+          created_at?: string
+          error_message?: string | null
+          frame_analysis?: Json | null
+          id?: string
+          post_id?: string | null
+          rendered_video_path?: string | null
+          rendered_video_url?: string | null
+          shotstack_render_id?: string | null
+          source_duration_ms?: number | null
+          source_file_size?: number | null
+          source_height?: number | null
+          source_video_path?: string
+          source_video_url?: string | null
+          source_width?: number | null
+          status?: string
+          subtitle_style?: string | null
+          target_duration_sec?: number | null
+          transcript?: Json | null
+          transition_style?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_projects_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_renders: {
+        Row: {
+          completed_at: string | null
+          config_snapshot: Json
+          created_at: string
+          duration_sec: number | null
+          error_message: string | null
+          id: string
+          output_url: string | null
+          project_id: string
+          shotstack_render_id: string
+          shotstack_status: string | null
+          started_at: string | null
+          stored_video_path: string | null
+          stored_video_url: string | null
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          config_snapshot: Json
+          created_at?: string
+          duration_sec?: number | null
+          error_message?: string | null
+          id?: string
+          output_url?: string | null
+          project_id: string
+          shotstack_render_id: string
+          shotstack_status?: string | null
+          started_at?: string | null
+          stored_video_path?: string | null
+          stored_video_url?: string | null
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          config_snapshot?: Json
+          created_at?: string
+          duration_sec?: number | null
+          error_message?: string | null
+          id?: string
+          output_url?: string | null
+          project_id?: string
+          shotstack_render_id?: string
+          shotstack_status?: string | null
+          started_at?: string | null
+          stored_video_path?: string | null
+          stored_video_url?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_renders_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "video_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_segments: {
+        Row: {
+          created_at: string
+          end_ms: number
+          id: string
+          is_included: boolean | null
+          is_user_modified: boolean | null
+          project_id: string
+          reason: string | null
+          score: number | null
+          segment_index: number
+          start_ms: number
+          subtitle_text: string | null
+          transcript_text: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          end_ms: number
+          id?: string
+          is_included?: boolean | null
+          is_user_modified?: boolean | null
+          project_id: string
+          reason?: string | null
+          score?: number | null
+          segment_index: number
+          start_ms: number
+          subtitle_text?: string | null
+          transcript_text?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          end_ms?: number
+          id?: string
+          is_included?: boolean | null
+          is_user_modified?: boolean | null
+          project_id?: string
+          reason?: string | null
+          score?: number | null
+          segment_index?: number
+          start_ms?: number
+          subtitle_text?: string | null
+          transcript_text?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_segments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "video_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1160,7 +1358,7 @@ export type Database = {
     Enums: {
       asset_source: "upload" | "generate"
       log_level: "info" | "warn" | "error"
-      post_format: "single" | "carousel"
+      post_format: "single" | "carousel" | "reel"
       post_status:
         | "IDEA"
         | "DRAFT"
@@ -1300,7 +1498,7 @@ export const Constants = {
     Enums: {
       asset_source: ["upload", "generate"],
       log_level: ["info", "warn", "error"],
-      post_format: ["single", "carousel"],
+      post_format: ["single", "carousel", "reel"],
       post_status: [
         "IDEA",
         "DRAFT",
