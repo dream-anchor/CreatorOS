@@ -54,7 +54,6 @@ async function fetchJWT(): Promise<string | null> {
   try {
     const res = await fetch(`${NEON_AUTH_URL}/token`, {
       credentials: "include",
-      headers: { "Origin": window.location.origin },
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -94,7 +93,8 @@ export async function signInWithPassword(email: string, password: string): Promi
   const data = await res.json();
   const user = data.user;
 
-  // Now fetch a JWT for API calls
+  // The sign-in sets a HttpOnly session cookie automatically.
+  // Now fetch a JWT for API calls using that cookie.
   const jwt = await fetchJWT();
   if (!jwt) {
     throw new Error("Konnte kein Zugangstoken erhalten");
@@ -153,8 +153,6 @@ export async function initAuth(): Promise<void> {
   // Try refreshing the JWT using the session cookie
   const jwt = await fetchJWT();
   if (jwt) {
-    // Session cookie still valid - we got a fresh JWT
-    // Decode the JWT payload to get user info
     try {
       const payload = JSON.parse(atob(jwt.split(".")[1]));
       _user = {
@@ -167,14 +165,12 @@ export async function initAuth(): Promise<void> {
       localStorage.setItem("creatoros_auth_user", JSON.stringify(_user));
       scheduleRefresh();
     } catch {
-      // JWT decode failed - clear state
       _user = null;
       _session = null;
       localStorage.removeItem("creatoros_auth_token");
       localStorage.removeItem("creatoros_auth_user");
     }
   } else {
-    // No valid session - clear everything
     _user = null;
     _session = null;
     localStorage.removeItem("creatoros_auth_token");
