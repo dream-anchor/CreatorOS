@@ -6,6 +6,33 @@ import { authMiddleware } from "../middleware/auth";
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
+/** Validate a URL is safe to fetch (HTTPS only, no internal IPs) */
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const hostname = parsed.hostname.toLowerCase();
+    // Block internal/private IPs and hostnames
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.") || hostname.startsWith("172.")) return false;
+    if (hostname === "169.254.169.254") return false; // AWS metadata
+    if (hostname.endsWith(".internal") || hostname.endsWith(".local")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** HTML-escape a string to prevent XSS in Shotstack HTML renders */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 // Auth middleware for all routes except render-callback
 app.use("/*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
@@ -22,7 +49,7 @@ app.get("/projects", async (c) => {
   const sql = getDb(c.env.DATABASE_URL);
 
   const projects = await query(sql,
-    `SELECT id, post_id, source_video_url, source_duration_ms, source_width, source_height,
+    `SELECT id, post_id, source_video_path, source_video_url, source_duration_ms, source_width, source_height,
             status, error_message, target_duration_sec, subtitle_style, transition_style,
             rendered_video_url, rendered_video_path, created_at, updated_at
      FROM video_projects
@@ -316,6 +343,9 @@ app.post("/transcribe", async (c) => {
   let fileType = "audio/wav";
 
   if (audio_url) {
+    if (!isSafeUrl(audio_url as string)) {
+      return c.json({ error: "Ungültige Audio-URL", success: false }, 400);
+    }
     const audioRes = await fetch(audio_url as string);
     if (!audioRes.ok) {
       await query(sql, "UPDATE video_projects SET status = 'failed', error_message = 'Audio-Download fehlgeschlagen' WHERE id = $1", [project_id]);
@@ -326,6 +356,9 @@ app.post("/transcribe", async (c) => {
     const videoUrl = project.source_video_url as string;
     if (!videoUrl) {
       return c.json({ error: "Keine Video-URL vorhanden", success: false }, 400);
+    }
+    if (!isSafeUrl(videoUrl)) {
+      return c.json({ error: "Ungültige Video-URL", success: false }, 400);
     }
     fileName = "video.mp4";
     fileType = "video/mp4";
@@ -598,7 +631,7 @@ app.post("/render", async (c) => {
       return {
         asset: {
           type: "html",
-          html: `<html><body style="margin:0;display:flex;align-items:flex-end;justify-content:center;height:100%;">${buildSubtitle(seg.subtitle_text as string)}</body></html>`,
+          html: `<html><body style="margin:0;display:flex;align-items:flex-end;justify-content:center;height:100%;">${buildSubtitle(escapeHtml(seg.subtitle_text as string))}</body></html>`,
           width: 1080,
           height: 400,
         },
@@ -657,12 +690,13 @@ app.post("/render", async (c) => {
 // ============================================================
 app.post("/render-callback", async (c) => {
   const sql = getDb(c.env.DATABASE_URL);
-  const { id: renderId, status, url } = await c.req.json<{
+  const body = await c.req.json<{
     id: string;
     status: string;
     url?: string;
     error?: string;
   }>();
+  const { id: renderId, status, url } = body;
 
   if (!renderId) return c.json({ error: "Keine Render-ID" }, 400);
 
@@ -672,7 +706,22 @@ app.post("/render-callback", async (c) => {
   );
   if (!render) return c.json({ error: "Unbekannte Render-ID" }, 404);
 
+  // Idempotency: skip if already processed
+  const currentRender = await queryOne<Record<string, unknown>>(sql,
+    "SELECT shotstack_status FROM video_renders WHERE id = $1",
+    [render.id]
+  );
+  if (currentRender?.shotstack_status === "done" || currentRender?.shotstack_status === "failed") {
+    return c.json({ success: true, status: "already_processed" });
+  }
+
   if (status === "done" && url) {
+    // Validate Shotstack URL (should be from shotstack CDN)
+    if (!isSafeUrl(url)) {
+      await query(sql, "UPDATE video_renders SET shotstack_status = 'failed', error_message = 'Ungültige Video-URL im Callback' WHERE id = $1", [render.id]);
+      return c.json({ error: "Ungültige URL" }, 400);
+    }
+
     // Download rendered video
     const videoRes = await fetch(url);
     if (!videoRes.ok) {
@@ -701,7 +750,6 @@ app.post("/render-callback", async (c) => {
       [render.user_id, JSON.stringify({ project_id: render.project_id, video_url: publicUrl })]
     );
   } else if (status === "failed") {
-    const body = await c.req.json();
     const errorMsg = body.error || "Shotstack Rendering fehlgeschlagen";
     await query(sql,
       "UPDATE video_renders SET shotstack_status = 'failed', error_message = $1, completed_at = NOW() WHERE id = $2",

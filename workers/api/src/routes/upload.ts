@@ -15,9 +15,11 @@ app.post("/presign", async (c) => {
     return c.json({ error: "files array is required" }, 400);
   }
 
+  const ALLOWED_FOLDERS = new Set(["uploads", "videos", "audio", "images", "video-assets"]);
+
   const urls = await Promise.all(
     files.map(async (file) => {
-      const folder = file.folder || "uploads";
+      const folder = ALLOWED_FOLDERS.has(file.folder || "") ? file.folder! : "uploads";
       const sanitized = file.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const key = `${folder}/${userId}/${Date.now()}-${sanitized}`;
       const { uploadUrl, publicUrl } = await generatePresignedUrl(
@@ -34,6 +36,7 @@ app.post("/presign", async (c) => {
 
 /** POST /api/upload/delete - Delete a file from R2 */
 app.post("/delete", async (c) => {
+  const userId = c.get("userId");
   const { key, publicUrl } = await c.req.json<{
     key?: string;
     publicUrl?: string;
@@ -48,6 +51,11 @@ app.post("/delete", async (c) => {
     return c.json({ error: "key or publicUrl is required" }, 400);
   }
 
+  // Security: only allow deleting files that belong to this user
+  if (!r2Key.includes(`/${userId}/`)) {
+    return c.json({ error: "Nicht autorisiert" }, 403);
+  }
+
   await deleteFromR2(c.env.R2_BUCKET, r2Key);
   return c.json({ success: true });
 });
@@ -57,14 +65,24 @@ app.get("/proxy", async (c) => {
   const key = c.req.query("key");
   if (!key) return c.json({ error: "key is required" }, 400);
 
+  // Security: reject path traversal and suspicious keys
+  if (key.includes("..") || key.startsWith("/") || key.includes("\\")) {
+    return c.json({ error: "Invalid key" }, 400);
+  }
+
   const object = await c.env.R2_BUCKET.get(key);
   if (!object) return c.json({ error: "File not found" }, 404);
 
+  const contentType = object.httpMetadata?.contentType || "application/octet-stream";
   const headers = new Headers();
-  headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
+  headers.set("Content-Type", contentType);
   headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
   headers.set("Cache-Control", "public, max-age=3600");
+  // Prevent HTML/JS execution for non-media files
+  if (!contentType.startsWith("video/") && !contentType.startsWith("image/") && !contentType.startsWith("audio/")) {
+    headers.set("Content-Disposition", "attachment");
+  }
 
   if (object.size) headers.set("Content-Length", String(object.size));
 

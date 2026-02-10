@@ -259,8 +259,11 @@ export default function ReelGenerator() {
     } else if (proj.status === "rendering") {
       setWizardStep("render");
       startPolling();
-    } else if (proj.status === "uploaded" && proj.source_video_path && proj.source_duration_ms) {
-      // Use proxy URL for CORS-safe video access from R2
+    } else if (
+      (proj.status === "uploaded" || proj.status === "analyzing_frames" || proj.status === "transcribing" || proj.status === "selecting_segments")
+      && proj.source_video_path && proj.source_duration_ms
+    ) {
+      // Restart processing for uploaded or interrupted analyses
       const apiBase = import.meta.env.VITE_API_URL || "";
       const proxyUrl = `${apiBase}/api/upload/proxy?key=${encodeURIComponent(proj.source_video_path)}`;
       setWizardStep("processing");
