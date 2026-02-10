@@ -44,6 +44,40 @@ interface FrameData {
   base64: string;
 }
 
+interface UploadItem {
+  id: string;
+  file: File;
+  fileName: string;
+  progress: number;
+  status: "uploading" | "done" | "error";
+  durationMs?: number;
+  project?: VideoProject;
+  error?: string;
+}
+
+function uploadWithProgress(
+  url: string,
+  file: File,
+  token: string,
+  onProgress: (pct: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url, true);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload fehlgeschlagen (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error("Netzwerkfehler beim Upload"));
+    xhr.send(file);
+  });
+}
+
 const SUBTITLE_STYLES: { id: SubtitleStyle; label: string; description: string }[] = [
   { id: "bold_center", label: "Fett Zentriert", description: "Großer weißer Text, mittig, mit Schatten" },
   { id: "bottom_bar", label: "Bottom Bar", description: "Schwarzer Balken unten mit weißem Text" },
@@ -74,6 +108,7 @@ export default function ReelGenerator() {
 
   // Upload state
   const [isDragging, setIsDragging] = useState(false);
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
 
@@ -82,20 +117,25 @@ export default function ReelGenerator() {
 
   // ===== STEP 1: VIDEO UPLOAD =====
 
-  const handleVideoUpload = async (file: File) => {
+  const updateUpload = (id: string, patch: Partial<UploadItem>) => {
+    setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+  };
+
+  const uploadSingleVideo = async (file: File) => {
     if (!user) return;
+    const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const ext = file.name.split(".").pop() || "mp4";
+    const storagePath = `${user.id}/source/${Date.now()}-${uploadId}.${ext}`;
 
-    if (!file.type.startsWith("video/")) {
-      toast.error("Bitte lade eine Videodatei hoch");
-      return;
-    }
+    const item: UploadItem = {
+      id: uploadId,
+      file,
+      fileName: file.name,
+      progress: 0,
+      status: "uploading",
+    };
+    setUploads((prev) => [...prev, item]);
 
-    if (file.size > 100 * 1024 * 1024) {
-      toast.error("Video ist zu groß (max. 100MB)");
-      return;
-    }
-
-    setLoading(true);
     try {
       // Read video metadata
       const videoEl = document.createElement("video");
@@ -108,32 +148,33 @@ export default function ReelGenerator() {
       const width = videoEl.videoWidth;
       const height = videoEl.videoHeight;
       URL.revokeObjectURL(videoEl.src);
+      updateUpload(uploadId, { durationMs });
 
       if (file.size > 25 * 1024 * 1024) {
-        toast.warning("Video ist größer als 25MB. Transkription könnte fehlschlagen. Kürze das Video ggf. vorher.");
+        toast.warning(`${file.name}: Größer als 25MB, Transkription könnte fehlschlagen.`);
       }
 
-      toast.info("Video wird hochgeladen...");
+      // Upload with XHR for progress tracking
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      if (!token) throw new Error("Nicht eingeloggt");
 
-      // Upload to storage
-      const ext = file.name.split(".").pop() || "mp4";
-      const fileName = `${user.id}/source/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("video-assets")
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/video-assets/${storagePath}`;
+      await uploadWithProgress(uploadUrl, file, token, (pct) => {
+        updateUpload(uploadId, { progress: pct });
+      });
 
       const { data: urlData } = supabase.storage
         .from("video-assets")
-        .getPublicUrl(fileName);
+        .getPublicUrl(storagePath);
 
       // Create project record
       const { data: projectData, error: projectError } = await supabase
         .from("video_projects")
         .insert({
           user_id: user.id,
-          source_video_path: fileName,
+          source_video_path: storagePath,
           source_video_url: urlData.publicUrl,
           source_duration_ms: durationMs,
           source_width: width,
@@ -147,17 +188,44 @@ export default function ReelGenerator() {
 
       if (projectError) throw projectError;
 
-      setProject(projectData as unknown as VideoProject);
-      toast.success(`Video hochgeladen (${(durationMs / 1000).toFixed(0)}s)`);
-      setWizardStep("processing");
-      // Auto-start processing
-      runProcessing(projectData as unknown as VideoProject, urlData.publicUrl, durationMs);
+      const proj = projectData as unknown as VideoProject;
+      updateUpload(uploadId, { status: "done", progress: 100, project: proj });
+      toast.success(`${file.name} hochgeladen (${(durationMs / 1000).toFixed(0)}s)`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error("Upload fehlgeschlagen: " + msg);
-    } finally {
-      setLoading(false);
+      updateUpload(uploadId, { status: "error", error: msg });
+      toast.error(`${file.name}: ${msg}`);
     }
+  };
+
+  const handleVideoUpload = async (files: File[]) => {
+    if (!user) return;
+
+    const validFiles = files.filter((f) => {
+      if (!f.type.startsWith("video/")) {
+        toast.error(`${f.name}: Keine Videodatei`);
+        return false;
+      }
+      if (f.size > 100 * 1024 * 1024) {
+        toast.error(`${f.name}: Zu groß (max. 100MB)`);
+        return false;
+      }
+      return true;
+    });
+
+    // Start all uploads in parallel
+    validFiles.forEach((f) => uploadSingleVideo(f));
+  };
+
+  const startProcessingFromUpload = (item: UploadItem) => {
+    if (!item.project || !item.durationMs) return;
+    setProject(item.project);
+    setWizardStep("processing");
+    runProcessing(item.project, item.project.source_video_url!, item.durationMs);
+  };
+
+  const removeUpload = (id: string) => {
+    setUploads((prev) => prev.filter((u) => u.id !== id));
   };
 
   const handleDrop = useCallback(
@@ -167,9 +235,9 @@ export default function ReelGenerator() {
       const files = Array.from(e.dataTransfer.files).filter((f) =>
         f.type.startsWith("video/")
       );
-      if (files[0]) handleVideoUpload(files[0]);
+      if (files.length > 0) handleVideoUpload(files);
     },
-    [user]
+    [user],
   );
 
   // ===== STEP 2: PROCESSING =====
@@ -416,6 +484,7 @@ export default function ReelGenerator() {
     setWizardStep("upload");
     setProcessingStatus("");
     setProcessingProgress(0);
+    setUploads([]);
   };
 
   // ===== SEGMENT HELPERS =====
@@ -507,65 +576,149 @@ export default function ReelGenerator() {
         {/* ===== STEP 1: UPLOAD ===== */}
         {wizardStep === "upload" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="glass-card animate-fade-in">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Upload className="h-5 w-5 text-primary" />
-                  Video hochladen
-                </CardTitle>
-                <CardDescription>
-                  Lade dein Rohvideo hoch. Die KI findet die besten Momente.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div
-                  className={cn(
-                    "border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-200",
-                    isDragging
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30"
-                  )}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="video/mp4,video/quicktime,video/webm"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleVideoUpload(file);
+            <div className="space-y-4">
+              <Card className="glass-card animate-fade-in">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Upload className="h-5 w-5 text-primary" />
+                    Videos hochladen
+                  </CardTitle>
+                  <CardDescription>
+                    Lade ein oder mehrere Rohvideos hoch. Die KI findet die besten Momente.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div
+                    className={cn(
+                      "border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-200",
+                      isDragging
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50 hover:bg-muted/30",
+                    )}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragging(true);
                     }}
-                  />
-                  {loading ? (
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="video/mp4,video/quicktime,video/webm"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length > 0) handleVideoUpload(files);
+                        e.target.value = "";
+                      }}
+                    />
                     <div className="flex flex-col items-center gap-3">
-                      <Loader2 className="h-10 w-10 text-primary animate-spin" />
-                      <p className="text-sm text-muted-foreground">Video wird hochgeladen...</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-                        <Video className="h-8 w-8 text-primary" />
+                      <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+                        <Video className="h-7 w-7 text-primary" />
                       </div>
                       <div>
                         <p className="font-medium text-foreground">
-                          Video hierher ziehen oder klicken
+                          Videos hierher ziehen oder klicken
                         </p>
                         <p className="text-sm text-muted-foreground mt-1">
-                          MP4, MOV, WebM - max. 100MB
+                          MP4, MOV, WebM - max. 100MB pro Video - Mehrfachauswahl
                         </p>
                       </div>
                     </div>
-                  )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Upload Queue */}
+              {uploads.length > 0 && (
+                <div className="space-y-2">
+                  {uploads.map((item) => (
+                    <Card key={item.id} className="glass-card animate-fade-in">
+                      <CardContent className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          {/* Status icon */}
+                          <div className="flex-shrink-0">
+                            {item.status === "uploading" && (
+                              <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                            )}
+                            {item.status === "done" && (
+                              <Check className="h-5 w-5 text-green-400" />
+                            )}
+                            {item.status === "error" && (
+                              <X className="h-5 w-5 text-red-400" />
+                            )}
+                          </div>
+
+                          {/* Info + progress */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {item.fileName}
+                              </p>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                {item.status === "uploading" && (
+                                  <span className="text-xs font-mono text-primary">{item.progress}%</span>
+                                )}
+                                {item.durationMs && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {(item.durationMs / 1000).toFixed(0)}s
+                                  </span>
+                                )}
+                                <span className="text-xs text-muted-foreground">
+                                  {(item.file.size / 1024 / 1024).toFixed(1)}MB
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Progress bar */}
+                            {item.status === "uploading" && (
+                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-primary rounded-full transition-all duration-300"
+                                  style={{ width: `${item.progress}%` }}
+                                />
+                              </div>
+                            )}
+
+                            {item.status === "error" && (
+                              <p className="text-xs text-red-400 mt-0.5">{item.error}</p>
+                            )}
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex-shrink-0 flex items-center gap-1">
+                            {item.status === "done" && item.project && (
+                              <Button
+                                size="sm"
+                                variant="default"
+                                className="h-7 text-xs"
+                                onClick={() => startProcessingFromUpload(item)}
+                              >
+                                <Sparkles className="h-3 w-3 mr-1" />
+                                Analysieren
+                              </Button>
+                            )}
+                            {item.status !== "uploading" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                onClick={() => removeUpload(item.id)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
-              </CardContent>
-            </Card>
+              )}
+            </div>
 
             <Card className="glass-card animate-fade-in">
               <CardHeader>
@@ -597,7 +750,7 @@ export default function ReelGenerator() {
                   <p className="font-medium text-foreground">So funktioniert es:</p>
                   <div className="flex items-start gap-2">
                     <span className="text-primary font-mono">1.</span>
-                    <span>Video hochladen</span>
+                    <span>Videos hochladen (parallel)</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <span className="text-primary font-mono">2.</span>
