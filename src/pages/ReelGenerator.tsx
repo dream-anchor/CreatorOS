@@ -1045,7 +1045,7 @@ export default function ReelGenerator() {
           </div>
 
           {/* Project History */}
-          {projectHistory.length > 0 && (
+          {false && projectHistory.length > 0 && (
             <Card className="glass-card animate-fade-in mt-6">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
