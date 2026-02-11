@@ -1242,13 +1242,19 @@ export default function ReelGenerator() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
-                    <Scissors className="h-5 w-5 text-primary" />
-                    Segmente bearbeiten
+                    <Sparkles className="h-5 w-5 text-primary" />
+                    Virale Highlights
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    {segments.filter((s) => s.is_included).length} Segmente aktiv
-                    {" "}|{" "}
-                    Gesamt: {formatMs(totalIncludedDuration)}
+                    {segments.length} Clips gefunden
+                    {" "}•{" "}
+                    {segments.filter((s) => s.is_included).length} ausgewählt
+                    {segments.filter((s) => s.is_included).length > 0 && (
+                      <>
+                        {" "}•{" "}
+                        Gesamt: {formatMs(totalIncludedDuration)}
+                      </>
+                    )}
                   </p>
                 </div>
               </div>

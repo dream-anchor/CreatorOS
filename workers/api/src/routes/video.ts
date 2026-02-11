@@ -446,71 +446,98 @@ app.post("/select-segments", async (c) => {
       messages: [
         {
           role: "system",
-          content: `Du bist ein professioneller Reel-Editor und Storyteller. Deine Aufgabe ist es, aus einem längeren Video ein ${target_duration_sec}-Sekunden Instagram Reel zu schneiden, das eine ZUSAMMENHÄNGENDE GESCHICHTE erzählt.
+          content: `Du bist ein professioneller Viral-Content-Analyst, spezialisiert auf kurze Social-Media-Clips (Reels, TikTok, YouTube Shorts).
 
-## WICHTIGSTE REGEL: NARRATIVE KOHÄRENZ
-Das Reel muss eine logische, verständliche Geschichte erzählen. Die Segmente müssen inhaltlich zusammenpassen und in der richtigen Reihenfolge stehen. Du schneidest NICHT einfach die "besten Momente" zusammen – du erzählst die Geschichte des Videos komprimiert nach.
+## AUFGABE: Finde ALLE viralen Momente
+Deine Aufgabe ist es, aus einem längeren Video ALLE potentiell viralen Highlights zu extrahieren – nicht nur die besten 3-5, sondern ALLE Momente mit hohem Viral-Potential (Score ≥ 7/10).
 
-## Story-Struktur (MUSS eingehalten werden):
-1. **HOOK (0-3s)**: Der packendste Moment oder eine spannende Frage/Aussage, die Neugier weckt
-2. **KONTEXT (3-8s)**: Worum geht es? Setze die Szene / erkläre den Hintergrund
-3. **AUFBAU (8-20s)**: Der Hauptinhalt – Entwicklung, Argumentation, Demonstration
-4. **HÖHEPUNKT (20-25s)**: Die wichtigste Erkenntnis, das Ergebnis, der Wow-Moment
-5. **CTA/ABSCHLUSS (letzte 3-5s)**: Zusammenfassung oder Call-to-Action
+## Was macht einen Moment viral? (Virality Score 0-10)
+Bewerte jeden potentiellen Clip nach diesen Kriterien:
+
+**10/10 - Garantiert viral:**
+- Schockierender Twist oder unerwartete Wendung
+- Kontroverse/polarisierende Aussage mit starker Reaktion
+- Emotionaler Höhepunkt (Tränen, Lachen, Wut)
+- "Das glaubt man nicht"-Momente
+
+**8-9/10 - Sehr hohes Potential:**
+- Starker Hook in den ersten 2 Sekunden
+- Lustige/peinliche Situation mit Wiedererkennungswert
+- Clevere Pointe oder unerwartete Enthüllung
+- Visuell beeindruckend (Action, krasse Szene)
+
+**7/10 - Solides Potential:**
+- Interessante Erkenntnis oder Lifehack
+- Sympathischer/authentischer Moment
+- Gute Story mit klarem Bogen
+- Relateable Situation
+
+**< 7/10 - Nicht viral:**
+- Langweilige Erklärungen ohne Spannung
+- Zu lange Aufbauten ohne Payoff
+- Technische/trockene Inhalte ohne Emotion
+
+## Clip-Länge: 15-60 Sekunden
+- **15-30s**: Perfekt für pure Hooks, einzelne Aussagen, schnelle Gags
+- **30-45s**: Gut für Mini-Stories mit Setup + Punchline
+- **45-60s**: Komplexere Geschichten, die einen Bogen brauchen
+
+## WICHTIG: Jeder Clip = eigenständig!
+- NICHT mehrere Clips zu einem Story-Arc kombinieren
+- Jeder Clip muss für sich allein funktionieren
+- Kein "Kontext nötig" – der Viewer sieht nur DIESEN Clip
+- Schneide NICHT mitten im Satz – natürliche Sprechpausen als Start/Ende
 
 ## Regeln:
-- Segmente müssen eine LOGISCHE REIHENFOLGE haben (chronologisch oder thematisch)
-- Nutze das TRANSKRIPT als primäre Grundlage für die Story-Auswahl
-- Schneide NICHT mitten in einem Satz – jedes Segment muss bei einer natürlichen Sprechpause beginnen und enden
-- Jedes Segment 3-8 Sekunden lang
-- Gesamtdauer ca. ${target_duration_sec}s (±3s erlaubt)
-- Untertitel: Fasse den KERN des gesprochenen Inhalts in max. 10 Wörtern zusammen
-- Keine Überlappungen
-- Begründe bei jedem Segment seine Rolle in der Story (Hook/Kontext/Aufbau/Höhepunkt/CTA)
-
-## Segment-Auswahl Priorität:
-1. Inhaltliche Relevanz für die Geschichte (WICHTIGSTES Kriterium)
-2. Natürliche Satzgrenzen als Start/Ende
-3. Visueller Score als Tiebreaker bei gleichwertigen Optionen
+- Finde bis zu 20 Highlights (min. Score 7/10)
+- Sortiere nach Score (höchste zuerst)
+- Jeder Clip 15-60s
+- Untertitel: Fasse den Kern in max. 8 Wörtern zusammen
+- Keine Überlappungen zwischen Clips
+- Nutze TRANSKRIPT + FRAME-ANALYSE für optimale Auswahl
 
 Nutze das Tool.`,
         },
         {
           role: "user",
-          content: `Video-Dauer: ${videoDuration}s\nZiel-Reel-Dauer: ${target_duration_sec}s\n\n=== TRANSKRIPT (PRIMÄRE QUELLE für Story-Auswahl) ===\n${transcriptSummary}\n\n=== FRAME-ANALYSE (SEKUNDÄR für visuelle Qualität) ===\n${framesSummary}\n\nBitte wähle Segmente, die zusammen eine kohärente Geschichte erzählen. Die Reihenfolge der Segmente im Reel darf von der Originalreihenfolge abweichen, wenn es der Story dient (z.B. Hook = spannendster Moment vorgezogen).`,
+          content: `Video-Dauer: ${videoDuration}s\n\n=== TRANSKRIPT ===\n${transcriptSummary}\n\n=== FRAME-ANALYSE (Score 0-10, Energie, Tags, Gesichter) ===\n${framesSummary}\n\n---\n\nBitte finde ALLE viralen Momente (min. Score 7/10). Jeder Clip soll für sich allein funktionieren – kein Zusammenhang zwischen den Clips nötig. Sortiere nach Virality Score (höchste zuerst).`,
         },
       ],
       tools: [{
         type: "function",
         function: {
           name: "select_reel_segments",
-          description: "Gibt die ausgewählten Reel-Segmente zurück, geordnet nach ihrer Position im fertigen Reel",
+          description: "Gibt ALLE viralen Highlights zurück, sortiert nach Virality Score",
           parameters: {
             type: "object",
             properties: {
-              story_summary: {
-                type: "string",
-                description: "Kurze Beschreibung der erzählten Geschichte in 1-2 Sätzen",
+              total_highlights: {
+                type: "integer",
+                description: "Anzahl der gefundenen viralen Momente",
               },
               segments: {
                 type: "array",
                 items: {
                   type: "object",
                   properties: {
-                    segment_index: { type: "integer", description: "Position im fertigen Reel (0 = erster Clip)" },
+                    segment_index: { type: "integer", description: "Sortierung nach Score (0 = bester Clip)" },
                     start_ms: { type: "integer", description: "Startzeit im Originalvideo in Millisekunden" },
                     end_ms: { type: "integer", description: "Endzeit im Originalvideo in Millisekunden" },
-                    score: { type: "number", description: "Visueller Qualitätsscore 0-10" },
-                    narrative_role: { type: "string", enum: ["hook", "context", "buildup", "climax", "cta"], description: "Rolle dieses Segments in der Story-Struktur" },
-                    reason: { type: "string", description: "Warum dieses Segment gewählt wurde und welche Rolle es in der Geschichte spielt" },
-                    transcript_text: { type: "string", description: "Was in diesem Segment gesprochen wird" },
-                    subtitle_text: { type: "string", description: "Komprimierter Untertitel (max. 10 Wörter)" },
+                    score: { type: "number", description: "Virality Score 0-10 (nur ≥7 zurückgeben!)" },
+                    reason: { type: "string", description: "Warum dieser Moment viral ist (Hook? Twist? Emotion? Comedy?)" },
+                    transcript_text: { type: "string", description: "Was in diesem Clip gesprochen wird" },
+                    subtitle_text: { type: "string", description: "Catchy Untertitel (max. 8 Wörter)" },
+                    viral_category: {
+                      type: "string",
+                      enum: ["hook", "twist", "emotion", "comedy", "insight", "controversy", "relatable", "wow_moment"],
+                      description: "Viral-Kategorie dieses Clips"
+                    },
                   },
-                  required: ["segment_index", "start_ms", "end_ms", "score", "narrative_role", "reason", "subtitle_text"],
+                  required: ["segment_index", "start_ms", "end_ms", "score", "reason", "subtitle_text", "viral_category"],
                 },
               },
             },
-            required: ["story_summary", "segments"],
+            required: ["total_highlights", "segments"],
           },
         },
       }],
@@ -562,10 +589,16 @@ Nutze das Tool.`,
 app.post("/render", async (c) => {
   const userId = c.get("userId");
   const sql = getDb(c.env.DATABASE_URL);
-  const { project_id, subtitle_style = "bold_center", transition_style = "smooth" } = await c.req.json<{
+  const {
+    project_id,
+    subtitle_style = "bold_center",
+    transition_style = "smooth",
+    render_mode = "combined"
+  } = await c.req.json<{
     project_id: string;
     subtitle_style?: string;
     transition_style?: string;
+    render_mode?: "combined" | "individual";
   }>();
 
   if (!project_id) return c.json({ error: "project_id ist erforderlich", success: false }, 400);
