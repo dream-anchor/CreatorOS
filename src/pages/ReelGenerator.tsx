@@ -762,7 +762,8 @@ export default function ReelGenerator() {
     .filter((s) => s.is_included)
     .reduce((sum, s) => sum + (s.end_ms - s.start_ms), 0);
 
-  const formatMs = (ms: number) => {
+  const formatMs = (ms: number | null | undefined) => {
+    if (ms == null || isNaN(ms)) return "0:00";
     const s = Math.floor(ms / 1000);
     const m = Math.floor(s / 60);
     const sec = s % 60;
