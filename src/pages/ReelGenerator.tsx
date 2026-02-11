@@ -372,7 +372,7 @@ export default function ReelGenerator() {
 
       const proj = projectData as unknown as VideoProject;
       updateUpload(uploadId, { status: "done", progress: 100, project: proj });
-      toast.success(`${file.name} hochgeladen (${(durationMs / 1000).toFixed(0)}s)`);
+      toast.success(`${file.name} hochgeladen (${durationMs ? (durationMs / 1000).toFixed(0) : '?'}s)`);
 
       // Auto-start analysis using local file blob (avoids R2 CORS issues)
       const localBlobUrl = URL.createObjectURL(file);
@@ -935,7 +935,7 @@ export default function ReelGenerator() {
                                 )}
                                 {item.durationMs && (
                                   <span className="text-xs text-muted-foreground">
-                                    {(item.durationMs / 1000).toFixed(0)}s
+                                    {Math.floor(item.durationMs / 1000)}s
                                   </span>
                                 )}
                                 <span className="text-xs text-muted-foreground">
@@ -1242,7 +1242,7 @@ export default function ReelGenerator() {
                               {formatMs(seg.start_ms)} - {formatMs(seg.end_ms)}
                             </Badge>
                             <span className="text-xs text-muted-foreground">
-                              ({((seg.end_ms - seg.start_ms) / 1000).toFixed(1)}s)
+                              ({seg.start_ms != null && seg.end_ms != null ? ((seg.end_ms - seg.start_ms) / 1000).toFixed(1) : '?'}s)
                             </span>
                           </div>
                           <Switch
