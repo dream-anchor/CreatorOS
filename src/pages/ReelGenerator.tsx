@@ -191,6 +191,7 @@ export default function ReelGenerator() {
   // Style options
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>("bold_center");
   const [transitionStyle, setTransitionStyle] = useState<TransitionStyle>("smooth");
+  const [renderMode, setRenderMode] = useState<"individual" | "combined">("individual");
   const [targetDuration, setTargetDuration] = useState(30);
 
   // Upload state
@@ -696,6 +697,7 @@ export default function ReelGenerator() {
         project_id: project.id,
         subtitle_style: subtitleStyle,
         transition_style: transitionStyle,
+        render_mode: renderMode,
       });
       if (result.error) throw new Error(result.error);
 
@@ -728,9 +730,14 @@ export default function ReelGenerator() {
         // Fetch all renders for this project
         try {
           const rendersData = await apiGet<{ renders: any[] }>(`/api/video/projects/${project.id}/renders`);
-          if (rendersData?.renders) {
+          if (rendersData?.renders && rendersData.renders.length > 0) {
             setRenders(rendersData.renders);
-            toast.success(`${rendersData.renders.length} Clips fertig gerendert!`);
+            const successfulRenders = rendersData.renders.filter(r => r.shotstack_status === "done");
+            if (successfulRenders.length > 1) {
+              toast.success(`${successfulRenders.length} separate Clips fertig gerendert!`);
+            } else {
+              toast.success("Reel fertig gerendert!");
+            }
           } else {
             toast.success("Reel fertig gerendert!");
           }
@@ -1475,6 +1482,50 @@ export default function ReelGenerator() {
                       <p className="text-xs text-muted-foreground mt-1">{style.description}</p>
                     </button>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card animate-fade-in">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Video className="h-5 w-5 text-primary" />
+                  Render-Modus
+                </CardTitle>
+                <CardDescription>
+                  Wähle, wie die Clips gerendert werden sollen
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setRenderMode("individual")}
+                    className={cn(
+                      "p-4 rounded-xl border-2 text-left transition-all duration-200",
+                      renderMode === "individual"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <p className="font-medium text-sm text-foreground">Separate Clips</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Jeder Clip als eigenes Video ({segments.filter((s) => s.is_included).length} Videos)
+                    </p>
+                  </button>
+                  <button
+                    onClick={() => setRenderMode("combined")}
+                    className={cn(
+                      "p-4 rounded-xl border-2 text-left transition-all duration-200",
+                      renderMode === "combined"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <p className="font-medium text-sm text-foreground">Kombiniertes Reel</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Alle Clips zu einem Video zusammengefügt
+                    </p>
+                  </button>
                 </div>
               </CardContent>
             </Card>
