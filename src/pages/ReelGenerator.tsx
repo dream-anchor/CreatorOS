@@ -372,7 +372,8 @@ export default function ReelGenerator() {
 
       const proj = projectData as unknown as VideoProject;
       updateUpload(uploadId, { status: "done", progress: 100, project: proj });
-      toast.success(`${file.name} hochgeladen (${durationMs ? (durationMs / 1000).toFixed(0) : '?'}s)`);
+      const durationSec = toNumber(durationMs);
+      toast.success(`${file.name} hochgeladen (${durationSec != null ? Math.floor(durationSec / 1000) : '?'}s)`);
 
       // Auto-start analysis using local file blob (avoids R2 CORS issues)
       const localBlobUrl = URL.createObjectURL(file);
@@ -761,13 +762,23 @@ export default function ReelGenerator() {
   const totalIncludedDuration = segments
     .filter((s) => s.is_included)
     .reduce((sum, s) => {
-      if (s.end_ms == null || s.start_ms == null) return sum;
-      return sum + (s.end_ms - s.start_ms);
+      const startMs = toNumber(s.start_ms);
+      const endMs = toNumber(s.end_ms);
+      if (startMs == null || endMs == null) return sum;
+      return sum + (endMs - startMs);
     }, 0);
 
+  /** Safely convert any value to a number, return null if invalid */
+  const toNumber = (val: any): number | null => {
+    if (val == null) return null;
+    const num = typeof val === 'number' ? val : Number(val);
+    return isNaN(num) ? null : num;
+  };
+
   const formatMs = (ms: number | null | undefined) => {
-    if (ms == null || isNaN(ms)) return "0:00";
-    const s = Math.floor(ms / 1000);
+    const num = toNumber(ms);
+    if (num == null) return "0:00";
+    const s = Math.floor(num / 1000);
     const m = Math.floor(s / 60);
     const sec = s % 60;
     return `${m}:${sec.toString().padStart(2, "0")}`;
@@ -937,13 +948,13 @@ export default function ReelGenerator() {
                                 {item.status === "uploading" && (
                                   <span className="text-xs font-mono text-primary">{item.progress}%</span>
                                 )}
-                                {item.durationMs && (
+                                {toNumber(item.durationMs) != null && (
                                   <span className="text-xs text-muted-foreground">
-                                    {Math.floor(item.durationMs / 1000)}s
+                                    {Math.floor(toNumber(item.durationMs)! / 1000)}s
                                   </span>
                                 )}
                                 <span className="text-xs text-muted-foreground">
-                                  {item.file?.size ? (item.file.size / 1024 / 1024).toFixed(1) : '?'}MB
+                                  {toNumber(item.file?.size) != null ? (toNumber(item.file.size)! / 1024 / 1024).toFixed(1) : '?'}MB
                                 </span>
                               </div>
                             </div>
@@ -1045,7 +1056,7 @@ export default function ReelGenerator() {
           </div>
 
           {/* Project History */}
-          {false && projectHistory.length > 0 && (
+          {projectHistory.length > 0 && (
             <Card className="glass-card animate-fade-in mt-6">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1107,9 +1118,9 @@ export default function ReelGenerator() {
                               <Badge className={cn("text-xs", status.color)}>
                                 {status.label}
                               </Badge>
-                              {proj.source_duration_ms && (
+                              {toNumber(proj.source_duration_ms) != null && (
                                 <span className="text-xs text-muted-foreground font-mono">
-                                  {Math.floor(proj.source_duration_ms / 1000)}s
+                                  {Math.floor(toNumber(proj.source_duration_ms)! / 1000)}s
                                 </span>
                               )}
                             </div>
