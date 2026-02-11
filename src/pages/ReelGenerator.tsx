@@ -183,6 +183,7 @@ export default function ReelGenerator() {
   const [wizardStep, setWizardStep] = useState<ReelWizardStep>("upload");
   const [project, setProject] = useState<VideoProject | null>(null);
   const [segments, setSegments] = useState<VideoSegment[]>([]);
+  const [renders, setRenders] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [processingStatus, setProcessingStatus] = useState("");
   const [processingProgress, setProcessingProgress] = useState(0);
@@ -723,7 +724,19 @@ export default function ReelGenerator() {
         clearInterval(pollingRef.current!);
         pollingRef.current = null;
         setProject((prev) => (prev ? { ...prev, ...data, status: data.status as VideoProjectStatus } : prev));
-        toast.success("Reel fertig gerendert!");
+
+        // Fetch all renders for this project
+        try {
+          const rendersData = await apiGet<{ renders: any[] }>(`/api/video/projects/${project.id}/renders`);
+          if (rendersData?.renders) {
+            setRenders(rendersData.renders);
+            toast.success(`${rendersData.renders.length} Clips fertig gerendert!`);
+          } else {
+            toast.success("Reel fertig gerendert!");
+          }
+        } catch {
+          toast.success("Reel fertig gerendert!");
+        }
       } else if (data?.status === "failed") {
         clearInterval(pollingRef.current!);
         pollingRef.current = null;
@@ -1489,59 +1502,131 @@ export default function ReelGenerator() {
 
         {/* ===== STEP 5: RENDER ===== */}
         {wizardStep === "render" && (
-          <div className="max-w-2xl mx-auto">
-            {project?.status === "render_complete" && project?.rendered_video_path ? (
-              <Card className="glass-card animate-fade-in">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-green-400">
-                    <Check className="h-5 w-5" />
-                    Reel fertig!
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-center">
-                    <div className="w-64 rounded-2xl overflow-hidden shadow-2xl">
-                      <video
-                        src={`${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(project.rendered_video_path)}`}
-                        controls
-                        className="w-full aspect-[9/16] bg-black"
-                      />
+          <div className="max-w-6xl mx-auto">
+            {project?.status === "render_complete" ? (
+              renders.length > 0 ? (
+                <div className="space-y-6 animate-fade-in">
+                  <Card className="glass-card">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-green-400">
+                        <Check className="h-5 w-5" />
+                        {renders.length} Clips fertig gerendert!
+                      </CardTitle>
+                      <CardDescription>
+                        Jeder Clip ist ein eigenständiges Video und kann einzeln heruntergeladen werden
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {renders
+                      .filter((r) => r.shotstack_status === "done" && r.stored_video_path)
+                      .map((render, idx) => (
+                        <Card key={render.id} className="glass-card overflow-hidden">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-sm font-medium flex items-center justify-between">
+                              <span>
+                                Clip {render.segment_index != null ? render.segment_index + 1 : idx + 1}
+                              </span>
+                              {render.score != null && (
+                                <Badge className={cn("text-xs", scoreColor(render.score))}>
+                                  {toNumber(render.score)?.toFixed(1)}/10
+                                </Badge>
+                              )}
+                            </CardTitle>
+                            {render.subtitle_text && (
+                              <CardDescription className="text-xs line-clamp-2">
+                                {render.subtitle_text}
+                              </CardDescription>
+                            )}
+                          </CardHeader>
+                          <CardContent className="space-y-3 pb-4">
+                            <div className="w-full rounded-lg overflow-hidden shadow-xl">
+                              <video
+                                src={`${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(render.stored_video_path)}`}
+                                controls
+                                className="w-full aspect-[9/16] bg-black"
+                              />
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              onClick={() => {
+                                const a = document.createElement("a");
+                                a.href = `${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(render.stored_video_path)}`;
+                                a.download = `clip-${render.segment_index != null ? render.segment_index + 1 : idx + 1}.mp4`;
+                                a.click();
+                              }}
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Herunterladen
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      ))}
+                  </div>
+
+                  <div className="flex gap-3 justify-center pt-4">
+                    <Button variant="outline" onClick={resetWizard}>
+                      Neues Reel erstellen
+                    </Button>
+                  </div>
+                </div>
+              ) : project?.rendered_video_path ? (
+                // Fallback for old combined renders
+                <Card className="glass-card animate-fade-in">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-green-400">
+                      <Check className="h-5 w-5" />
+                      Reel fertig!
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex justify-center">
+                      <div className="w-64 rounded-2xl overflow-hidden shadow-2xl">
+                        <video
+                          src={`${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(project.rendered_video_path)}`}
+                          controls
+                          className="w-full aspect-[9/16] bg-black"
+                        />
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex gap-3 pt-4">
+                    <div className="flex gap-3 pt-4">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => {
+                          const a = document.createElement("a");
+                          a.href = `${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(project.rendered_video_path!)}`;
+                          a.download = `reel-${project.id}.mp4`;
+                          a.click();
+                        }}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Herunterladen
+                      </Button>
+                      <Button className="flex-1" onClick={createPostFromReel} disabled={loading}>
+                        {loading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="h-4 w-4 mr-2" />
+                        )}
+                        Als Post erstellen
+                      </Button>
+                    </div>
+
                     <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => {
-                        const a = document.createElement("a");
-                        a.href = `${import.meta.env.VITE_API_URL || ""}/api/upload/proxy?key=${encodeURIComponent(project.rendered_video_path!)}`;
-                        a.download = `reel-${project.id}.mp4`;
-                        a.click();
-                      }}
+                      variant="ghost"
+                      className="w-full mt-2"
+                      onClick={resetWizard}
                     >
-                      <Download className="h-4 w-4 mr-2" />
-                      Herunterladen
+                      Neues Reel erstellen
                     </Button>
-                    <Button className="flex-1" onClick={createPostFromReel} disabled={loading}>
-                      {loading ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Plus className="h-4 w-4 mr-2" />
-                      )}
-                      Als Post erstellen
-                    </Button>
-                  </div>
-
-                  <Button
-                    variant="ghost"
-                    className="w-full mt-2"
-                    onClick={resetWizard}
-                  >
-                    Neues Reel erstellen
-                  </Button>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              ) : null
             ) : (
               <Card className="glass-card animate-fade-in">
                 <CardContent className="py-12">
