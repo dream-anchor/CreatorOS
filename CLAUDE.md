@@ -1,5 +1,32 @@
 # CreatorOS - Projekt-Kontext
 
+## ⚠️ KRITISCH: Git & Deployment Workflow
+
+**DER USER ARBEITET IMMER LIVE IN PRODUCTION!**
+
+### WICHTIGSTE REGEL: IMMER SOFORT PUSHEN
+- **JEDE Code-Änderung MUSS sofort committed + gepusht werden**
+- Der User sieht lokale Änderungen NICHT, nur was auf GitHub ist
+- Lovable deployt automatisch bei jedem Push zu GitHub
+- **Niemals** Code-Änderungen ohne Push machen
+- **Niemals** fragen "Soll ich pushen?" - IMMER pushen!
+
+### Git-Workflow (für JEDE Änderung):
+```bash
+git add .
+git commit -m "beschreibung"
+git push
+```
+
+### Bei mehreren Änderungen:
+1. Alle Änderungen stagen
+2. EINEN commit mit allen zusammengehörigen Changes
+3. Sofort pushen
+
+**Wenn du Code änderst und nicht pushst, sieht der User NICHTS!**
+
+---
+
 ## Stack
 - **Frontend**: React + TypeScript + Vite + Tailwind + shadcn/ui
 - **Backend**: Supabase (Auth, DB, Edge Functions, Storage)
