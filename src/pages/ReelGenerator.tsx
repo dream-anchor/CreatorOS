@@ -207,7 +207,10 @@ export default function ReelGenerator() {
 
   // Load project history on mount
   useEffect(() => {
-    loadProjectHistory();
+    loadProjectHistory().catch((err) => {
+      console.error("[ReelGenerator] Failed to load project history:", err);
+      // Don't crash if history fails to load
+    });
   }, []);
 
   // Load project from URL param (/reels/:projectId)
@@ -224,12 +227,13 @@ export default function ReelGenerator() {
           toast.error("Projekt nicht gefunden");
           navigate("/reels", { replace: true });
         }
-      } catch {
+      } catch (err) {
+        console.error("[ReelGenerator] Failed to load project:", err);
         toast.error("Projekt konnte nicht geladen werden");
         navigate("/reels", { replace: true });
       }
     })();
-  }, [projectId]);
+  }, [projectId, navigate]);
 
   const loadProjectHistory = async () => {
     try {
