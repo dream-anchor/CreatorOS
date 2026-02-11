@@ -105,10 +105,12 @@ serve(async (req) => {
       project_id,
       subtitle_style = "bold_center",
       transition_style = "smooth",
+      render_mode = "individual",  // Default to individual for multi-clip workflow
     } = body as {
       project_id: string;
       subtitle_style?: string;
       transition_style?: string;
+      render_mode?: "combined" | "individual";
     };
 
     if (!project_id) {
@@ -163,8 +165,140 @@ serve(async (req) => {
       .update({ status: "rendering", subtitle_style, transition_style })
       .eq("id", project_id);
 
-    // Build Shotstack Edit JSON
+    const callbackUrl = `${supabaseUrl}/functions/v1/render-reel-callback`;
     const transition = mapTransition(transition_style);
+
+    // INDIVIDUAL MODE: Render each segment as separate video
+    if (render_mode === "individual") {
+      const renderIds: string[] = [];
+
+      for (const seg of segments) {
+        const clipDuration = (seg.end_ms - seg.start_ms) / 1000;
+
+        // Build video clip
+        const videoClip: Record<string, unknown> = {
+          asset: {
+            type: "video",
+            src: project.source_video_url,
+            trim: seg.start_ms / 1000,
+            volume: 1,
+          },
+          start: 0,
+          length: clipDuration,
+          fit: "cover",
+        };
+        if (transition) videoClip.transition = transition;
+
+        // Build subtitle clip if exists
+        const subtitleClip = seg.subtitle_text ? {
+          asset: {
+            type: "html",
+            html: `<html><body style="margin:0; display:flex; align-items:flex-end; justify-content:center; height:100%;">${buildSubtitleHtml(seg.subtitle_text, subtitle_style)}</body></html>`,
+            width: 1080,
+            height: 400,
+          },
+          start: 0,
+          length: clipDuration,
+          position: "bottom",
+          offset: { y: 0.08 },
+        } : null;
+
+        const edit = {
+          timeline: {
+            background: "#000000",
+            tracks: subtitleClip ? [{ clips: [subtitleClip] }, { clips: [videoClip] }] : [{ clips: [videoClip] }],
+          },
+          output: {
+            format: "mp4",
+            resolution: "hd",
+            aspectRatio: "9:16",
+            fps: 30,
+          },
+          callback: callbackUrl,
+        };
+
+        console.log(`[render-reel] Individual mode - rendering segment ${seg.segment_index}`);
+
+        // Call Shotstack Render API
+        const renderResponse = await fetch("https://api.shotstack.io/edit/v1/render", {
+          method: "POST",
+          headers: {
+            "x-api-key": shotstackApiKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(edit),
+        });
+
+        if (!renderResponse.ok) {
+          const errorText = await renderResponse.text();
+          console.error(`[render-reel] Shotstack error for segment ${seg.segment_index}: ${renderResponse.status} - ${errorText}`);
+          await supabase
+            .from("video_projects")
+            .update({ status: "failed", error_message: `Shotstack-Fehler bei Segment ${seg.segment_index}` })
+            .eq("id", project_id);
+          return new Response(
+            JSON.stringify({ error: `Shotstack Fehler (${renderResponse.status})`, success: false }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const renderData = await renderResponse.json();
+        const renderId = renderData.response?.id;
+
+        if (!renderId) {
+          console.error(`[render-reel] No render ID for segment ${seg.segment_index}`);
+          await supabase
+            .from("video_projects")
+            .update({ status: "failed", error_message: "Keine Render-ID von Shotstack erhalten" })
+            .eq("id", project_id);
+          return new Response(
+            JSON.stringify({ error: "Keine Render-ID erhalten", success: false }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Save render record with segment_id
+        await supabase.from("video_renders").insert({
+          project_id,
+          user_id: user.id,
+          segment_id: seg.id,
+          shotstack_render_id: renderId,
+          shotstack_status: "queued",
+          config_snapshot: edit,
+          render_mode: "individual",
+        });
+
+        renderIds.push(renderId);
+      }
+
+      // Update project with first render ID (for backward compatibility)
+      await supabase
+        .from("video_projects")
+        .update({ shotstack_render_id: renderIds[0] })
+        .eq("id", project_id);
+
+      // Log event
+      await supabase.from("logs").insert({
+        user_id: user.id,
+        level: "info",
+        event_type: "reel_render_started",
+        details: { project_id, render_ids: renderIds, render_count: renderIds.length, render_mode: "individual" },
+      });
+
+      console.log(`[render-reel] Individual renders started: ${renderIds.length} clips`);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          render_ids: renderIds,
+          render_count: renderIds.length,
+          render_mode: "individual",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // COMBINED MODE: Stitch all segments into one video (legacy)
     let cumulativeStart = 0;
 
     // Video clips track
@@ -214,8 +348,6 @@ serve(async (req) => {
         };
       });
 
-    const callbackUrl = `${supabaseUrl}/functions/v1/render-reel-callback`;
-
     const edit = {
       timeline: {
         background: "#000000",
@@ -233,7 +365,7 @@ serve(async (req) => {
       callback: callbackUrl,
     };
 
-    console.log(`[render-reel] Sending to Shotstack: ${segments.length} clips, callback: ${callbackUrl}`);
+    console.log(`[render-reel] Combined mode - sending to Shotstack: ${segments.length} clips, callback: ${callbackUrl}`);
 
     // Call Shotstack Render API
     const renderResponse = await fetch("https://api.shotstack.io/edit/v1/render", {
@@ -280,6 +412,7 @@ serve(async (req) => {
       shotstack_render_id: renderId,
       shotstack_status: "queued",
       config_snapshot: edit,
+      render_mode: "combined",
     });
 
     // Update project with render ID
@@ -293,16 +426,17 @@ serve(async (req) => {
       user_id: user.id,
       level: "info",
       event_type: "reel_render_started",
-      details: { project_id, render_id: renderId, segment_count: segments.length },
+      details: { project_id, render_id: renderId, segment_count: segments.length, render_mode: "combined" },
     });
 
-    console.log(`[render-reel] Render started: ${renderId}`);
+    console.log(`[render-reel] Combined render started: ${renderId}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         render_id: renderId,
         segment_count: segments.length,
+        render_mode: "combined",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

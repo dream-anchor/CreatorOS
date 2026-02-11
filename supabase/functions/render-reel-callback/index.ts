@@ -119,30 +119,81 @@ serve(async (req) => {
         })
         .eq("id", render.id);
 
-      // Update project
-      await supabase
-        .from("video_projects")
-        .update({
-          status: "render_complete",
-          rendered_video_path: storagePath,
-          rendered_video_url: urlData.publicUrl,
-        })
-        .eq("id", render.project_id);
+      // Check render mode to determine project completion logic
+      const { data: renderDetails } = await supabase
+        .from("video_renders")
+        .select("render_mode")
+        .eq("id", render.id)
+        .single();
 
-      // Log success
-      await supabase.from("logs").insert({
-        user_id: render.user_id,
-        level: "info",
-        event_type: "reel_render_complete",
-        details: {
-          project_id: render.project_id,
-          render_id: renderId,
-          video_url: urlData.publicUrl,
-          file_size_bytes: videoBuffer.length,
-        },
-      });
+      // For INDIVIDUAL mode: Only set project complete when ALL renders are done
+      if (renderDetails?.render_mode === "individual") {
+        const { data: allRenders } = await supabase
+          .from("video_renders")
+          .select("shotstack_status")
+          .eq("project_id", render.project_id)
+          .eq("render_mode", "individual");
 
-      console.log(`[render-reel-callback] Successfully stored rendered reel: ${urlData.publicUrl}`);
+        const allComplete = allRenders?.every(r => r.shotstack_status === "done") || false;
+        const anyFailed = allRenders?.some(r => r.shotstack_status === "failed") || false;
+
+        if (allComplete) {
+          await supabase
+            .from("video_projects")
+            .update({
+              status: "render_complete",
+              rendered_video_path: storagePath,
+              rendered_video_url: urlData.publicUrl,
+            })
+            .eq("id", render.project_id);
+
+          await supabase.from("logs").insert({
+            user_id: render.user_id,
+            level: "info",
+            event_type: "reel_render_complete",
+            details: {
+              project_id: render.project_id,
+              render_mode: "individual",
+              render_count: allRenders?.length || 0,
+            },
+          });
+
+          console.log(`[render-reel-callback] All ${allRenders?.length || 0} individual renders complete`);
+        } else if (anyFailed) {
+          await supabase
+            .from("video_projects")
+            .update({ status: "failed", error_message: "Einer oder mehrere Clips konnten nicht gerendert werden" })
+            .eq("id", render.project_id);
+
+          console.log(`[render-reel-callback] Some individual renders failed`);
+        } else {
+          console.log(`[render-reel-callback] Individual render ${renderId} complete, waiting for others`);
+        }
+      } else {
+        // COMBINED mode: Set project complete immediately
+        await supabase
+          .from("video_projects")
+          .update({
+            status: "render_complete",
+            rendered_video_path: storagePath,
+            rendered_video_url: urlData.publicUrl,
+          })
+          .eq("id", render.project_id);
+
+        await supabase.from("logs").insert({
+          user_id: render.user_id,
+          level: "info",
+          event_type: "reel_render_complete",
+          details: {
+            project_id: render.project_id,
+            render_id: renderId,
+            video_url: urlData.publicUrl,
+            file_size_bytes: videoBuffer.length,
+          },
+        });
+
+        console.log(`[render-reel-callback] Combined render complete: ${urlData.publicUrl}`);
+      }
     } else if (status === "failed") {
       console.error(`[render-reel-callback] Render failed: ${renderId}`);
 
@@ -157,10 +208,49 @@ serve(async (req) => {
         })
         .eq("id", render.id);
 
-      await supabase
-        .from("video_projects")
-        .update({ status: "failed", error_message: errorMsg })
-        .eq("id", render.project_id);
+      // Check render mode to handle failures appropriately
+      const { data: renderDetails } = await supabase
+        .from("video_renders")
+        .select("render_mode")
+        .eq("id", render.id)
+        .single();
+
+      // For individual mode, only fail project if ALL renders have finished
+      if (renderDetails?.render_mode === "individual") {
+        const { data: allRenders } = await supabase
+          .from("video_renders")
+          .select("shotstack_status")
+          .eq("project_id", render.project_id)
+          .eq("render_mode", "individual");
+
+        const allFinished = allRenders?.every(r => r.shotstack_status === "done" || r.shotstack_status === "failed") || false;
+        const anySuccessful = allRenders?.some(r => r.shotstack_status === "done") || false;
+
+        if (allFinished && !anySuccessful) {
+          // All failed - mark project as failed
+          await supabase
+            .from("video_projects")
+            .update({ status: "failed", error_message: "Alle Clips konnten nicht gerendert werden" })
+            .eq("id", render.project_id);
+
+          console.log(`[render-reel-callback] All individual renders failed`);
+        } else if (allFinished && anySuccessful) {
+          // Some succeeded - mark as complete (partial success)
+          await supabase
+            .from("video_projects")
+            .update({ status: "render_complete" })
+            .eq("id", render.project_id);
+
+          console.log(`[render-reel-callback] Some individual renders succeeded, some failed - partial success`);
+        }
+        // If not all finished, keep status as "rendering" and wait for other callbacks
+      } else {
+        // COMBINED mode: Fail immediately
+        await supabase
+          .from("video_projects")
+          .update({ status: "failed", error_message: errorMsg })
+          .eq("id", render.project_id);
+      }
 
       await supabase.from("logs").insert({
         user_id: render.user_id,
