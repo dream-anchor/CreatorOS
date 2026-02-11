@@ -760,7 +760,10 @@ export default function ReelGenerator() {
 
   const totalIncludedDuration = segments
     .filter((s) => s.is_included)
-    .reduce((sum, s) => sum + (s.end_ms - s.start_ms), 0);
+    .reduce((sum, s) => {
+      if (s.end_ms == null || s.start_ms == null) return sum;
+      return sum + (s.end_ms - s.start_ms);
+    }, 0);
 
   const formatMs = (ms: number | null | undefined) => {
     if (ms == null || isNaN(ms)) return "0:00";
