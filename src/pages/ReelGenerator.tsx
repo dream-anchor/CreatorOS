@@ -943,7 +943,7 @@ export default function ReelGenerator() {
                                   </span>
                                 )}
                                 <span className="text-xs text-muted-foreground">
-                                  {(item.file.size / 1024 / 1024).toFixed(1)}MB
+                                  {item.file?.size ? (item.file.size / 1024 / 1024).toFixed(1) : '?'}MB
                                 </span>
                               </div>
                             </div>
