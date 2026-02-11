@@ -782,6 +782,13 @@ export default function ReelGenerator() {
 
   // ===== SEGMENT HELPERS =====
 
+  /** Safely convert any value to a number, return null if invalid */
+  const toNumber = (val: any): number | null => {
+    if (val == null) return null;
+    const num = typeof val === 'number' ? val : Number(val);
+    return isNaN(num) ? null : num;
+  };
+
   const totalIncludedDuration = segments
     .filter((s) => s.is_included)
     .reduce((sum, s) => {
@@ -790,13 +797,6 @@ export default function ReelGenerator() {
       if (startMs == null || endMs == null) return sum;
       return sum + (endMs - startMs);
     }, 0);
-
-  /** Safely convert any value to a number, return null if invalid */
-  const toNumber = (val: any): number | null => {
-    if (val == null) return null;
-    const num = typeof val === 'number' ? val : Number(val);
-    return isNaN(num) ? null : num;
-  };
 
   const formatMs = (ms: number | null | undefined) => {
     const num = toNumber(ms);
