@@ -247,33 +247,56 @@ export default function ReelGenerator() {
   };
 
   const resumeProject = async (proj: VideoProject) => {
-    setProject(proj);
+    try {
+      console.log("[ReelGenerator] Resuming project:", proj.id, "status:", proj.status);
+      setProject(proj);
 
-    if (proj.status === "render_complete" && (proj.rendered_video_path || proj.rendered_video_url)) {
-      setWizardStep("render");
-    } else if (proj.status === "segments_ready") {
-      // Load segments and go to segment review
-      try {
-        const fullProject = await apiGet<VideoProject & { segments: VideoSegment[] }>(`/api/video/projects/${proj.id}`);
-        if (fullProject?.segments) setSegments(fullProject.segments);
-        setWizardStep("segments");
-      } catch {
-        toast.error("Segmente konnten nicht geladen werden");
+      if (proj.status === "render_complete" && (proj.rendered_video_path || proj.rendered_video_url)) {
+        setWizardStep("render");
+      } else if (proj.status === "segments_ready") {
+        // Load segments and go to segment review
+        try {
+          const fullProject = await apiGet<VideoProject & { segments: VideoSegment[] }>(`/api/video/projects/${proj.id}`);
+          console.log("[ReelGenerator] Loaded segments:", fullProject?.segments?.length || 0);
+
+          // Validate and sanitize segments
+          const validSegments = (fullProject?.segments || []).map(seg => ({
+            ...seg,
+            start_ms: toNumber(seg.start_ms) || 0,
+            end_ms: toNumber(seg.end_ms) || 0,
+            score: toNumber(seg.score) || 0,
+          }));
+
+          setSegments(validSegments);
+          setWizardStep("segments");
+        } catch (err) {
+          console.error("[ReelGenerator] Failed to load segments:", err);
+          toast.error("Segmente konnten nicht geladen werden");
+          setWizardStep("upload");
+        }
+      } else if (proj.status === "rendering") {
+        setWizardStep("render");
+        startPolling();
+      } else if (
+        (proj.status === "uploaded" || proj.status === "analyzing_frames" || proj.status === "transcribing" || proj.status === "selecting_segments")
+        && proj.source_video_path && proj.source_duration_ms
+      ) {
+        // Restart processing for uploaded or interrupted analyses
+        const apiBase = import.meta.env.VITE_API_URL || "";
+        const proxyUrl = `${apiBase}/api/upload/proxy?key=${encodeURIComponent(proj.source_video_path)}`;
+        setWizardStep("processing");
+        runProcessing(proj, proxyUrl, proj.source_duration_ms);
+      } else if (proj.status === "failed") {
+        setWizardStep("failed");
+      } else {
+        // Unknown state, go back to upload
+        console.warn("[ReelGenerator] Unknown project state:", proj.status);
+        setWizardStep("upload");
       }
-    } else if (proj.status === "rendering") {
-      setWizardStep("render");
-      startPolling();
-    } else if (
-      (proj.status === "uploaded" || proj.status === "analyzing_frames" || proj.status === "transcribing" || proj.status === "selecting_segments")
-      && proj.source_video_path && proj.source_duration_ms
-    ) {
-      // Restart processing for uploaded or interrupted analyses
-      const apiBase = import.meta.env.VITE_API_URL || "";
-      const proxyUrl = `${apiBase}/api/upload/proxy?key=${encodeURIComponent(proj.source_video_path)}`;
-      setWizardStep("processing");
-      runProcessing(proj, proxyUrl, proj.source_duration_ms);
-    } else if (proj.status === "failed") {
-      setWizardStep("failed");
+    } catch (err) {
+      console.error("[ReelGenerator] Error in resumeProject:", err);
+      toast.error("Projekt konnte nicht geladen werden");
+      setWizardStep("upload");
     }
   };
 
@@ -784,10 +807,11 @@ export default function ReelGenerator() {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  const scoreColor = (score: number | null) => {
-    if (!score) return "bg-muted text-muted-foreground";
-    if (score >= 7) return "bg-green-500/20 text-green-400 border-green-500/30";
-    if (score >= 4) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+  const scoreColor = (score: number | null | undefined) => {
+    const num = toNumber(score);
+    if (num == null) return "bg-muted text-muted-foreground";
+    if (num >= 7) return "bg-green-500/20 text-green-400 border-green-500/30";
+    if (num >= 4) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
     return "bg-red-500/20 text-red-400 border-red-500/30";
   };
 
