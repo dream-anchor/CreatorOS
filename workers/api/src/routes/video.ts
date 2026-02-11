@@ -113,6 +113,43 @@ app.get("/projects/:id", async (c) => {
 });
 
 // ============================================================
+// GET /api/video/projects/:id/renders - Get all renders for a project
+// ============================================================
+app.get("/projects/:id/renders", async (c) => {
+  const userId = c.get("userId");
+  const sql = getDb(c.env.DATABASE_URL);
+  const projectId = c.req.param("id");
+
+  // Verify project ownership
+  const project = await queryOne<Record<string, unknown>>(sql,
+    "SELECT id FROM video_projects WHERE id = $1 AND user_id = $2",
+    [projectId, userId]
+  );
+  if (!project) return c.json({ error: "Projekt nicht gefunden" }, 404);
+
+  // Fetch all renders with segment info
+  const renders = await query(sql,
+    `SELECT
+      vr.*,
+      vs.segment_index,
+      vs.subtitle_text,
+      vs.start_ms,
+      vs.end_ms,
+      vs.score
+    FROM video_renders vr
+    LEFT JOIN video_segments vs ON vr.segment_id = vs.id
+    WHERE vr.project_id = $1
+    ORDER BY
+      vr.render_mode DESC,  -- 'individual' first
+      vs.segment_index ASC,
+      vr.created_at DESC`,
+    [projectId]
+  );
+
+  return c.json({ renders, count: renders.length });
+});
+
+// ============================================================
 // POST /api/video/projects - Create a new video project
 // ============================================================
 app.post("/projects", async (c) => {
@@ -593,7 +630,7 @@ app.post("/render", async (c) => {
     project_id,
     subtitle_style = "bold_center",
     transition_style = "smooth",
-    render_mode = "combined"
+    render_mode = "individual"  // Default to individual mode for multi-clip workflow
   } = await c.req.json<{
     project_id: string;
     subtitle_style?: string;
@@ -621,7 +658,7 @@ app.post("/render", async (c) => {
     [subtitle_style, transition_style, project_id]
   );
 
-  // Build Shotstack edit JSON
+  // Helper functions for building Shotstack edits
   const transitionMap: Record<string, Record<string, unknown> | undefined> = {
     smooth: { in: "fade", out: "fade" },
     fade: { in: "fade" },
@@ -638,6 +675,86 @@ app.post("/render", async (c) => {
   };
   const buildSubtitle = subtitleStyles[subtitle_style] || subtitleStyles.bold_center;
 
+  const workerUrl = new URL(c.req.url).origin;
+  const callbackUrl = `${workerUrl}/api/video/render-callback`;
+
+  // INDIVIDUAL MODE: Render each segment as separate video
+  if (render_mode === "individual") {
+    const renderIds: string[] = [];
+
+    for (const seg of segments) {
+      const duration = ((seg.end_ms as number) - (seg.start_ms as number)) / 1000;
+
+      // Build video clip for this segment
+      const videoClip: Record<string, unknown> = {
+        asset: { type: "video", src: project.source_video_url, trim: (seg.start_ms as number) / 1000, volume: 1 },
+        start: 0,
+        length: duration,
+        fit: "cover",
+      };
+      if (transition) videoClip.transition = transition;
+
+      // Build subtitle clip if exists
+      const subtitleClip = seg.subtitle_text ? {
+        asset: {
+          type: "html",
+          html: `<html><body style="margin:0;display:flex;align-items:flex-end;justify-content:center;height:100%;">${buildSubtitle(escapeHtml(seg.subtitle_text as string))}</body></html>`,
+          width: 1080,
+          height: 400,
+        },
+        start: 0,
+        length: duration,
+        position: "bottom",
+        offset: { y: 0.08 },
+      } : null;
+
+      const edit = {
+        timeline: {
+          background: "#000000",
+          tracks: subtitleClip ? [{ clips: [subtitleClip] }, { clips: [videoClip] }] : [{ clips: [videoClip] }],
+        },
+        output: { format: "mp4", resolution: "1080", aspectRatio: "9:16", fps: 30, quality: "high" },
+        callback: callbackUrl,
+      };
+
+      // Submit to Shotstack
+      const renderRes = await fetch("https://api.shotstack.io/edit/v1/render", {
+        method: "POST",
+        headers: { "x-api-key": c.env.SHOTSTACK_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify(edit),
+      });
+
+      if (!renderRes.ok) {
+        const errText = await renderRes.text();
+        await query(sql, "UPDATE video_projects SET status = 'failed', error_message = $1 WHERE id = $2",
+          [`Shotstack-Fehler bei Segment ${seg.segment_index}: ${renderRes.status}`, project_id]);
+        return c.json({ error: `Shotstack Fehler (${renderRes.status})`, success: false }, 500);
+      }
+
+      const renderData = await renderRes.json() as { response?: { id?: string } };
+      const renderId = renderData.response?.id;
+
+      if (!renderId) {
+        await query(sql, "UPDATE video_projects SET status = 'failed', error_message = 'Keine Render-ID' WHERE id = $1", [project_id]);
+        return c.json({ error: "Keine Render-ID erhalten", success: false }, 500);
+      }
+
+      // Store render record with segment_id
+      await query(sql,
+        "INSERT INTO video_renders (project_id, user_id, segment_id, shotstack_render_id, shotstack_status, config_snapshot, render_mode) VALUES ($1, $2, $3, $4, 'queued', $5, 'individual')",
+        [project_id, userId, seg.id, renderId, JSON.stringify(edit)]
+      );
+
+      renderIds.push(renderId);
+    }
+
+    // Store first render ID in project (for backward compatibility)
+    await query(sql, "UPDATE video_projects SET shotstack_render_id = $1 WHERE id = $2", [renderIds[0], project_id]);
+
+    return c.json({ success: true, render_ids: renderIds, render_count: renderIds.length, render_mode: "individual" });
+  }
+
+  // COMBINED MODE: Stitch all segments into one video (legacy behavior)
   let cumulativeStart = 0;
   const videoClips = segments.map((seg) => {
     const duration = ((seg.end_ms as number) - (seg.start_ms as number)) / 1000;
@@ -675,9 +792,6 @@ app.post("/render", async (c) => {
       };
     });
 
-  const workerUrl = new URL(c.req.url).origin;
-  const callbackUrl = `${workerUrl}/api/video/render-callback`;
-
   const edit = {
     timeline: {
       background: "#000000",
@@ -709,13 +823,13 @@ app.post("/render", async (c) => {
   }
 
   await query(sql,
-    "INSERT INTO video_renders (project_id, user_id, shotstack_render_id, shotstack_status, config_snapshot) VALUES ($1, $2, $3, 'queued', $4)",
+    "INSERT INTO video_renders (project_id, user_id, shotstack_render_id, shotstack_status, config_snapshot, render_mode) VALUES ($1, $2, $3, 'queued', $4, 'combined')",
     [project_id, userId, renderId, JSON.stringify(edit)]
   );
 
   await query(sql, "UPDATE video_projects SET shotstack_render_id = $1 WHERE id = $2", [renderId, project_id]);
 
-  return c.json({ success: true, render_id: renderId, segment_count: segments.length });
+  return c.json({ success: true, render_id: renderId, segment_count: segments.length, render_mode: "combined" });
 });
 
 // ============================================================
@@ -774,24 +888,91 @@ app.post("/render-callback", async (c) => {
       "UPDATE video_renders SET shotstack_status = 'done', output_url = $1, stored_video_path = $2, stored_video_url = $3, completed_at = NOW() WHERE id = $4",
       [url, r2Key, publicUrl, render.id]
     );
-    await query(sql,
-      "UPDATE video_projects SET status = 'render_complete', rendered_video_path = $1, rendered_video_url = $2 WHERE id = $3",
-      [r2Key, publicUrl, render.project_id]
+
+    // Get render mode to determine project completion logic
+    const renderMode = await queryOne<Record<string, unknown>>(sql,
+      "SELECT render_mode FROM video_renders WHERE id = $1",
+      [render.id]
     );
-    await query(sql,
-      "INSERT INTO logs (user_id, level, event_type, details) VALUES ($1, 'info', 'reel_render_complete', $2)",
-      [render.user_id, JSON.stringify({ project_id: render.project_id, video_url: publicUrl })]
-    );
+
+    // For INDIVIDUAL mode: Only set project complete when ALL renders are done
+    if (renderMode?.render_mode === "individual") {
+      const allRenders = await query<Record<string, unknown>>(sql,
+        "SELECT shotstack_status FROM video_renders WHERE project_id = $1 AND render_mode = 'individual'",
+        [render.project_id]
+      );
+      const allComplete = allRenders.every(r => r.shotstack_status === "done");
+      const anyFailed = allRenders.some(r => r.shotstack_status === "failed");
+
+      if (allComplete) {
+        await query(sql,
+          "UPDATE video_projects SET status = 'render_complete', rendered_video_path = $1, rendered_video_url = $2 WHERE id = $3",
+          [r2Key, publicUrl, render.project_id]
+        );
+        await query(sql,
+          "INSERT INTO logs (user_id, level, event_type, details) VALUES ($1, 'info', 'reel_render_complete', $2)",
+          [render.user_id, JSON.stringify({ project_id: render.project_id, render_mode: "individual", render_count: allRenders.length })]
+        );
+      } else if (anyFailed) {
+        await query(sql,
+          "UPDATE video_projects SET status = 'failed', error_message = 'Einer oder mehrere Clips konnten nicht gerendert werden' WHERE id = $1",
+          [render.project_id]
+        );
+      }
+    } else {
+      // COMBINED mode: Set project complete immediately
+      await query(sql,
+        "UPDATE video_projects SET status = 'render_complete', rendered_video_path = $1, rendered_video_url = $2 WHERE id = $3",
+        [r2Key, publicUrl, render.project_id]
+      );
+      await query(sql,
+        "INSERT INTO logs (user_id, level, event_type, details) VALUES ($1, 'info', 'reel_render_complete', $2)",
+        [render.user_id, JSON.stringify({ project_id: render.project_id, video_url: publicUrl })]
+      );
+    }
   } else if (status === "failed") {
     const errorMsg = body.error || "Shotstack Rendering fehlgeschlagen";
     await query(sql,
       "UPDATE video_renders SET shotstack_status = 'failed', error_message = $1, completed_at = NOW() WHERE id = $2",
       [errorMsg, render.id]
     );
-    await query(sql,
-      "UPDATE video_projects SET status = 'failed', error_message = $1 WHERE id = $2",
-      [errorMsg, render.project_id]
+
+    // Get render mode to handle failures appropriately
+    const renderMode = await queryOne<Record<string, unknown>>(sql,
+      "SELECT render_mode FROM video_renders WHERE id = $1",
+      [render.id]
     );
+
+    // For individual mode, only fail project if ALL renders have finished (some may still be in progress)
+    if (renderMode?.render_mode === "individual") {
+      const allRenders = await query<Record<string, unknown>>(sql,
+        "SELECT shotstack_status FROM video_renders WHERE project_id = $1 AND render_mode = 'individual'",
+        [render.project_id]
+      );
+      const allFinished = allRenders.every(r => r.shotstack_status === "done" || r.shotstack_status === "failed");
+      const anySuccessful = allRenders.some(r => r.shotstack_status === "done");
+
+      if (allFinished && !anySuccessful) {
+        // All failed - mark project as failed
+        await query(sql,
+          "UPDATE video_projects SET status = 'failed', error_message = 'Alle Clips konnten nicht gerendert werden' WHERE id = $1",
+          [render.project_id]
+        );
+      } else if (allFinished && anySuccessful) {
+        // Some succeeded - mark as complete (partial success)
+        await query(sql,
+          "UPDATE video_projects SET status = 'render_complete' WHERE id = $1",
+          [render.project_id]
+        );
+      }
+      // If not all finished, keep status as "rendering" and wait for other callbacks
+    } else {
+      // COMBINED mode: Fail immediately
+      await query(sql,
+        "UPDATE video_projects SET status = 'failed', error_message = $1 WHERE id = $2",
+        [errorMsg, render.project_id]
+      );
+    }
   } else {
     await query(sql, "UPDATE video_renders SET shotstack_status = $1 WHERE id = $2", [status, render.id]);
   }
