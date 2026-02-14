@@ -23,6 +23,7 @@ import MediaArchive from "./pages/MediaArchive";
 import Community from "./pages/Community";
 import Analytics from "./pages/Analytics";
 import ReelGenerator from "./pages/ReelGenerator";
+import VideoEditor from "./pages/VideoEditor";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,7 @@ const App = () => (
               <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
               <Route path="/reels" element={<ProtectedRoute><ReelGenerator /></ProtectedRoute>} />
               <Route path="/reels/:projectId" element={<ProtectedRoute><ReelGenerator /></ProtectedRoute>} />
+              <Route path="/video-editor" element={<ProtectedRoute><VideoEditor /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/settings/*" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
