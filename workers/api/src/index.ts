@@ -65,4 +65,16 @@ app.onError((err, c) => {
   return c.json({ error: err.message || "Internal Server Error" }, 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    console.log(`[cron] Triggered at ${new Date().toISOString()}`);
+    const request = new Request(
+      "https://creatoros-api.antoine-dfc.workers.dev/api/cron/auto-generate-event-posts",
+      { method: "POST" }
+    );
+    const response = await app.fetch(request, env, ctx);
+    const body = await response.text();
+    console.log(`[cron] Response ${response.status}: ${body}`);
+  },
+};

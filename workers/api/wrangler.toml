@@ -12,6 +12,9 @@ jurisdiction = "eu"
 ENVIRONMENT = "production"
 R2_JURISDICTION = "eu"
 
+[triggers]
+crons = ["0 7 * * *"]  # Täglich 09:00 CET (07:00 UTC)
+
 # Secrets (set via `wrangler secret put`):
 # DATABASE_URL
 # OPENAI_API_KEY
