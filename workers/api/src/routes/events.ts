@@ -62,8 +62,8 @@ app.post("/", async (c) => {
   const body = await c.req.json();
 
   const rows = await query(sql,
-    `INSERT INTO events (user_id, title, date, time, venue, city, ticket_url, description, cast_members, event_type, image_url, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO events (user_id, title, date, time, venue, city, ticket_url, description, cast_members, event_type, image_url, is_active, image_pool_tags)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`,
     [
       userId,
@@ -78,6 +78,7 @@ app.post("/", async (c) => {
       body.event_type || "standard",
       body.image_url || null,
       body.is_active !== undefined ? body.is_active : true,
+      body.image_pool_tags || [],
     ]
   );
 

@@ -2,6 +2,10 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getDb, query, queryOne } from "../lib/db";
 import { callOpenAI, extractToolArgs } from "../lib/ai";
+import { selectBackgroundImage } from "../lib/media-selector";
+import { getTemplateHtml, type TemplateData } from "../lib/templates";
+import { renderHtmlToImage } from "../lib/image-renderer";
+import { formatDateGerman, formatTimeGerman } from "../lib/utils";
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -395,6 +399,49 @@ app.post("/auto-generate-event-posts", async (c) => {
             continue;
           }
 
+          // ── IMAGE GENERATION PIPELINE ──
+          let imagePublicUrl: string | null = null;
+          let imageR2Key: string | null = null;
+          let imageMediaAssetId: string | null = null;
+
+          try {
+            const bgImage = await selectBackgroundImage(
+              sql,
+              userId,
+              template,
+              (event.image_pool_tags as string[]) || []
+            );
+
+            if (bgImage) {
+              imageMediaAssetId = bgImage.id;
+
+              const templateData: TemplateData = {
+                eventTitle: event.title as string,
+                dateFormatted: formatDateGerman(event.date as string),
+                timeFormatted: formatTimeGerman(event.time as string | null),
+                venue: event.venue as string,
+                city: event.city as string,
+                backgroundImageUrl: bgImage.public_url,
+                daysUntil,
+                ticketUrl: (event.ticket_url as string) || undefined,
+              };
+
+              const html = getTemplateHtml(template, templateData);
+              const pngBuffer = await renderHtmlToImage(c.env, html);
+
+              if (pngBuffer) {
+                const r2Key = `event-images/${userId}/${event.id}/${template}-${Date.now()}.png`;
+                await c.env.R2_BUCKET.put(r2Key, pngBuffer, {
+                  httpMetadata: { contentType: "image/png" },
+                });
+                imageR2Key = r2Key;
+                imagePublicUrl = `${c.env.R2_PUBLIC_URL}/${r2Key}`;
+              }
+            }
+          } catch (imgErr) {
+            console.error(`[auto-generate] Image gen failed for ${event.id}/${template}:`, imgErr);
+          }
+
           // 7. Post-Status basierend auf auto_post_mode
           let postStatus: string;
           let scheduledAt: string | null = null;
@@ -431,7 +478,27 @@ app.post("/auto-generate-event-posts", async (c) => {
             ]
           );
 
-          // 9. Log
+          // 9. Asset anlegen (wenn Bild generiert)
+          if (imagePublicUrl && imageR2Key && postRows[0]?.id) {
+            await query(sql,
+              `INSERT INTO assets (user_id, post_id, storage_path, public_url, width, height, source, generator_meta)
+               VALUES ($1, $2, $3, $4, 1080, 1080, 'generate', $5)`,
+              [
+                userId,
+                postRows[0].id,
+                imageR2Key,
+                imagePublicUrl,
+                JSON.stringify({
+                  type: "event_template",
+                  template,
+                  event_id: event.id,
+                  background_media_asset_id: imageMediaAssetId,
+                }),
+              ]
+            );
+          }
+
+          // 10. Log
           await query(sql,
             "INSERT INTO logs (user_id, level, event_type, details) VALUES ($1, 'info', 'event_post_generated', $2)",
             [
@@ -442,6 +509,9 @@ app.post("/auto-generate-event-posts", async (c) => {
                 template,
                 model,
                 status: postStatus,
+                has_image: !!imagePublicUrl,
+                image_url: imagePublicUrl,
+                background_media_asset_id: imageMediaAssetId,
               }),
             ]
           );

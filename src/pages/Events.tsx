@@ -44,6 +44,7 @@ interface EventItem {
   cast_members: string[];
   event_type: string;
   image_url: string | null;
+  image_pool_tags: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -64,6 +65,7 @@ interface EventForm {
   description: string;
   cast_members: string;
   event_type: string;
+  image_pool_tags: string;
   is_active: boolean;
 }
 
@@ -77,6 +79,7 @@ const EMPTY_FORM: EventForm = {
   description: "",
   cast_members: "",
   event_type: "standard",
+  image_pool_tags: "",
   is_active: true,
 };
 
@@ -129,6 +132,7 @@ export default function EventsPage() {
       description: event.description || "",
       cast_members: (event.cast_members || []).join(", "),
       event_type: event.event_type || "standard",
+      image_pool_tags: (event.image_pool_tags || []).join(", "),
       is_active: event.is_active,
     });
     setDialogOpen(true);
@@ -154,6 +158,9 @@ export default function EventsPage() {
           ? form.cast_members.split(",").map((s) => s.trim()).filter(Boolean)
           : [],
         event_type: form.event_type || "standard",
+        image_pool_tags: form.image_pool_tags
+          ? form.image_pool_tags.split(",").map((s) => s.trim()).filter(Boolean)
+          : [],
         is_active: form.is_active,
       };
 
@@ -477,6 +484,22 @@ export default function EventsPage() {
                 placeholder="z.B. standard, eigenveranstaltung, inthega_tournee"
                 className="glass-input"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="image_pool_tags">Bild-Tags (kommagetrennt)</Label>
+              <Input
+                id="image_pool_tags"
+                value={form.image_pool_tags}
+                onChange={(e) =>
+                  setForm({ ...form, image_pool_tags: e.target.value })
+                }
+                placeholder="z.B. bühne, cast, portrait"
+                className="glass-input"
+              />
+              <p className="text-xs text-muted-foreground">
+                Filtert Medien-Archiv für automatische Event-Bilder
+              </p>
             </div>
 
             <div className="flex items-center justify-between">

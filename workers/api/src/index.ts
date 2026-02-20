@@ -31,6 +31,8 @@ export type Env = {
   R2_PUBLIC_URL: string;
   ENVIRONMENT: string;
   R2_JURISDICTION: string;
+  CF_ACCOUNT_ID: string;
+  CF_API_TOKEN: string;
 };
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();

@@ -253,6 +253,7 @@ CREATE TABLE public.events (
   cast_members TEXT[] DEFAULT '{}',
   event_type TEXT DEFAULT 'standard',
   image_url TEXT,
+  image_pool_tags TEXT[] DEFAULT '{}',
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
