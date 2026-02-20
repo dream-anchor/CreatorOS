@@ -175,7 +175,7 @@ export default function MediaArchivePage() {
         uploadedAssets.push({
           id: insertData.id,
           filename: file.name,
-          public_url: urlData.publicUrl,
+          public_url: urls[0].publicUrl,
           analyzing: true,
         });
       }

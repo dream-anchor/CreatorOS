@@ -160,7 +160,7 @@ const FUNCTION_MAP: Record<string, string> = {
  * Drop-in replacement for supabase.functions.invoke().
  * Usage: const { data, error } = await invokeFunction("generate-draft", { body: {...} });
  */
-export async function invokeFunction<T = unknown>(
+export async function invokeFunction<T = any>(
   functionName: string,
   options?: { body?: unknown }
 ): Promise<{ data: T | null; error: Error | null }> {
