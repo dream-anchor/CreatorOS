@@ -527,6 +527,60 @@ export type Database = {
         }
         Relationships: []
       }
+      events: {
+        Row: {
+          cast_members: string[] | null
+          city: string
+          created_at: string
+          date: string
+          description: string | null
+          event_type: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean | null
+          ticket_url: string | null
+          time: string | null
+          title: string
+          updated_at: string
+          user_id: string
+          venue: string
+        }
+        Insert: {
+          cast_members?: string[] | null
+          city: string
+          created_at?: string
+          date: string
+          description?: string | null
+          event_type?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean | null
+          ticket_url?: string | null
+          time?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+          venue: string
+        }
+        Update: {
+          cast_members?: string[] | null
+          city?: string
+          created_at?: string
+          date?: string
+          description?: string | null
+          event_type?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean | null
+          ticket_url?: string | null
+          time?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+          venue?: string
+        }
+        Relationships: []
+      }
       instagram_comments: {
         Row: {
           ai_reply_suggestion: string | null
@@ -779,6 +833,7 @@ export type Database = {
           alt_text: string | null
           approved_at: string | null
           approved_by: string | null
+          auto_template: string | null
           caption: string | null
           caption_alt: string | null
           caption_short: string | null
@@ -788,6 +843,7 @@ export type Database = {
           created_at: string
           engagement_rate: number | null
           error_message: string | null
+          event_id: string | null
           format: Database["public"]["Enums"]["post_format"] | null
           hashtags: string | null
           id: string
@@ -815,6 +871,7 @@ export type Database = {
           alt_text?: string | null
           approved_at?: string | null
           approved_by?: string | null
+          auto_template?: string | null
           caption?: string | null
           caption_alt?: string | null
           caption_short?: string | null
@@ -824,6 +881,7 @@ export type Database = {
           created_at?: string
           engagement_rate?: number | null
           error_message?: string | null
+          event_id?: string | null
           format?: Database["public"]["Enums"]["post_format"] | null
           hashtags?: string | null
           id?: string
@@ -851,6 +909,7 @@ export type Database = {
           alt_text?: string | null
           approved_at?: string | null
           approved_by?: string | null
+          auto_template?: string | null
           caption?: string | null
           caption_alt?: string | null
           caption_short?: string | null
@@ -860,6 +919,7 @@ export type Database = {
           created_at?: string
           engagement_rate?: number | null
           error_message?: string | null
+          event_id?: string | null
           format?: Database["public"]["Enums"]["post_format"] | null
           hashtags?: string | null
           id?: string
@@ -884,6 +944,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "posts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "posts_remixed_from_id_fkey"
             columns: ["remixed_from_id"]
@@ -967,6 +1034,7 @@ export type Database = {
       }
       settings: {
         Row: {
+          auto_post_mode: string | null
           auto_sync_enabled: boolean | null
           created_at: string
           id: string
@@ -979,6 +1047,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          auto_post_mode?: string | null
           auto_sync_enabled?: boolean | null
           created_at?: string
           id?: string
@@ -991,6 +1060,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          auto_post_mode?: string | null
           auto_sync_enabled?: boolean | null
           created_at?: string
           id?: string
