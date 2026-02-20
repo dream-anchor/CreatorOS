@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getDb, query, queryOne } from "../lib/db";
+import { callOpenAI, extractToolArgs } from "../lib/ai";
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -228,6 +229,246 @@ app.post("/backfill-likes", async (c) => {
   }
 
   return c.json({ success: true, liked, total: comments.length });
+});
+
+// ============================================================
+// AUTO-GENERATE EVENT POSTS
+// ============================================================
+
+const TEMPLATE_PROMPTS: Record<string, string> = {
+  announcement:
+    "Erstelle einen Instagram-Ankündigungs-Post für eine Veranstaltung. " +
+    "Wecke Vorfreude, nenne Datum, Ort und was die Zuschauer erwartet. " +
+    "Wenn ein Ticketlink vorhanden ist, weise darauf hin.",
+  countdown:
+    "Erstelle einen Countdown-Post (noch 1 Woche!). " +
+    "Erzeuge Dringlichkeit, erinnere an den Termin. " +
+    "Kurz und knackig.",
+  reminder:
+    "Erstelle einen Reminder-Post für morgen Abend. " +
+    "Letzte Chance für Tickets. Aufregung und Vorfreude. " +
+    "Sehr kurz und direkt.",
+  thankyou:
+    "Erstelle einen Danke-Post nach der Veranstaltung. " +
+    "Bedanke dich beim Publikum und der Stadt. " +
+    "Mach Lust auf die nächste Vorstellung.",
+};
+
+function getRequiredTemplates(daysUntilEvent: number): string[] {
+  const templates: string[] = [];
+  if (daysUntilEvent <= 14) templates.push("announcement");
+  if (daysUntilEvent <= 7) templates.push("countdown");
+  if (daysUntilEvent <= 1) templates.push("reminder");
+  if (daysUntilEvent < 0) templates.push("thankyou");
+  return templates;
+}
+
+/** POST /api/cron/auto-generate-event-posts - Automatische Event-Post-Generierung */
+app.post("/auto-generate-event-posts", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+
+  // 1. Lade alle User mit auto_post_mode != 'off'
+  const activeUsers = await query<{ user_id: string; auto_post_mode: string }>(sql,
+    "SELECT user_id, auto_post_mode FROM settings WHERE auto_post_mode IS NOT NULL AND auto_post_mode != 'off'"
+  );
+
+  let generated = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const userSetting of activeUsers) {
+    const userId = userSetting.user_id;
+
+    try {
+      // 2. Lade aktive Events: nächste 30 Tage + gestern (für Danke-Posts)
+      const events = await query<Record<string, unknown>>(sql,
+        `SELECT * FROM events
+         WHERE user_id = $1 AND is_active = true
+           AND date BETWEEN (CURRENT_DATE - interval '1 day') AND (CURRENT_DATE + interval '30 days')
+         ORDER BY date ASC`,
+        [userId]
+      );
+
+      if (events.length === 0) continue;
+
+      // 3. Lade bereits generierte Posts mit event_id + auto_template
+      const existingPosts = await query<{ event_id: string; auto_template: string }>(sql,
+        `SELECT event_id, auto_template FROM posts
+         WHERE user_id = $1 AND event_id IS NOT NULL AND auto_template IS NOT NULL`,
+        [userId]
+      );
+
+      const existingSet = new Set(
+        existingPosts.map((p) => `${p.event_id}:${p.auto_template}`)
+      );
+
+      // 4. Finde den ersten fehlenden Post (max 1 pro User pro Durchlauf)
+      let generatedForUser = false;
+
+      for (const event of events) {
+        if (generatedForUser) break;
+
+        const eventDate = new Date(event.date as string);
+        const now = new Date();
+        const daysUntil = Math.floor(
+          (eventDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        const requiredTemplates = getRequiredTemplates(daysUntil);
+
+        for (const template of requiredTemplates) {
+          if (generatedForUser) break;
+          if (existingSet.has(`${event.id}:${template}`)) continue;
+
+          // 5. Lade brand_rules
+          const brandRules = await queryOne<Record<string, unknown>>(sql,
+            "SELECT * FROM brand_rules WHERE user_id = $1",
+            [userId]
+          );
+
+          const br = brandRules;
+          const model = (br?.ai_model as string) || "gpt-4o";
+
+          let systemPrompt = (br?.style_system_prompt as string) || "";
+          if (!systemPrompt) {
+            systemPrompt = `Du bist ein Instagram-Ghostwriter. Tonalität: ${br?.tone_style || "freundlich"}. Sprache: ${br?.language_primary || "DE"}.`;
+          }
+
+          const templatePrompt = TEMPLATE_PROMPTS[template];
+
+          // Event-Kontext für den User-Prompt
+          const castStr = (event.cast_members as string[])?.length
+            ? `Cast: ${(event.cast_members as string[]).join(", ")}`
+            : "";
+          const ticketStr = event.ticket_url
+            ? `Tickets: ${event.ticket_url}`
+            : "";
+
+          const eventContext = [
+            `Event: ${event.title}`,
+            `Datum: ${event.date} um ${event.time || "20:00"}`,
+            `Ort: ${event.venue}, ${event.city}`,
+            event.description ? `Beschreibung: ${event.description}` : "",
+            castStr,
+            ticketStr,
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          // 6. AI-Aufruf
+          const aiResponse = await callOpenAI(c.env.OPENAI_API_KEY, {
+            model,
+            messages: [
+              { role: "system", content: systemPrompt + "\n\n" + templatePrompt },
+              { role: "user", content: eventContext },
+            ],
+            tools: [
+              {
+                type: "function",
+                function: {
+                  name: "create_event_post",
+                  description: "Erstellt einen Instagram-Post-Entwurf für ein Event",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      caption: { type: "string", description: "Instagram Caption" },
+                      hashtags: { type: "string", description: "Relevante Hashtags" },
+                      alt_text: { type: "string", description: "Bildbeschreibung" },
+                    },
+                    required: ["caption", "hashtags"],
+                  },
+                },
+              },
+            ],
+            tool_choice: { type: "function", function: { name: "create_event_post" } },
+            max_completion_tokens: 1000,
+          });
+
+          const args = extractToolArgs<{
+            caption: string;
+            hashtags: string;
+            alt_text?: string;
+          }>(aiResponse, "create_event_post");
+
+          if (!args) {
+            errors++;
+            continue;
+          }
+
+          // 7. Post-Status basierend auf auto_post_mode
+          let postStatus: string;
+          let scheduledAt: string | null = null;
+
+          switch (userSetting.auto_post_mode) {
+            case "draft":
+              postStatus = "DRAFT";
+              break;
+            case "review":
+              postStatus = "READY_FOR_REVIEW";
+              break;
+            case "auto":
+              postStatus = "SCHEDULED";
+              scheduledAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+              break;
+            default:
+              postStatus = "DRAFT";
+          }
+
+          // 8. Post erstellen
+          const postRows = await query<{ id: string }>(sql,
+            `INSERT INTO posts (user_id, status, caption, hashtags, alt_text, format, event_id, auto_template, scheduled_at)
+             VALUES ($1, $2, $3, $4, $5, 'single', $6, $7, $8)
+             RETURNING id`,
+            [
+              userId,
+              postStatus,
+              args.caption,
+              args.hashtags,
+              args.alt_text || null,
+              event.id,
+              template,
+              scheduledAt,
+            ]
+          );
+
+          // 9. Log
+          await query(sql,
+            "INSERT INTO logs (user_id, level, event_type, details) VALUES ($1, 'info', 'event_post_generated', $2)",
+            [
+              userId,
+              JSON.stringify({
+                event_id: event.id,
+                post_id: postRows[0]?.id,
+                template,
+                model,
+                status: postStatus,
+              }),
+            ]
+          );
+
+          generated++;
+          generatedForUser = true;
+        }
+      }
+
+      if (!generatedForUser) skipped++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await query(sql,
+        "INSERT INTO logs (user_id, level, event_type, details) VALUES ($1, 'error', 'event_post_generation_failed', $2)",
+        [userId, JSON.stringify({ error: msg })]
+      ).catch(() => {});
+      errors++;
+    }
+  }
+
+  return c.json({
+    success: true,
+    users_processed: activeUsers.length,
+    generated,
+    skipped,
+    errors,
+  });
 });
 
 export { app as cronRoutes };

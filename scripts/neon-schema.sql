@@ -66,6 +66,8 @@ CREATE TABLE public.settings (
   auto_sync_enabled BOOLEAN DEFAULT TRUE,
   last_sync_at TIMESTAMPTZ,
   preferred_ai_model TEXT DEFAULT 'google/gemini-2.5-flash',
+  auto_post_mode TEXT DEFAULT 'off'
+    CHECK (auto_post_mode IN ('off', 'draft', 'review', 'auto')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -144,6 +146,8 @@ CREATE TABLE public.posts (
   topic_tags TEXT[] DEFAULT '{}',
   collaborators TEXT[] DEFAULT '{}',
   slides JSONB DEFAULT NULL,
+  event_id UUID REFERENCES public.events(id) ON DELETE SET NULL,
+  auto_template TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -228,6 +232,28 @@ CREATE TABLE public.content_plan (
   ai_model_used TEXT,
   generation_attempts INTEGER DEFAULT 0,
   feedback_notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- EVENTS TABLE (Auto-Posting Agent)
+-- ============================================================
+
+CREATE TABLE public.events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  date DATE NOT NULL,
+  time TIME DEFAULT '20:00',
+  venue TEXT NOT NULL,
+  city TEXT NOT NULL,
+  ticket_url TEXT,
+  description TEXT,
+  cast_members TEXT[] DEFAULT '{}',
+  event_type TEXT DEFAULT 'standard',
+  image_url TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -530,6 +556,10 @@ CREATE INDEX idx_video_renders_project ON public.video_renders (project_id, crea
 -- Reply training data
 CREATE INDEX idx_reply_training_user_created ON public.reply_training_data (user_id, created_at DESC);
 
+-- Events
+CREATE INDEX idx_events_user_date ON public.events (user_id, date);
+CREATE INDEX idx_events_upcoming ON public.events (date) WHERE is_active = true;
+
 -- ============================================================
 -- TRIGGER: updated_at
 -- ============================================================
@@ -573,6 +603,8 @@ CREATE TRIGGER tr_daily_account_stats_updated_at BEFORE UPDATE ON public.daily_a
 CREATE TRIGGER tr_chat_conversations_updated_at BEFORE UPDATE ON public.chat_conversations
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 CREATE TRIGGER tr_video_projects_updated_at BEFORE UPDATE ON public.video_projects
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER tr_events_updated_at BEFORE UPDATE ON public.events
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ============================================================

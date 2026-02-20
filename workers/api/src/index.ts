@@ -15,6 +15,7 @@ import { calendarRoutes } from "./routes/calendar";
 import { chatRoutes } from "./routes/chat";
 import { settingsRoutes } from "./routes/settings";
 import { cronRoutes } from "./routes/cron";
+import { eventsRoutes } from "./routes/events";
 
 export type Env = {
   R2_BUCKET: R2Bucket;
@@ -53,6 +54,7 @@ app.route("/api/calendar", calendarRoutes);
 app.route("/api/chat", chatRoutes);
 app.route("/api/settings", settingsRoutes);
 app.route("/api/cron", cronRoutes);
+app.route("/api/events", eventsRoutes);
 
 // Health check
 app.get("/", (c) => c.json({ status: "ok", service: "creatoros-api" }));

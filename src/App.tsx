@@ -24,6 +24,7 @@ import Community from "./pages/Community";
 import Analytics from "./pages/Analytics";
 import ReelGenerator from "./pages/ReelGenerator";
 import VideoEditor from "./pages/VideoEditor";
+import Events from "./pages/Events";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,6 +57,7 @@ const App = () => (
               <Route path="/reels" element={<ProtectedRoute><ReelGenerator /></ProtectedRoute>} />
               <Route path="/reels/:projectId" element={<ProtectedRoute><ReelGenerator /></ProtectedRoute>} />
               <Route path="/video-editor" element={<ProtectedRoute><VideoEditor /></ProtectedRoute>} />
+              <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/settings/*" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />

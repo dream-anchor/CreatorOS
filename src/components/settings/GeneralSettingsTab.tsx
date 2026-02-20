@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { apiGet, apiPost, apiDelete } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { Loader2, Sliders, Save, Trash2, AlertTriangle } from "lucide-react";
+import { Loader2, Sliders, Save, Trash2, AlertTriangle, Bot } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +24,7 @@ interface Settings {
   id: string;
   posts_per_week: number | null;
   preferred_days: string[] | null;
+  auto_post_mode: string | null;
 }
 
 interface Profile {
@@ -39,6 +41,7 @@ export default function GeneralSettingsTab() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [postsPerWeek, setPostsPerWeek] = useState(3);
+  const [autoPostMode, setAutoPostMode] = useState("off");
 
   useEffect(() => {
     if (user) loadData();
@@ -51,6 +54,7 @@ export default function GeneralSettingsTab() {
       if (data?.settings) {
         setSettings(data.settings as Settings);
         setPostsPerWeek(data.settings.posts_per_week || 3);
+        setAutoPostMode(data.settings.auto_post_mode || "off");
       }
       if (data?.profile) {
         setProfile(data.profile as Profile);
@@ -74,6 +78,7 @@ export default function GeneralSettingsTab() {
         },
         settings: {
           posts_per_week: postsPerWeek,
+          auto_post_mode: autoPostMode,
         },
       });
 
@@ -152,6 +157,27 @@ export default function GeneralSettingsTab() {
             />
             <p className="text-xs text-muted-foreground">
               Wie viele Posts du wöchentlich veröffentlichen möchtest
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="autoPostMode" className="flex items-center gap-2">
+              <Bot className="h-4 w-4" />
+              Auto-Posting Modus
+            </Label>
+            <Select value={autoPostMode} onValueChange={setAutoPostMode}>
+              <SelectTrigger className="glass-input w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off">Aus</SelectItem>
+                <SelectItem value="draft">Nur Entwurf erstellen</SelectItem>
+                <SelectItem value="review">Zur Freigabe erstellen</SelectItem>
+                <SelectItem value="auto">Vollautomatisch</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Generiert automatisch Posts basierend auf deinen Events
             </p>
           </div>
 

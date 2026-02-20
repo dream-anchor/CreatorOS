@@ -28,6 +28,7 @@ import {
   Sparkles,
   Video,
   Zap,
+  CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -61,6 +62,7 @@ const navGroups = [
   {
     title: "Management",
     items: [
+      { name: "Events", href: "/events", icon: CalendarDays },
       { name: "Planung", href: "/calendar", icon: CalendarClock },
       { name: "Community", href: "/community", icon: MessageCircle }
     ]

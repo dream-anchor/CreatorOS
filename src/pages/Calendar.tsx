@@ -42,6 +42,7 @@ export default function CalendarPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const globalDragCounterRef = useRef(0);
   const [isDragActive, setIsDragActive] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState<Array<{ id: string; title: string; date: string; venue: string; city: string }>>([]);
 
   // Helper to get current expanded post object
   const expandedPost = posts.find(p => p.id === expandedPostId);
@@ -128,16 +129,20 @@ export default function CalendarPage() {
 
   const loadPosts = async () => {
     try {
-      const data = await apiGet<any[]>("/api/posts", { status: "APPROVED,SCHEDULED,PUBLISHED", include: "assets", order: "scheduled_at:asc" });
+      const [data, eventsData] = await Promise.all([
+        apiGet<any[]>("/api/posts", { status: "APPROVED,SCHEDULED,PUBLISHED", include: "assets", order: "scheduled_at:asc" }),
+        apiGet<any[]>("/api/events").catch(() => []),
+      ]);
 
       const postsWithSortedAssets = (data || []).map(post => ({
         ...post,
-        assets: (post.assets || []).sort((a, b) => 
+        assets: (post.assets || []).sort((a, b) =>
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         )
       }));
-      
+
       setPosts(postsWithSortedAssets as (Post & { assets?: Asset[] })[]);
+      setCalendarEvents((eventsData || []) as Array<{ id: string; title: string; date: string; venue: string; city: string }>);
     } catch (error: any) {
       toast.error("Fehler: " + error.message);
     } finally {
@@ -157,6 +162,13 @@ export default function CalendarPage() {
     return posts.filter((post) => {
       if (!post.scheduled_at) return false;
       return isSameDay(new Date(post.scheduled_at), day);
+    });
+  };
+
+  const getEventsForDay = (day: Date) => {
+    return calendarEvents.filter((ev) => {
+      if (!ev.date) return false;
+      return isSameDay(new Date(ev.date + "T00:00:00"), day);
     });
   };
 
@@ -602,8 +614,19 @@ export default function CalendarPage() {
                             {format(day, "d")}
                           </div>
 
+                          {/* Event Markers */}
+                          {getEventsForDay(day).map((ev) => (
+                            <div
+                              key={ev.id}
+                              className="mx-2 mt-8 mb-0.5 px-1.5 py-0.5 rounded-md bg-orange-500/15 border border-orange-500/25 text-[9px] font-medium text-orange-600 dark:text-orange-400 truncate"
+                              title={`${ev.title} – ${ev.venue}, ${ev.city}`}
+                            >
+                              {ev.title}
+                            </div>
+                          ))}
+
                           {/* Posts Stack */}
-                          <div className="p-2 pt-8 space-y-2 h-full">
+                          <div className={`p-2 ${getEventsForDay(day).length > 0 ? "pt-1" : "pt-8"} space-y-2 h-full`}>
                             {dayPosts.map((post) => {
                               const isExpanded = expandedPostId === post.id;
                               
