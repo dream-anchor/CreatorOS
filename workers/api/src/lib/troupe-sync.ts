@@ -10,21 +10,24 @@ interface TroupeImage {
   title: string | null;
   folder_id: string | null;
   created_at: string;
-  picks_folders: {
-    name: string;
-    photographer_name: string | null;
-  } | null;
+}
+
+interface TroupeFolder {
+  id: string;
+  name: string;
+  photographer_name: string | null;
 }
 
 interface SyncResult {
   synced: number;
   skipped: number;
   total: number;
+  folders_found?: number;
 }
 
 /**
  * Sync images from Troupe (paterbrown.com Picks) into CreatorOS media_assets.
- * Optimized: 1 fetch + 1 dedup query + 1 batch INSERT (max 3 subrequests).
+ * Fetches images + folders separately, joins client-side.
  */
 export async function syncTroupeImages(
   sql: NeonQueryFunction<false, false>,
@@ -32,23 +35,37 @@ export async function syncTroupeImages(
   troupeUrl: string,
   troupeKey: string,
 ): Promise<SyncResult> {
-  // 1. Fetch images with folder info from Troupe Supabase (1 subrequest)
-  const url = `${troupeUrl}/rest/v1/images?select=id,file_name,file_path,thumbnail_url,preview_url,title,folder_id,created_at,picks_folders(name,photographer_name)&deleted_at=is.null&file_path=neq.null&order=created_at.desc&limit=500`;
+  const headers = {
+    apikey: troupeKey,
+    Authorization: `Bearer ${troupeKey}`,
+  };
 
-  const res = await fetch(url, {
-    headers: {
-      apikey: troupeKey,
-      Authorization: `Bearer ${troupeKey}`,
-    },
-  });
+  // 1. Fetch images + folders in parallel (2 subrequests)
+  const [imagesRes, foldersRes] = await Promise.all([
+    fetch(
+      `${troupeUrl}/rest/v1/images?select=id,file_name,file_path,thumbnail_url,preview_url,title,folder_id,created_at&deleted_at=is.null&file_path=neq.null&order=created_at.desc&limit=500`,
+      { headers },
+    ),
+    fetch(
+      `${troupeUrl}/rest/v1/picks_folders?select=id,name,photographer_name`,
+      { headers },
+    ),
+  ]);
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Troupe API error ${res.status}: ${errText}`);
+  if (!imagesRes.ok) {
+    const errText = await imagesRes.text();
+    throw new Error(`Troupe images API error ${imagesRes.status}: ${errText}`);
   }
 
-  const images = (await res.json()) as TroupeImage[];
+  const images = (await imagesRes.json()) as TroupeImage[];
   if (images.length === 0) return { synced: 0, skipped: 0, total: 0 };
+
+  // Parse folders (may fail if table doesn't exist — graceful fallback)
+  let folderMap = new Map<string, TroupeFolder>();
+  if (foldersRes.ok) {
+    const folders = (await foldersRes.json()) as TroupeFolder[];
+    folderMap = new Map(folders.map(f => [f.id, f]));
+  }
 
   // 2. Filter to images with file_path
   const validImages = images.filter((img) => img.file_path);
@@ -63,13 +80,12 @@ export async function syncTroupeImages(
   let idx = 1;
 
   for (const img of validImages) {
+    const folder = img.folder_id ? folderMap.get(img.folder_id) : undefined;
     const tags: string[] = [];
-    if (img.picks_folders?.name) tags.push(img.picks_folders.name);
-    if (img.picks_folders?.photographer_name) {
-      tags.push(img.picks_folders.photographer_name);
-    }
+    if (folder?.name) tags.push(folder.name);
+    if (folder?.photographer_name) tags.push(folder.photographer_name);
 
-    const folderName = img.picks_folders?.name ?? null;
+    const folderName = folder?.name ?? null;
     valueClauses.push(
       `($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, true, false, 'troupe', $${idx + 5}, $${idx + 6}, $${idx + 7})`,
     );
@@ -96,5 +112,5 @@ export async function syncTroupeImages(
   const totalAfter = parseInt(afterRows[0]?.c || "0", 10);
   const newCount = totalAfter - (images.length - validImages.length);
   // Approximate: synced = total troupe rows now, skipped = those that existed before
-  return { synced: validImages.length, skipped: 0, total: images.length };
+  return { synced: validImages.length, skipped: 0, total: images.length, folders_found: folderMap.size };
 }

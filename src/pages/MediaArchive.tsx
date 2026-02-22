@@ -1089,11 +1089,11 @@ function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, onToggleFolder, 
               <div
                 onClick={() => setOpenFolder(folderName)}
                 className={cn(
-                  "cursor-pointer glass-card rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:shadow-lg",
+                  "cursor-pointer rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:shadow-lg relative",
                   !folderActive && "opacity-60"
                 )}
               >
-                {/* Cover image */}
+                {/* Full image card with overlaid info (Picks style) */}
                 <div className="relative aspect-[4/3]">
                   {(coverPhoto?.thumbnail_url || coverPhoto?.public_url) ? (
                     <img
@@ -1107,26 +1107,26 @@ function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, onToggleFolder, 
                       <FolderOpen className="h-8 w-8 text-muted-foreground/30" />
                     </div>
                   )}
-                  {/* Photo count badge */}
-                  <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-xs font-medium">
+                  {/* Photo count badge top-right */}
+                  <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-black/50 backdrop-blur-sm text-white text-xs font-medium flex items-center gap-1">
+                    <Camera className="h-3 w-3" />
                     {folderPhotos.length}
                   </div>
-                  {/* Gradient overlay at bottom */}
-                  <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/50 to-transparent" />
-                </div>
-
-                {/* Folder info */}
-                <div className="p-3 flex items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{folderName}</p>
-                    {folderExcluded > 0 && folderActive && (
-                      <p className="text-xs text-destructive">{folderExcluded} ausgeschlossen</p>
-                    )}
-                    {!folderActive && (
-                      <p className="text-xs text-muted-foreground">Deaktiviert</p>
-                    )}
+                  {/* Gradient overlay bottom half */}
+                  <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+                  {/* Folder name + info overlaid on image */}
+                  <div className="absolute inset-x-0 bottom-0 p-3 flex items-end justify-between">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm text-white truncate drop-shadow-sm">{folderName}</p>
+                      {folderExcluded > 0 && folderActive && (
+                        <p className="text-xs text-red-300">{folderExcluded} ausgeschlossen</p>
+                      )}
+                      {!folderActive && (
+                        <p className="text-xs text-white/60">Deaktiviert</p>
+                      )}
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-white/80 shrink-0" />
                   </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                 </div>
               </div>
 
