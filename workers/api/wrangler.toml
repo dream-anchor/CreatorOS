@@ -13,7 +13,7 @@ ENVIRONMENT = "production"
 R2_JURISDICTION = "eu"
 
 [triggers]
-crons = ["0 7 * * *"]  # Täglich 09:00 CET (07:00 UTC)
+crons = ["0 7 * * *", "*/15 * * * *"]  # 09:00 CET: Post-Generierung | alle 15 Min: Scheduled Posts publishen
 
 # Secrets (set via `wrangler secret put`):
 # DATABASE_URL

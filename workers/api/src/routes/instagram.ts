@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getDb, query, queryOne } from "../lib/db";
 import { authMiddleware } from "../middleware/auth";
+import { publishPostToInstagram } from "../lib/instagram-publisher";
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -197,110 +198,13 @@ app.post("/publish", async (c) => {
   const sql = getDb(c.env.DATABASE_URL);
   const { post_id } = await c.req.json<{ post_id: string }>();
 
-  const [post, conn] = await Promise.all([
-    queryOne<Record<string, unknown>>(sql,
-      "SELECT * FROM posts WHERE id = $1 AND user_id = $2", [post_id, userId]),
-    queryOne<Record<string, unknown>>(sql,
-      "SELECT ig_user_id, token_encrypted FROM meta_connections WHERE user_id = $1", [userId]),
-  ]);
+  const result = await publishPostToInstagram(sql, post_id, userId);
 
-  if (!post) return c.json({ error: "Post nicht gefunden" }, 404);
-  if (!conn?.token_encrypted) return c.json({ error: "Keine Instagram-Verbindung" }, 400);
-
-  const token = conn.token_encrypted as string;
-  const igUserId = conn.ig_user_id as string;
-  const caption = `${post.caption || ""}\n\n${post.hashtags || ""}`.trim();
-
-  // Get assets
-  const assets = await query<Record<string, unknown>>(sql,
-    "SELECT public_url FROM assets WHERE post_id = $1 ORDER BY created_at ASC", [post_id]);
-
-  if (assets.length === 0) return c.json({ error: "Keine Medien zum Posten" }, 400);
-
-  let igMediaId: string;
-
-  if (assets.length === 1 || post.format === "single") {
-    // Single image post
-    const createRes = await fetch(
-      `https://graph.facebook.com/v21.0/${igUserId}/media`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_url: assets[0].public_url,
-          caption,
-          access_token: token,
-        }),
-      }
-    );
-    const createData = await createRes.json() as { id: string };
-    if (!createData.id) return c.json({ error: "Container-Erstellung fehlgeschlagen" }, 500);
-
-    // Publish
-    const publishRes = await fetch(
-      `https://graph.facebook.com/v21.0/${igUserId}/media_publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ creation_id: createData.id, access_token: token }),
-      }
-    );
-    const publishData = await publishRes.json() as { id: string };
-    igMediaId = publishData.id;
-  } else {
-    // Carousel post
-    const childIds: string[] = [];
-    for (const asset of assets) {
-      const childRes = await fetch(
-        `https://graph.facebook.com/v21.0/${igUserId}/media`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            image_url: asset.public_url,
-            is_carousel_item: true,
-            access_token: token,
-          }),
-        }
-      );
-      const childData = await childRes.json() as { id: string };
-      if (childData.id) childIds.push(childData.id);
-      await new Promise((r) => setTimeout(r, 500));
-    }
-
-    const carouselRes = await fetch(
-      `https://graph.facebook.com/v21.0/${igUserId}/media`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          media_type: "CAROUSEL",
-          children: childIds,
-          caption,
-          access_token: token,
-        }),
-      }
-    );
-    const carouselData = await carouselRes.json() as { id: string };
-
-    const publishRes = await fetch(
-      `https://graph.facebook.com/v21.0/${igUserId}/media_publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ creation_id: carouselData.id, access_token: token }),
-      }
-    );
-    const publishData = await publishRes.json() as { id: string };
-    igMediaId = publishData.id;
+  if (!result.success) {
+    return c.json({ error: result.error }, result.error === "Post nicht gefunden" ? 404 : 500);
   }
 
-  if (!igMediaId) {
-    await query(sql, "UPDATE posts SET status = 'FAILED', error_message = 'Publish fehlgeschlagen' WHERE id = $1", [post_id]);
-    return c.json({ error: "Instagram-Veröffentlichung fehlgeschlagen" }, 500);
-  }
-
-  await query(sql,
-    "UPDATE posts SET status = 'PUBLISHED', ig_media_id = $1, published_at = NOW() WHERE id = $2",
-    [igMediaId, post_id]
-  );
-
-  return c.json({ success: true, ig_media_id: igMediaId });
+  return c.json({ success: true, ig_media_id: result.ig_media_id });
 });
 
 /** POST /api/instagram/fetch-history - Import Instagram post history */

@@ -72,13 +72,19 @@ app.onError((err, c) => {
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    console.log(`[cron] Triggered at ${new Date().toISOString()}`);
-    const request = new Request(
-      "https://creatoros-api.antoine-dfc.workers.dev/api/cron/auto-generate-event-posts",
-      { method: "POST" }
-    );
-    const response = await app.fetch(request, env, ctx);
-    const body = await response.text();
-    console.log(`[cron] Response ${response.status}: ${body}`);
+    const base = "https://creatoros-api.antoine-dfc.workers.dev";
+    console.log(`[cron] Triggered: ${event.cron} at ${new Date().toISOString()}`);
+
+    if (event.cron === "0 7 * * *") {
+      // Täglich 09:00 CET: Event-Posts generieren
+      const req = new Request(`${base}/api/cron/auto-generate-event-posts`, { method: "POST" });
+      const res = await app.fetch(req, env, ctx);
+      console.log(`[cron] auto-generate ${res.status}: ${await res.text()}`);
+    }
+
+    // Alle 15 Min (inkl. 07:00): Scheduled Posts auf Instagram publishen
+    const tickReq = new Request(`${base}/api/cron/scheduler-tick`, { method: "POST" });
+    const tickRes = await app.fetch(tickReq, env, ctx);
+    console.log(`[cron] scheduler-tick ${tickRes.status}: ${await tickRes.text()}`);
   },
 };

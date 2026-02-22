@@ -6,44 +6,66 @@ import { selectBackgroundImage } from "../lib/media-selector";
 import { getTemplateHtml, type TemplateData } from "../lib/templates";
 import { renderHtmlToImage } from "../lib/image-renderer";
 import { formatDateGerman, formatTimeGerman } from "../lib/utils";
+import { publishPostToInstagram } from "../lib/instagram-publisher";
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
 // Cron jobs don't use user auth - they process all users
 // In production, protect with a secret header
 
-/** POST /api/cron/scheduler-tick - Publish scheduled posts */
+/** POST /api/cron/scheduler-tick - Publish scheduled posts that are due */
 app.post("/scheduler-tick", async (c) => {
   const sql = getDb(c.env.DATABASE_URL);
 
-  const duePosts = await query<Record<string, unknown>>(sql,
+  const duePosts = await query<{ id: string; user_id: string }>(sql,
     "SELECT id, user_id FROM posts WHERE status = 'SCHEDULED' AND scheduled_at <= NOW()"
   );
 
+  if (duePosts.length === 0) {
+    return c.json({ success: true, published: 0, failed: 0, total_due: 0 });
+  }
+
   let published = 0;
+  let failed = 0;
+
   for (const post of duePosts) {
     try {
-      // Trigger publish via internal call
-      const conn = await queryOne<Record<string, unknown>>(sql,
-        "SELECT ig_user_id, token_encrypted FROM meta_connections WHERE user_id = $1",
-        [post.user_id]
-      );
-      if (!conn?.token_encrypted) continue;
+      console.log(`[scheduler-tick] Publishing post ${post.id} for user ${post.user_id}`);
 
-      // Simple publish - would call the full publish logic
-      // For now, just update status (the real logic is in /api/instagram/publish)
+      const result = await publishPostToInstagram(sql, post.id, post.user_id);
+
       await query(sql,
-        "INSERT INTO logs (user_id, level, event_type, details) VALUES ($1, 'info', 'scheduler_tick', $2)",
-        [post.user_id, JSON.stringify({ post_id: post.id, action: "publish_triggered" })]
+        "INSERT INTO logs (user_id, level, event_type, details) VALUES ($1, $2, 'scheduler_tick', $3)",
+        [
+          post.user_id,
+          result.success ? "info" : "error",
+          JSON.stringify({
+            post_id: post.id,
+            success: result.success,
+            ig_media_id: result.ig_media_id,
+            error: result.error,
+          }),
+        ]
       );
 
-      published++;
+      if (result.success) {
+        published++;
+        console.log(`[scheduler-tick] Published post ${post.id} → ig_media_id: ${result.ig_media_id}`);
+      } else {
+        failed++;
+        console.error(`[scheduler-tick] Failed post ${post.id}: ${result.error}`);
+      }
     } catch (err) {
+      failed++;
       console.error(`[scheduler-tick] Error publishing post ${post.id}:`, err);
+      await query(sql,
+        "UPDATE posts SET status = 'FAILED', error_message = $1 WHERE id = $2",
+        [err instanceof Error ? err.message : String(err), post.id]
+      );
     }
   }
 
-  return c.json({ success: true, published, total_due: duePosts.length });
+  return c.json({ success: true, published, failed, total_due: duePosts.length });
 });
 
 /** POST /api/cron/process-reply-queue - Send queued replies */
