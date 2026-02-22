@@ -18,16 +18,53 @@ interface TroupeFolder {
   photographer_name: string | null;
 }
 
+interface TroupeVote {
+  image_id: string;
+  user_id: string;
+  vote_status: "approved" | "unsure" | "rejected";
+}
+
 interface SyncResult {
   synced: number;
   skipped: number;
+  removed: number;
   total: number;
   folders_found?: number;
 }
 
 /**
+ * Compute the "Schnittmenge" (intersection): images where ALL voters voted 'approved'.
+ * Returns a Set of image IDs that pass the filter.
+ */
+function computeSchnittmenge(votes: TroupeVote[]): Set<string> {
+  // Find all distinct voters
+  const allVoters = new Set(votes.map(v => v.user_id));
+  if (allVoters.size === 0) return new Set();
+
+  // Group votes by image_id
+  const votesByImage = new Map<string, TroupeVote[]>();
+  for (const v of votes) {
+    const arr = votesByImage.get(v.image_id) || [];
+    arr.push(v);
+    votesByImage.set(v.image_id, arr);
+  }
+
+  // Image is in Schnittmenge when ALL voters have voted 'approved'
+  const approved = new Set<string>();
+  for (const [imageId, imgVotes] of votesByImage) {
+    const allApproved = [...allVoters].every(voterId =>
+      imgVotes.some(v => v.user_id === voterId && v.vote_status === "approved")
+    );
+    if (allApproved) approved.add(imageId);
+  }
+
+  return approved;
+}
+
+/**
  * Sync images from Troupe (paterbrown.com Picks) into CreatorOS media_assets.
- * Fetches images + folders separately, joins client-side.
+ * Only syncs images that are in the Schnittmenge (all voters approved).
+ * Removes previously synced images that are no longer approved.
  */
 export async function syncTroupeImages(
   sql: NeonQueryFunction<false, false>,
@@ -40,14 +77,18 @@ export async function syncTroupeImages(
     Authorization: `Bearer ${troupeKey}`,
   };
 
-  // 1. Fetch images + folders in parallel (2 subrequests)
-  const [imagesRes, foldersRes] = await Promise.all([
+  // 1. Fetch images + folders + votes in parallel
+  const [imagesRes, foldersRes, votesRes] = await Promise.all([
     fetch(
       `${troupeUrl}/rest/v1/images?select=id,file_name,file_path,thumbnail_url,preview_url,title,folder_id,created_at&deleted_at=is.null&file_path=neq.null&order=created_at.desc&limit=500`,
       { headers },
     ),
     fetch(
       `${troupeUrl}/rest/v1/picks_folders?select=id,name,photographer_name`,
+      { headers },
+    ),
+    fetch(
+      `${troupeUrl}/rest/v1/image_votes?select=image_id,user_id,vote_status`,
       { headers },
     ),
   ]);
@@ -58,28 +99,78 @@ export async function syncTroupeImages(
   }
 
   const images = (await imagesRes.json()) as TroupeImage[];
-  if (images.length === 0) return { synced: 0, skipped: 0, total: 0 };
+  if (images.length === 0) return { synced: 0, skipped: 0, removed: 0, total: 0 };
 
-  // Parse folders (may fail if table doesn't exist — graceful fallback)
+  // Parse folders
   let folderMap = new Map<string, TroupeFolder>();
   if (foldersRes.ok) {
     const folders = (await foldersRes.json()) as TroupeFolder[];
     folderMap = new Map(folders.map(f => [f.id, f]));
   }
 
-  // 2. Filter to images with file_path
-  const validImages = images.filter((img) => img.file_path);
-  if (validImages.length === 0) {
-    return { synced: 0, skipped: 0, total: images.length };
+  // Parse votes + compute Schnittmenge
+  let approvedIds = new Set<string>();
+  if (votesRes.ok) {
+    const votes = (await votesRes.json()) as TroupeVote[];
+    approvedIds = computeSchnittmenge(votes);
+    console.log(`[troupe-sync] Schnittmenge: ${approvedIds.size} of ${images.length} images approved by all voters`);
+  } else {
+    console.warn(`[troupe-sync] image_votes fetch failed (${votesRes.status}) — syncing all images as fallback`);
+    // Fallback: if votes table isn't accessible, sync all (graceful degradation)
+    approvedIds = new Set(images.map(img => img.id));
   }
 
-  // 3. Batch UPSERT all images (1 subrequest)
-  // ON CONFLICT: update thumbnail_url + troupe_folder_name but preserve ai_usable
+  // 2. Filter to approved images with file_path
+  const approvedImages = images.filter((img) => img.file_path && approvedIds.has(img.id));
+  const skipped = images.length - approvedImages.length;
+
+  // 3. Remove previously synced images that are no longer in Schnittmenge
+  const approvedTroupeIds = approvedImages.map(img => img.id);
+  let removed = 0;
+
+  if (approvedTroupeIds.length > 0) {
+    // Delete troupe images NOT in the approved set
+    const placeholders = approvedTroupeIds.map((_, i) => `$${i + 2}`).join(", ");
+    const delResult = await query<{ c: string }>(
+      sql,
+      `WITH deleted AS (
+        DELETE FROM media_assets
+        WHERE source_system = 'troupe' AND user_id = $1
+          AND troupe_image_id IS NOT NULL
+          AND troupe_image_id NOT IN (${placeholders})
+        RETURNING 1
+      ) SELECT count(*) as c FROM deleted`,
+      [userId, ...approvedTroupeIds],
+    );
+    removed = parseInt(delResult[0]?.c || "0", 10);
+  } else {
+    // No approved images → remove all troupe images
+    const delResult = await query<{ c: string }>(
+      sql,
+      `WITH deleted AS (
+        DELETE FROM media_assets
+        WHERE source_system = 'troupe' AND user_id = $1 AND troupe_image_id IS NOT NULL
+        RETURNING 1
+      ) SELECT count(*) as c FROM deleted`,
+      [userId],
+    );
+    removed = parseInt(delResult[0]?.c || "0", 10);
+  }
+
+  if (removed > 0) {
+    console.log(`[troupe-sync] Removed ${removed} images no longer in Schnittmenge`);
+  }
+
+  if (approvedImages.length === 0) {
+    return { synced: 0, skipped, removed, total: images.length, folders_found: folderMap.size };
+  }
+
+  // 4. Batch UPSERT approved images
   const valueClauses: string[] = [];
   const params: unknown[] = [];
   let idx = 1;
 
-  for (const img of validImages) {
+  for (const img of approvedImages) {
     const folder = img.folder_id ? folderMap.get(img.folder_id) : undefined;
     const tags: string[] = [];
     if (folder?.name) tags.push(folder.name);
@@ -103,14 +194,5 @@ export async function syncTroupeImages(
     params,
   );
 
-  // Count how many were truly new (didn't exist before)
-  const afterRows = await query<{ c: string }>(
-    sql,
-    "SELECT count(*) as c FROM media_assets WHERE source_system = 'troupe' AND user_id = $1",
-    [userId],
-  );
-  const totalAfter = parseInt(afterRows[0]?.c || "0", 10);
-  const newCount = totalAfter - (images.length - validImages.length);
-  // Approximate: synced = total troupe rows now, skipped = those that existed before
-  return { synced: validImages.length, skipped: 0, total: images.length, folders_found: folderMap.size };
+  return { synced: approvedImages.length, skipped, removed, total: images.length, folders_found: folderMap.size };
 }
