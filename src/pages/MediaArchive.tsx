@@ -343,7 +343,7 @@ export default function MediaArchivePage() {
     try {
       const result = await apiPost<{ synced: number; skipped: number; total: number }>("/api/media/sync-troupe");
       if (result.synced > 0) {
-        toast.success(`${result.synced} neue Fotos aus Troupe importiert`);
+        toast.success(`${result.synced} neue Fotos aus Troupe verknüpft`);
         loadAssets();
       } else {
         toast.info(`Keine neuen Fotos (${result.skipped} bereits vorhanden)`);
@@ -436,7 +436,7 @@ export default function MediaArchivePage() {
                         disabled={syncingTroupe}
                       >
                         {syncingTroupe ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FolderOpen className="mr-2 h-5 w-5" />}
-                        Aus Troupe importieren
+                        Troupe verknüpfen
                       </Button>
                     </div>
                   </div>

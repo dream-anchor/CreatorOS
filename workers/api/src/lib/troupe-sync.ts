@@ -1,5 +1,5 @@
 import type { NeonQueryFunction } from "@neondatabase/serverless";
-import { query, queryOne } from "./db";
+import { query } from "./db";
 
 interface TroupeImage {
   id: string;
@@ -24,7 +24,7 @@ interface SyncResult {
 
 /**
  * Sync images from Troupe (paterbrown.com Picks) into CreatorOS media_assets.
- * Uses Supabase REST API to read, no SDK dependency needed.
+ * Optimized: 1 fetch + 1 dedup query + 1 batch INSERT (max 3 subrequests).
  */
 export async function syncTroupeImages(
   sql: NeonQueryFunction<false, false>,
@@ -32,7 +32,7 @@ export async function syncTroupeImages(
   troupeUrl: string,
   troupeKey: string,
 ): Promise<SyncResult> {
-  // Fetch images with folder info from Troupe Supabase
+  // 1. Fetch images with folder info from Troupe Supabase (1 subrequest)
   const url = `${troupeUrl}/rest/v1/images?select=id,file_name,file_path,thumbnail_url,preview_url,title,folder_id,created_at,picks_folders(name,photographer_name)&deleted_at=is.null&file_path=neq.null&order=created_at.desc&limit=500`;
 
   const res = await fetch(url, {
@@ -48,50 +48,53 @@ export async function syncTroupeImages(
   }
 
   const images = (await res.json()) as TroupeImage[];
-  let synced = 0;
-  let skipped = 0;
+  if (images.length === 0) return { synced: 0, skipped: 0, total: 0 };
 
-  for (const img of images) {
-    if (!img.file_path) {
-      skipped++;
-      continue;
-    }
+  // 2. Load all existing troupe_image_ids in one query (1 subrequest)
+  const existingRows = await query<{ troupe_image_id: string }>(
+    sql,
+    "SELECT troupe_image_id FROM media_assets WHERE troupe_image_id IS NOT NULL AND user_id = $1",
+    [userId],
+  );
+  const existingIds = new Set(existingRows.map((r) => r.troupe_image_id));
 
-    // Check if already synced
-    const existing = await queryOne(
-      sql,
-      "SELECT id FROM media_assets WHERE troupe_image_id = $1",
-      [img.id],
-    );
+  // 3. Filter to new images only
+  const newImages = images.filter(
+    (img) => img.file_path && !existingIds.has(img.id),
+  );
 
-    if (existing) {
-      skipped++;
-      continue;
-    }
+  if (newImages.length === 0) {
+    return { synced: 0, skipped: images.length, total: images.length };
+  }
 
-    // Build tags from folder name + photographer
+  // 4. Batch INSERT all new images in one query (1 subrequest)
+  const valueClauses: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  for (const img of newImages) {
     const tags: string[] = [];
     if (img.picks_folders?.name) tags.push(img.picks_folders.name);
     if (img.picks_folders?.photographer_name) {
       tags.push(img.picks_folders.photographer_name);
     }
 
-    await query(
-      sql,
-      `INSERT INTO media_assets
-        (user_id, storage_path, public_url, filename, tags, ai_usable, analyzed, source_system, troupe_image_id)
-       VALUES ($1, $2, $3, $4, $5, true, false, 'troupe', $6)`,
-      [
-        userId,
-        img.file_path,
-        img.file_path,
-        img.file_name,
-        tags,
-        img.id,
-      ],
+    valueClauses.push(
+      `($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, true, false, 'troupe', $${idx + 5})`,
     );
-    synced++;
+    params.push(userId, img.file_path, img.file_path, img.file_name, tags, img.id);
+    idx += 6;
   }
 
-  return { synced, skipped, total: images.length };
+  await query(
+    sql,
+    `INSERT INTO media_assets
+      (user_id, storage_path, public_url, filename, tags, ai_usable, analyzed, source_system, troupe_image_id)
+     VALUES ${valueClauses.join(", ")}
+     ON CONFLICT (troupe_image_id) WHERE troupe_image_id IS NOT NULL DO NOTHING`,
+    params,
+  );
+
+  const skipped = images.length - newImages.length;
+  return { synced: newImages.length, skipped, total: images.length };
 }
