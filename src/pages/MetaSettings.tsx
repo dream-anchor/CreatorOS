@@ -93,12 +93,12 @@ export default function MetaSettingsPage() {
 
     setStartingOAuth(true);
     
-    // Build OAuth URL with dynamic redirect_uri
+    // Build OAuth URL with dynamic redirect_uri (Facebook Login → IG Business)
     const clientId = "907189555065398";
     const redirectUri = encodeURIComponent(`${window.location.origin}/auth/callback`);
-    const scopes = "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement";
-    
-    const oauthUrl = `https://www.facebook.com/v17.0/dialog/oauth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scopes}&response_type=code`;
+    const scopes = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_insights,pages_show_list,pages_read_engagement,business_management";
+
+    const oauthUrl = `https://www.facebook.com/v20.0/dialog/oauth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scopes}&response_type=code`;
     
     console.log('Starting OAuth with URL:', oauthUrl);
     window.location.href = oauthUrl;
