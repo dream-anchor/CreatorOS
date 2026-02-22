@@ -209,6 +209,8 @@ CREATE TABLE public.media_assets (
   analyzed BOOLEAN DEFAULT FALSE,
   is_good_reference BOOLEAN DEFAULT FALSE,
   dalle_persona_prompt TEXT,
+  troupe_image_id TEXT,
+  source_system TEXT DEFAULT 'upload',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

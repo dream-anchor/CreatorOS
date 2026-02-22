@@ -33,6 +33,8 @@ export type Env = {
   R2_JURISDICTION: string;
   CF_ACCOUNT_ID: string;
   CF_API_TOKEN: string;
+  TROUPE_SUPABASE_URL: string;
+  TROUPE_SUPABASE_KEY: string;
 };
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();

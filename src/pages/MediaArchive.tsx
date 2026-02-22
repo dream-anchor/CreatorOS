@@ -70,6 +70,7 @@ export default function MediaArchivePage() {
   const [uploadingAssets, setUploadingAssets] = useState<UploadingAsset[]>([]);
   const [analyzingSingleId, setAnalyzingSingleId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"my-photos" | "ai-generated">("my-photos");
+  const [syncingTroupe, setSyncingTroupe] = useState(false);
 
   useEffect(() => {
     if (user) loadAssets();
@@ -337,6 +338,23 @@ export default function MediaArchivePage() {
     }
   };
 
+  const handleSyncTroupe = async () => {
+    setSyncingTroupe(true);
+    try {
+      const result = await apiPost<{ synced: number; skipped: number; total: number }>("/api/media/sync-troupe");
+      if (result.synced > 0) {
+        toast.success(`${result.synced} neue Fotos aus Troupe importiert`);
+        loadAssets();
+      } else {
+        toast.info(`Keine neuen Fotos (${result.skipped} bereits vorhanden)`);
+      }
+    } catch (error: any) {
+      toast.error(`Troupe-Sync fehlgeschlagen: ${error.message || "Unbekannter Fehler"}`);
+    } finally {
+      setSyncingTroupe(false);
+    }
+  };
+
   if (loading) {
     return (
       <GlobalLayout>
@@ -402,19 +420,41 @@ export default function MediaArchivePage() {
                     <p className="text-muted-foreground text-center max-w-md mb-6">
                       Lade echte Fotos von dir hoch. Die KI nutzt sie als Referenz für personalisierte Bildgenerierungen.
                     </p>
-                    <Button
-                      onClick={() => document.getElementById("media-upload")?.click()}
-                      size="lg"
-                      className="bg-gradient-to-r from-primary to-cyan-500"
-                    >
-                      <Upload className="mr-2 h-5 w-5" />
-                      Bilder hochladen
-                    </Button>
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={() => document.getElementById("media-upload")?.click()}
+                        size="lg"
+                        className="bg-gradient-to-r from-primary to-cyan-500"
+                      >
+                        <Upload className="mr-2 h-5 w-5" />
+                        Bilder hochladen
+                      </Button>
+                      <Button
+                        onClick={handleSyncTroupe}
+                        size="lg"
+                        variant="outline"
+                        disabled={syncingTroupe}
+                      >
+                        {syncingTroupe ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FolderOpen className="mr-2 h-5 w-5" />}
+                        Aus Troupe importieren
+                      </Button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="p-4 text-center text-muted-foreground">
-                    <Upload className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Bilder hier ablegen zum Hochladen</p>
+                  <div className="p-4 flex items-center justify-center gap-4 text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <Upload className="h-5 w-5 opacity-50" />
+                      <p className="text-sm">Bilder hier ablegen zum Hochladen</p>
+                    </div>
+                    <Button
+                      onClick={handleSyncTroupe}
+                      size="sm"
+                      variant="ghost"
+                      disabled={syncingTroupe}
+                    >
+                      {syncingTroupe ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderOpen className="mr-1 h-4 w-4" />}
+                      Troupe Sync
+                    </Button>
                   </div>
                 )}
               </div>

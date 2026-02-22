@@ -259,4 +259,22 @@ app.get("/content-snippets", async (c) => {
   return c.json(snippets);
 });
 
+/** POST /api/media/sync-troupe - Sync Fotos aus Troupe/Picks */
+app.post("/sync-troupe", async (c) => {
+  const userId = c.get("userId");
+  const sql = getDb(c.env.DATABASE_URL);
+
+  const troupeUrl = (c.env as unknown as Record<string, string>).TROUPE_SUPABASE_URL;
+  const troupeKey = (c.env as unknown as Record<string, string>).TROUPE_SUPABASE_KEY;
+
+  if (!troupeUrl || !troupeKey) {
+    return c.json({ error: "Troupe-Verbindung nicht konfiguriert" }, 500);
+  }
+
+  const { syncTroupeImages } = await import("../lib/troupe-sync");
+  const result = await syncTroupeImages(sql, userId, troupeUrl, troupeKey);
+
+  return c.json({ success: true, ...result });
+});
+
 export { app as mediaRoutes };

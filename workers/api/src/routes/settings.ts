@@ -18,6 +18,58 @@ app.get("/", async (c) => {
   return c.json({ settings, profile, brandRules });
 });
 
+/** POST /api/settings - Save settings + profile (from frontend) */
+app.post("/", async (c) => {
+  const userId = c.get("userId");
+  const sql = getDb(c.env.DATABASE_URL);
+  const body = await c.req.json<{ profile?: Record<string, unknown>; settings?: Record<string, unknown> }>();
+
+  // Upsert settings
+  if (body.settings && Object.keys(body.settings).length > 0) {
+    const existing = await queryOne(sql, "SELECT user_id FROM settings WHERE user_id = $1", [userId]);
+    if (existing) {
+      const fields: string[] = [];
+      const values: unknown[] = [];
+      let idx = 1;
+      for (const [key, value] of Object.entries(body.settings)) {
+        if (["id", "user_id", "created_at"].includes(key)) continue;
+        fields.push(`${key} = $${idx}`);
+        values.push(value);
+        idx++;
+      }
+      if (fields.length > 0) {
+        values.push(userId);
+        await query(sql, `UPDATE settings SET ${fields.join(", ")} WHERE user_id = $${idx}`, values);
+      }
+    } else {
+      const cols = ["user_id"];
+      const vals: unknown[] = [userId];
+      let idx = 2;
+      for (const [key, value] of Object.entries(body.settings)) {
+        if (["id", "user_id", "created_at"].includes(key)) continue;
+        cols.push(key);
+        vals.push(value);
+        idx++;
+      }
+      const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
+      await query(sql, `INSERT INTO settings (${cols.join(", ")}) VALUES (${placeholders})`, vals);
+    }
+  }
+
+  // Upsert profile
+  if (body.profile) {
+    const displayName = body.profile.display_name as string | null;
+    if (displayName !== undefined) {
+      await query(sql,
+        `UPDATE profiles SET display_name = $1 WHERE id = $2`,
+        [displayName, userId]
+      );
+    }
+  }
+
+  return c.json({ success: true });
+});
+
 /** PATCH /api/settings - Update settings */
 app.patch("/", async (c) => {
   const userId = c.get("userId");
