@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+
 import { Switch } from "@/components/ui/switch";
 import { apiGet, apiPost, apiPatch, apiDelete, invokeFunction, getPresignedUrl, uploadToR2, deleteFromR2 } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
@@ -25,7 +25,8 @@ import {
   Zap,
   Camera,
   Bot,
-  ChevronDown,
+  ChevronRight,
+  ArrowLeft,
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -963,6 +964,8 @@ interface TroupeTabProps {
 }
 
 function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, onToggleFolder, togglingId, setViewingAsset }: TroupeTabProps) {
+  const [openFolder, setOpenFolder] = useState<string | null>(null);
+
   const folders = useMemo(() => {
     const map = new Map<string, MediaAsset[]>();
     for (const photo of photos) {
@@ -973,23 +976,6 @@ function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, onToggleFolder, 
     }
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [photos]);
-
-  const [openFolders, setOpenFolders] = useState<Set<string>>(
-    () => new Set(folders.map(([name]) => name))
-  );
-
-  // Update open folders when folders change (after sync)
-  useEffect(() => {
-    setOpenFolders(new Set(folders.map(([name]) => name)));
-  }, [folders.length]);
-
-  const toggleFolder = (name: string) => {
-    setOpenFolders(prev => {
-      const next = new Set(prev);
-      next.has(name) ? next.delete(name) : next.add(name);
-      return next;
-    });
-  };
 
   if (photos.length === 0) {
     return (
@@ -1018,6 +1004,54 @@ function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, onToggleFolder, 
 
   const excludedCount = photos.filter(p => !p.ai_usable).length;
 
+  // Drill-down: show images inside a folder
+  if (openFolder !== null) {
+    const folderPhotos = photos.filter(p => (p.troupe_folder_name ?? "Ohne Ordner") === openFolder);
+    const folderActive = folderPhotos.some(p => p.ai_usable);
+    const folderExcluded = folderPhotos.filter(p => !p.ai_usable).length;
+
+    return (
+      <div className="space-y-4">
+        {/* Navigation + folder info */}
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => setOpenFolder(null)}>
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Zurück
+          </Button>
+          <FolderOpen className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">{openFolder}</h2>
+          <Badge variant="secondary">{folderPhotos.length}</Badge>
+          {folderExcluded > 0 && folderActive && (
+            <Badge variant="outline" className="text-xs text-destructive border-destructive/30">
+              {folderExcluded} ausgeschlossen
+            </Badge>
+          )}
+          <div className="flex-1" />
+          <span className="text-sm text-muted-foreground mr-2">Ordner aktiv</span>
+          <Switch
+            checked={folderActive}
+            onCheckedChange={(checked) => onToggleFolder(openFolder, checked)}
+            aria-label={`Ordner ${openFolder} ${folderActive ? "deaktivieren" : "aktivieren"}`}
+          />
+        </div>
+
+        {/* Image grid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {folderPhotos.map(photo => (
+            <TroupeImageCard
+              key={photo.id}
+              photo={photo}
+              onToggle={() => onToggleAiUsable(photo)}
+              toggling={togglingId === photo.id}
+              onView={() => setViewingAsset(photo)}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Album overview: folder cards
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -1043,58 +1077,74 @@ function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, onToggleFolder, 
         </Button>
       </div>
 
-      {/* Folders */}
-      {folders.map(([folderName, folderPhotos]) => {
-        const folderActive = folderPhotos.some(p => p.ai_usable);
-        const folderExcluded = folderPhotos.filter(p => !p.ai_usable).length;
-        return (
-          <Collapsible
-            key={folderName}
-            open={openFolders.has(folderName)}
-            onOpenChange={() => toggleFolder(folderName)}
-          >
-            <div className={cn(
-              "flex items-center gap-2 p-4 glass-card rounded-xl transition-colors",
-              !folderActive && "opacity-60"
-            )}>
-              <CollapsibleTrigger className="flex-1 flex items-center justify-between hover:bg-muted/50 rounded-lg -m-1 p-1 transition-colors">
-                <div className="flex items-center gap-2">
-                  <FolderOpen className="h-4 w-4 text-primary" />
-                  <span className="font-medium">{folderName}</span>
-                  <Badge variant="secondary">{folderPhotos.length}</Badge>
-                  {folderExcluded > 0 && folderActive && (
-                    <Badge variant="outline" className="text-xs text-destructive border-destructive/30">
-                      {folderExcluded} aus
-                    </Badge>
+      {/* Folder card grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        {folders.map(([folderName, folderPhotos]) => {
+          const coverPhoto = folderPhotos[0];
+          const folderActive = folderPhotos.some(p => p.ai_usable);
+          const folderExcluded = folderPhotos.filter(p => !p.ai_usable).length;
+
+          return (
+            <div key={folderName} className="relative group">
+              <div
+                onClick={() => setOpenFolder(folderName)}
+                className={cn(
+                  "cursor-pointer glass-card rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:shadow-lg",
+                  !folderActive && "opacity-60"
+                )}
+              >
+                {/* Cover image */}
+                <div className="relative aspect-[4/3]">
+                  {(coverPhoto?.thumbnail_url || coverPhoto?.public_url) ? (
+                    <img
+                      src={coverPhoto.thumbnail_url || coverPhoto.public_url || ""}
+                      alt={folderName}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-muted">
+                      <FolderOpen className="h-8 w-8 text-muted-foreground/30" />
+                    </div>
                   )}
+                  {/* Photo count badge */}
+                  <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-xs font-medium">
+                    {folderPhotos.length}
+                  </div>
+                  {/* Gradient overlay at bottom */}
+                  <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/50 to-transparent" />
                 </div>
-                <ChevronDown className={cn(
-                  "h-4 w-4 transition-transform duration-200",
-                  openFolders.has(folderName) && "rotate-180"
-                )} />
-              </CollapsibleTrigger>
-              <Switch
-                checked={folderActive}
-                onCheckedChange={(checked) => onToggleFolder(folderName, checked)}
-                aria-label={`Ordner ${folderName} ${folderActive ? "deaktivieren" : "aktivieren"}`}
-              />
-            </div>
-            <CollapsibleContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-3 pb-2">
-                {folderPhotos.map(photo => (
-                  <TroupeImageCard
-                    key={photo.id}
-                    photo={photo}
-                    onToggle={() => onToggleAiUsable(photo)}
-                    toggling={togglingId === photo.id}
-                    onView={() => setViewingAsset(photo)}
-                  />
-                ))}
+
+                {/* Folder info */}
+                <div className="p-3 flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{folderName}</p>
+                    {folderExcluded > 0 && folderActive && (
+                      <p className="text-xs text-destructive">{folderExcluded} ausgeschlossen</p>
+                    )}
+                    {!folderActive && (
+                      <p className="text-xs text-muted-foreground">Deaktiviert</p>
+                    )}
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </div>
               </div>
-            </CollapsibleContent>
-          </Collapsible>
-        );
-      })}
+
+              {/* Folder toggle - positioned on the card */}
+              <div
+                className="absolute top-2 left-2 z-10"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Switch
+                  checked={folderActive}
+                  onCheckedChange={(checked) => onToggleFolder(folderName, checked)}
+                  aria-label={`Ordner ${folderName} ${folderActive ? "deaktivieren" : "aktivieren"}`}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
