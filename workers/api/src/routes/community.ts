@@ -41,7 +41,7 @@ app.post("/fetch-comments", async (c) => {
 
   // Fetch recent media
   const mediaRes = await fetch(
-    `https://graph.instagram.com/v21.0/${igUserId}/media?fields=id,timestamp&limit=25&access_token=${token}`
+    `https://graph.facebook.com/v21.0/${igUserId}/media?fields=id,timestamp&limit=25&access_token=${token}`
   );
   if (!mediaRes.ok) return c.json({ error: `Media-Abruf fehlgeschlagen: ${mediaRes.status}` }, 500);
 
@@ -59,7 +59,7 @@ app.post("/fetch-comments", async (c) => {
 
     // Fetch comments
     const commentsRes = await fetch(
-      `https://graph.instagram.com/v21.0/${media.id}/comments?fields=id,text,username,timestamp,replies{id,text,username,timestamp}&limit=100&access_token=${token}`
+      `https://graph.facebook.com/v21.0/${media.id}/comments?fields=id,text,username,timestamp,replies{id,text,username,timestamp}&limit=100&access_token=${token}`
     );
     if (!commentsRes.ok) continue;
 
@@ -286,14 +286,14 @@ app.post("/moderate", async (c) => {
   const token = conn.token_encrypted as string;
 
   if (action === "hide") {
-    await fetch(`https://graph.instagram.com/v21.0/${comment.ig_comment_id}`, {
+    await fetch(`https://graph.facebook.com/v21.0/${comment.ig_comment_id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hide: true, access_token: token }),
     });
     await query(sql, "UPDATE instagram_comments SET is_hidden = true WHERE id = $1", [comment_id]);
   } else if (action === "delete") {
-    await fetch(`https://graph.instagram.com/v21.0/${comment.ig_comment_id}`, {
+    await fetch(`https://graph.facebook.com/v21.0/${comment.ig_comment_id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: token }),

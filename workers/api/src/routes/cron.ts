@@ -67,7 +67,7 @@ app.post("/process-reply-queue", async (c) => {
       const igCommentId = reply.ig_comment_id as string;
 
       const res = await fetch(
-        `https://graph.instagram.com/v21.0/${igCommentId}/replies`, {
+        `https://graph.facebook.com/v21.0/${igCommentId}/replies`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -118,7 +118,7 @@ app.post("/process-reply-queue", async (c) => {
   for (const reply of pendingCRQ) {
     try {
       const res = await fetch(
-        `https://graph.instagram.com/v21.0/${reply.ig_comment_id}/replies`, {
+        `https://graph.facebook.com/v21.0/${reply.ig_comment_id}/replies`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -161,25 +161,37 @@ app.post("/process-reply-queue", async (c) => {
   return c.json({ success: true, sent, total_processed: pendingReplies.length + pendingCRQ.length });
 });
 
-/** POST /api/cron/refresh-tokens - Refresh expiring Instagram tokens */
+/** POST /api/cron/refresh-tokens - Refresh expiring tokens via Facebook Graph API */
 app.post("/refresh-tokens", async (c) => {
   const sql = getDb(c.env.DATABASE_URL);
 
   // Find tokens expiring within 7 days
   const expiring = await query<Record<string, unknown>>(sql,
-    "SELECT id, user_id, token_encrypted FROM meta_connections WHERE token_expires_at < NOW() + interval '7 days' AND token_encrypted IS NOT NULL"
+    "SELECT id, user_id, token_encrypted, page_access_token FROM meta_connections WHERE token_expires_at < NOW() + interval '7 days' AND token_encrypted IS NOT NULL"
   );
 
   let refreshed = 0;
   for (const conn of expiring) {
     try {
+      // Page Access Tokens (long-lived) don't expire — mark as refreshed
+      if (conn.page_access_token) {
+        await query(sql,
+          "UPDATE meta_connections SET token_expires_at = NOW() + interval '60 days' WHERE id = $1",
+          [conn.id]
+        );
+        refreshed++;
+        continue;
+      }
+
+      // Fallback: Facebook long-lived token exchange
       const res = await fetch(
-        `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${conn.token_encrypted}`
+        `https://graph.facebook.com/v20.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${c.env.INSTAGRAM_APP_ID}&client_secret=${c.env.INSTAGRAM_APP_SECRET}&fb_exchange_token=${conn.token_encrypted}`
       );
 
       if (res.ok) {
-        const data = await res.json() as { access_token: string; expires_in: number };
-        const newExpiry = new Date(Date.now() + data.expires_in * 1000).toISOString();
+        const data = await res.json() as { access_token: string; expires_in?: number };
+        const expiresIn = data.expires_in || 5184000; // 60 days default
+        const newExpiry = new Date(Date.now() + expiresIn * 1000).toISOString();
 
         await query(sql,
           "UPDATE meta_connections SET token_encrypted = $1, token_expires_at = $2 WHERE id = $3",
@@ -211,7 +223,7 @@ app.post("/backfill-likes", async (c) => {
   for (const comment of comments) {
     try {
       const res = await fetch(
-        `https://graph.instagram.com/v21.0/${comment.ig_comment_id}/likes`, {
+        `https://graph.facebook.com/v21.0/${comment.ig_comment_id}/likes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ access_token: comment.token_encrypted }),

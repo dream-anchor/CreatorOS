@@ -222,7 +222,7 @@ app.post("/publish", async (c) => {
   if (assets.length === 1 || post.format === "single") {
     // Single image post
     const createRes = await fetch(
-      `https://graph.instagram.com/v21.0/${igUserId}/media`, {
+      `https://graph.facebook.com/v21.0/${igUserId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -237,7 +237,7 @@ app.post("/publish", async (c) => {
 
     // Publish
     const publishRes = await fetch(
-      `https://graph.instagram.com/v21.0/${igUserId}/media_publish`, {
+      `https://graph.facebook.com/v21.0/${igUserId}/media_publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ creation_id: createData.id, access_token: token }),
@@ -250,7 +250,7 @@ app.post("/publish", async (c) => {
     const childIds: string[] = [];
     for (const asset of assets) {
       const childRes = await fetch(
-        `https://graph.instagram.com/v21.0/${igUserId}/media`, {
+        `https://graph.facebook.com/v21.0/${igUserId}/media`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -266,7 +266,7 @@ app.post("/publish", async (c) => {
     }
 
     const carouselRes = await fetch(
-      `https://graph.instagram.com/v21.0/${igUserId}/media`, {
+      `https://graph.facebook.com/v21.0/${igUserId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -280,7 +280,7 @@ app.post("/publish", async (c) => {
     const carouselData = await carouselRes.json() as { id: string };
 
     const publishRes = await fetch(
-      `https://graph.instagram.com/v21.0/${igUserId}/media_publish`, {
+      `https://graph.facebook.com/v21.0/${igUserId}/media_publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ creation_id: carouselData.id, access_token: token }),
@@ -316,7 +316,7 @@ app.post("/fetch-history", async (c) => {
   const token = conn.token_encrypted as string;
   const igUserId = conn.ig_user_id as string;
 
-  let url = `https://graph.instagram.com/v21.0/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,permalink,like_count,comments_count&limit=${limit}&access_token=${token}`;
+  let url = `https://graph.facebook.com/v21.0/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,permalink,like_count,comments_count&limit=${limit}&access_token=${token}`;
   if (after_cursor) url += `&after=${after_cursor}`;
 
   const res = await fetch(url);
@@ -393,7 +393,7 @@ app.post("/test-connection", async (c) => {
   if (!conn?.token_encrypted) return c.json({ error: "Keine Verbindung" }, 400);
 
   const res = await fetch(
-    `https://graph.instagram.com/v21.0/me?fields=id,username&access_token=${conn.token_encrypted}`
+    `https://graph.facebook.com/v21.0/me?fields=id,username&access_token=${conn.token_encrypted}`
   );
 
   if (!res.ok) return c.json({ success: false, error: `API Fehler: ${res.status}` });
@@ -413,7 +413,7 @@ app.post("/validate-user", async (c) => {
   if (!conn?.token_encrypted) return c.json({ error: "Keine Verbindung" }, 400);
 
   const res = await fetch(
-    `https://graph.instagram.com/v21.0/${conn.ig_user_id}?fields=business_discovery.fields(id,username,name,profile_picture_url).username(${username})&access_token=${conn.token_encrypted}`
+    `https://graph.facebook.com/v21.0/${conn.ig_user_id}?fields=business_discovery.fields(id,username,name,profile_picture_url).username(${username})&access_token=${conn.token_encrypted}`
   );
 
   if (!res.ok) return c.json({ valid: false });

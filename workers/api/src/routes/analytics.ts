@@ -34,13 +34,13 @@ app.post("/fetch-daily-insights", async (c) => {
 
   // Fetch follower count
   const profileRes = await fetch(
-    `https://graph.instagram.com/v21.0/${igUserId}?fields=followers_count,media_count&access_token=${token}`
+    `https://graph.facebook.com/v21.0/${igUserId}?fields=followers_count,media_count&access_token=${token}`
   );
   const profileData = await profileRes.json() as Record<string, number>;
 
   // Fetch insights
   const insightsRes = await fetch(
-    `https://graph.instagram.com/v21.0/${igUserId}/insights?metric=impressions,reach,profile_views,accounts_engaged,likes,comments,shares,saves&period=day&access_token=${token}`
+    `https://graph.facebook.com/v21.0/${igUserId}/insights?metric=impressions,reach,profile_views,accounts_engaged,likes,comments,shares,saves&period=day&access_token=${token}`
   );
 
   let insightsData: { data: Array<Record<string, unknown>> } = { data: [] };

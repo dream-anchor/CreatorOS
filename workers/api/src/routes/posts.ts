@@ -534,7 +534,7 @@ app.post("/repair-metadata", async (c) => {
   for (const post of posts) {
     try {
       const igRes = await fetch(
-        `https://graph.instagram.com/v21.0/${post.ig_media_id}?fields=like_count,comments_count,insights.metric(impressions,reach,saved)&access_token=${conn.token_encrypted}`
+        `https://graph.facebook.com/v21.0/${post.ig_media_id}?fields=like_count,comments_count,insights.metric(impressions,reach,saved)&access_token=${conn.token_encrypted}`
       );
       if (!igRes.ok) continue;
 
