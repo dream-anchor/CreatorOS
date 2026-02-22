@@ -86,6 +86,28 @@ app.patch("/:id", async (c) => {
   return c.json({ success: true });
 });
 
+/** PATCH /api/media/batch-update - Batch update media assets by folder */
+app.patch("/batch-update", async (c) => {
+  const userId = c.get("userId");
+  const sql = getDb(c.env.DATABASE_URL);
+  const { troupe_folder_name, ai_usable } = await c.req.json<{
+    troupe_folder_name: string;
+    ai_usable: boolean;
+  }>();
+
+  if (typeof ai_usable !== "boolean" || !troupe_folder_name) {
+    return c.json({ error: "troupe_folder_name and ai_usable required" }, 400);
+  }
+
+  const result = await query(sql,
+    `UPDATE media_assets SET ai_usable = $1
+     WHERE user_id = $2 AND troupe_folder_name = $3 AND source_system = 'troupe'`,
+    [ai_usable, userId, troupe_folder_name]
+  );
+
+  return c.json({ success: true, updated: (result as any).length ?? 0 });
+});
+
 /** DELETE /api/media/:id - Delete media asset */
 app.delete("/:id", async (c) => {
   const userId = c.get("userId");

@@ -53,6 +53,7 @@ interface MediaAsset {
   ai_usable: boolean;
   troupe_image_id: string | null;
   troupe_folder_name: string | null;
+  thumbnail_url: string | null;
 }
 
 interface UploadingAsset {
@@ -367,16 +368,35 @@ export default function MediaArchivePage() {
   const handleToggleAiUsable = async (asset: MediaAsset) => {
     setTogglingAiUsableId(asset.id);
     const newValue = !asset.ai_usable;
-    // Optimistic update
     setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, ai_usable: newValue } : a));
     try {
       await apiPatch(`/api/media/${asset.id}`, { ai_usable: newValue });
     } catch (err: any) {
-      // Revert on failure
       setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, ai_usable: asset.ai_usable } : a));
       toast.error("Fehler beim Aktualisieren: " + err.message);
     } finally {
       setTogglingAiUsableId(null);
+    }
+  };
+
+  const handleToggleFolder = async (folderName: string, newValue: boolean) => {
+    // Optimistic update: toggle all photos in this folder
+    setAssets(prev => prev.map(a =>
+      a.source_system === 'troupe' && a.troupe_folder_name === folderName
+        ? { ...a, ai_usable: newValue }
+        : a
+    ));
+    try {
+      await apiPatch("/api/media/batch-update", { troupe_folder_name: folderName, ai_usable: newValue });
+      toast.success(`Ordner "${folderName}" ${newValue ? "aktiviert" : "deaktiviert"}`);
+    } catch (err: any) {
+      // Revert
+      setAssets(prev => prev.map(a =>
+        a.source_system === 'troupe' && a.troupe_folder_name === folderName
+          ? { ...a, ai_usable: !newValue }
+          : a
+      ));
+      toast.error("Fehler: " + err.message);
     }
   };
 
@@ -495,6 +515,7 @@ export default function MediaArchivePage() {
                 syncing={syncingTroupe}
                 onSync={handleSyncTroupe}
                 onToggleAiUsable={handleToggleAiUsable}
+                onToggleFolder={handleToggleFolder}
                 togglingId={togglingAiUsableId}
                 setViewingAsset={setViewingAsset}
               />
@@ -936,11 +957,12 @@ interface TroupeTabProps {
   syncing: boolean;
   onSync: () => void;
   onToggleAiUsable: (asset: MediaAsset) => void;
+  onToggleFolder: (folderName: string, newValue: boolean) => void;
   togglingId: string | null;
   setViewingAsset: (asset: MediaAsset | null) => void;
 }
 
-function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, togglingId, setViewingAsset }: TroupeTabProps) {
+function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, onToggleFolder, togglingId, setViewingAsset }: TroupeTabProps) {
   const folders = useMemo(() => {
     const map = new Map<string, MediaAsset[]>();
     for (const photo of photos) {
@@ -1023,6 +1045,7 @@ function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, togglingId, setV
 
       {/* Folders */}
       {folders.map(([folderName, folderPhotos]) => {
+        const folderActive = folderPhotos.some(p => p.ai_usable);
         const folderExcluded = folderPhotos.filter(p => !p.ai_usable).length;
         return (
           <Collapsible
@@ -1030,22 +1053,32 @@ function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, togglingId, setV
             open={openFolders.has(folderName)}
             onOpenChange={() => toggleFolder(folderName)}
           >
-            <CollapsibleTrigger className="w-full flex items-center justify-between p-4 glass-card rounded-xl hover:bg-muted/50 transition-colors">
-              <div className="flex items-center gap-2">
-                <FolderOpen className="h-4 w-4 text-primary" />
-                <span className="font-medium">{folderName}</span>
-                <Badge variant="secondary">{folderPhotos.length}</Badge>
-                {folderExcluded > 0 && (
-                  <Badge variant="outline" className="text-xs text-destructive border-destructive/30">
-                    {folderExcluded} ausgeschlossen
-                  </Badge>
-                )}
-              </div>
-              <ChevronDown className={cn(
-                "h-4 w-4 transition-transform duration-200",
-                openFolders.has(folderName) && "rotate-180"
-              )} />
-            </CollapsibleTrigger>
+            <div className={cn(
+              "flex items-center gap-2 p-4 glass-card rounded-xl transition-colors",
+              !folderActive && "opacity-60"
+            )}>
+              <CollapsibleTrigger className="flex-1 flex items-center justify-between hover:bg-muted/50 rounded-lg -m-1 p-1 transition-colors">
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="h-4 w-4 text-primary" />
+                  <span className="font-medium">{folderName}</span>
+                  <Badge variant="secondary">{folderPhotos.length}</Badge>
+                  {folderExcluded > 0 && folderActive && (
+                    <Badge variant="outline" className="text-xs text-destructive border-destructive/30">
+                      {folderExcluded} aus
+                    </Badge>
+                  )}
+                </div>
+                <ChevronDown className={cn(
+                  "h-4 w-4 transition-transform duration-200",
+                  openFolders.has(folderName) && "rotate-180"
+                )} />
+              </CollapsibleTrigger>
+              <Switch
+                checked={folderActive}
+                onCheckedChange={(checked) => onToggleFolder(folderName, checked)}
+                aria-label={`Ordner ${folderName} ${folderActive ? "deaktivieren" : "aktivieren"}`}
+              />
+            </div>
             <CollapsibleContent>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-3 pb-2">
                 {folderPhotos.map(photo => (
@@ -1082,9 +1115,9 @@ function TroupeImageCard({ photo, onToggle, toggling, onView }: TroupeImageCardP
     )}>
       <CardContent className="p-0">
         <div className="aspect-square relative">
-          {photo.public_url ? (
+          {(photo.thumbnail_url || photo.public_url) ? (
             <img
-              src={photo.public_url}
+              src={photo.thumbnail_url || photo.public_url || ""}
               alt={photo.filename || "Foto"}
               className="w-full h-full object-cover"
               loading="lazy"

@@ -212,6 +212,7 @@ CREATE TABLE public.media_assets (
   troupe_image_id TEXT,
   source_system TEXT DEFAULT 'upload',
   troupe_folder_name TEXT,
+  thumbnail_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

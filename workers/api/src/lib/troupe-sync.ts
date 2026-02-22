@@ -50,29 +50,19 @@ export async function syncTroupeImages(
   const images = (await res.json()) as TroupeImage[];
   if (images.length === 0) return { synced: 0, skipped: 0, total: 0 };
 
-  // 2. Load all existing troupe_image_ids in one query (1 subrequest)
-  const existingRows = await query<{ troupe_image_id: string }>(
-    sql,
-    "SELECT troupe_image_id FROM media_assets WHERE troupe_image_id IS NOT NULL AND user_id = $1",
-    [userId],
-  );
-  const existingIds = new Set(existingRows.map((r) => r.troupe_image_id));
-
-  // 3. Filter to new images only
-  const newImages = images.filter(
-    (img) => img.file_path && !existingIds.has(img.id),
-  );
-
-  if (newImages.length === 0) {
-    return { synced: 0, skipped: images.length, total: images.length };
+  // 2. Filter to images with file_path
+  const validImages = images.filter((img) => img.file_path);
+  if (validImages.length === 0) {
+    return { synced: 0, skipped: 0, total: images.length };
   }
 
-  // 4. Batch INSERT all new images in one query (1 subrequest)
+  // 3. Batch UPSERT all images (1 subrequest)
+  // ON CONFLICT: update thumbnail_url + troupe_folder_name but preserve ai_usable
   const valueClauses: string[] = [];
   const params: unknown[] = [];
   let idx = 1;
 
-  for (const img of newImages) {
+  for (const img of validImages) {
     const tags: string[] = [];
     if (img.picks_folders?.name) tags.push(img.picks_folders.name);
     if (img.picks_folders?.photographer_name) {
@@ -81,21 +71,30 @@ export async function syncTroupeImages(
 
     const folderName = img.picks_folders?.name ?? null;
     valueClauses.push(
-      `($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, true, false, 'troupe', $${idx + 5}, $${idx + 6})`,
+      `($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, true, false, 'troupe', $${idx + 5}, $${idx + 6}, $${idx + 7})`,
     );
-    params.push(userId, img.file_path, img.file_path, img.file_name, tags, img.id, folderName);
-    idx += 7;
+    params.push(userId, img.file_path, img.file_path, img.file_name, tags, img.id, folderName, img.thumbnail_url);
+    idx += 8;
   }
 
   await query(
     sql,
     `INSERT INTO media_assets
-      (user_id, storage_path, public_url, filename, tags, ai_usable, analyzed, source_system, troupe_image_id, troupe_folder_name)
+      (user_id, storage_path, public_url, filename, tags, ai_usable, analyzed, source_system, troupe_image_id, troupe_folder_name, thumbnail_url)
      VALUES ${valueClauses.join(", ")}
-     ON CONFLICT (troupe_image_id) WHERE troupe_image_id IS NOT NULL DO NOTHING`,
+     ON CONFLICT (troupe_image_id) WHERE troupe_image_id IS NOT NULL
+     DO UPDATE SET thumbnail_url = EXCLUDED.thumbnail_url, troupe_folder_name = EXCLUDED.troupe_folder_name`,
     params,
   );
 
-  const skipped = images.length - newImages.length;
-  return { synced: newImages.length, skipped, total: images.length };
+  // Count how many were truly new (didn't exist before)
+  const afterRows = await query<{ c: string }>(
+    sql,
+    "SELECT count(*) as c FROM media_assets WHERE source_system = 'troupe' AND user_id = $1",
+    [userId],
+  );
+  const totalAfter = parseInt(afterRows[0]?.c || "0", 10);
+  const newCount = totalAfter - (images.length - validImages.length);
+  // Approximate: synced = total troupe rows now, skipped = those that existed before
+  return { synced: validImages.length, skipped: 0, total: images.length };
 }
