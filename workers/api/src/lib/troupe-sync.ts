@@ -79,17 +79,18 @@ export async function syncTroupeImages(
       tags.push(img.picks_folders.photographer_name);
     }
 
+    const folderName = img.picks_folders?.name ?? null;
     valueClauses.push(
-      `($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, true, false, 'troupe', $${idx + 5})`,
+      `($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, true, false, 'troupe', $${idx + 5}, $${idx + 6})`,
     );
-    params.push(userId, img.file_path, img.file_path, img.file_name, tags, img.id);
-    idx += 6;
+    params.push(userId, img.file_path, img.file_path, img.file_name, tags, img.id, folderName);
+    idx += 7;
   }
 
   await query(
     sql,
     `INSERT INTO media_assets
-      (user_id, storage_path, public_url, filename, tags, ai_usable, analyzed, source_system, troupe_image_id)
+      (user_id, storage_path, public_url, filename, tags, ai_usable, analyzed, source_system, troupe_image_id, troupe_folder_name)
      VALUES ${valueClauses.join(", ")}
      ON CONFLICT (troupe_image_id) WHERE troupe_image_id IS NOT NULL DO NOTHING`,
     params,

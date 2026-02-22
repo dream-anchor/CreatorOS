@@ -27,6 +27,12 @@ app.get("/", async (c) => {
     params.push(aiUsable === "true");
     idx++;
   }
+  const sourceSystem = c.req.query("source_system");
+  if (sourceSystem) {
+    where += ` AND source_system = $${idx}`;
+    params.push(sourceSystem);
+    idx++;
+  }
 
   const assets = await query(sql,
     `SELECT * FROM media_assets ${where} ORDER BY created_at DESC`,

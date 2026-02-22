@@ -6,7 +6,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { apiGet, apiPost, apiDelete, invokeFunction, getPresignedUrl, uploadToR2, deleteFromR2 } from "@/lib/api";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Switch } from "@/components/ui/switch";
+import { apiGet, apiPost, apiPatch, apiDelete, invokeFunction, getPresignedUrl, uploadToR2, deleteFromR2 } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
@@ -23,6 +25,7 @@ import {
   Zap,
   Camera,
   Bot,
+  ChevronDown,
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -46,6 +49,10 @@ interface MediaAsset {
   ai_description: string | null;
   analyzed: boolean | null;
   is_good_reference: boolean | null;
+  source_system: string | null;
+  ai_usable: boolean;
+  troupe_image_id: string | null;
+  troupe_folder_name: string | null;
 }
 
 interface UploadingAsset {
@@ -69,8 +76,9 @@ export default function MediaArchivePage() {
   const [viewingAsset, setViewingAsset] = useState<MediaAsset | null>(null);
   const [uploadingAssets, setUploadingAssets] = useState<UploadingAsset[]>([]);
   const [analyzingSingleId, setAnalyzingSingleId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"my-photos" | "ai-generated">("my-photos");
+  const [activeTab, setActiveTab] = useState<"my-photos" | "ai-generated" | "troupe">("my-photos");
   const [syncingTroupe, setSyncingTroupe] = useState(false);
+  const [togglingAiUsableId, setTogglingAiUsableId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) loadAssets();
@@ -88,21 +96,22 @@ export default function MediaArchivePage() {
   };
 
   // Split assets by source
-  const { myPhotos, aiGenerated } = useMemo(() => {
+  const { myPhotos, aiGenerated, troupePhotos } = useMemo(() => {
     const my: MediaAsset[] = [];
     const ai: MediaAsset[] = [];
-    
+    const troupe: MediaAsset[] = [];
+
     assets.forEach(asset => {
-      // Check source field from DB - if 'generate' it's AI, otherwise it's user upload
-      const assetWithSource = asset as MediaAsset & { source?: string };
-      if (assetWithSource.source === 'generate') {
+      if (asset.source_system === 'troupe') {
+        troupe.push(asset);
+      } else if (asset.source_system === 'generate') {
         ai.push(asset);
       } else {
         my.push(asset);
       }
     });
-    
-    return { myPhotos: my, aiGenerated: ai };
+
+    return { myPhotos: my, aiGenerated: ai, troupePhotos: troupe };
   }, [assets]);
 
   const currentAssets = activeTab === "my-photos" ? myPhotos : aiGenerated;
@@ -355,6 +364,22 @@ export default function MediaArchivePage() {
     }
   };
 
+  const handleToggleAiUsable = async (asset: MediaAsset) => {
+    setTogglingAiUsableId(asset.id);
+    const newValue = !asset.ai_usable;
+    // Optimistic update
+    setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, ai_usable: newValue } : a));
+    try {
+      await apiPatch(`/api/media/${asset.id}`, { ai_usable: newValue });
+    } catch (err: any) {
+      // Revert on failure
+      setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, ai_usable: asset.ai_usable } : a));
+      toast.error("Fehler beim Aktualisieren: " + err.message);
+    } finally {
+      setTogglingAiUsableId(null);
+    }
+  };
+
   if (loading) {
     return (
       <GlobalLayout>
@@ -381,12 +406,17 @@ export default function MediaArchivePage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground mb-4">Medien</h1>
           
-          <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as "my-photos" | "ai-generated"); setFilterTag(null); }}>
-            <TabsList className="grid w-full max-w-md grid-cols-2">
+          <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as "my-photos" | "ai-generated" | "troupe"); setFilterTag(null); }}>
+            <TabsList className="grid w-full max-w-xl grid-cols-3">
               <TabsTrigger value="my-photos" className="flex items-center gap-2">
                 <Camera className="h-4 w-4" />
                 Meine Bilder
                 <Badge variant="secondary" className="ml-1 text-xs">{myPhotos.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="troupe" className="flex items-center gap-2">
+                <FolderOpen className="h-4 w-4" />
+                Troupe
+                <Badge variant="secondary" className="ml-1 text-xs">{troupePhotos.length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="ai-generated" className="flex items-center gap-2">
                 <Bot className="h-4 w-4" />
@@ -420,41 +450,19 @@ export default function MediaArchivePage() {
                     <p className="text-muted-foreground text-center max-w-md mb-6">
                       Lade echte Fotos von dir hoch. Die KI nutzt sie als Referenz für personalisierte Bildgenerierungen.
                     </p>
-                    <div className="flex gap-3">
-                      <Button
-                        onClick={() => document.getElementById("media-upload")?.click()}
-                        size="lg"
-                        className="bg-gradient-to-r from-primary to-cyan-500"
-                      >
-                        <Upload className="mr-2 h-5 w-5" />
-                        Bilder hochladen
-                      </Button>
-                      <Button
-                        onClick={handleSyncTroupe}
-                        size="lg"
-                        variant="outline"
-                        disabled={syncingTroupe}
-                      >
-                        {syncingTroupe ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FolderOpen className="mr-2 h-5 w-5" />}
-                        Troupe verknüpfen
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={() => document.getElementById("media-upload")?.click()}
+                      size="lg"
+                      className="bg-gradient-to-r from-primary to-cyan-500"
+                    >
+                      <Upload className="mr-2 h-5 w-5" />
+                      Bilder hochladen
+                    </Button>
                   </div>
                 ) : (
                   <div className="p-4 flex items-center justify-center gap-4 text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <Upload className="h-5 w-5 opacity-50" />
-                      <p className="text-sm">Bilder hier ablegen zum Hochladen</p>
-                    </div>
-                    <Button
-                      onClick={handleSyncTroupe}
-                      size="sm"
-                      variant="ghost"
-                      disabled={syncingTroupe}
-                    >
-                      {syncingTroupe ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderOpen className="mr-1 h-4 w-4" />}
-                      Troupe Sync
-                    </Button>
+                    <Upload className="h-5 w-5 opacity-50" />
+                    <p className="text-sm">Bilder hier ablegen zum Hochladen</p>
                   </div>
                 )}
               </div>
@@ -478,6 +486,18 @@ export default function MediaArchivePage() {
                   stats={{ total: myPhotos.length, references: myPhotos.filter(a => a.is_good_reference).length, analyzed: myPhotos.filter(a => a.analyzed).length }}
                 />
               )}
+            </TabsContent>
+
+            {/* Troupe Tab */}
+            <TabsContent value="troupe" className="mt-6">
+              <TroupeTab
+                photos={troupePhotos}
+                syncing={syncingTroupe}
+                onSync={handleSyncTroupe}
+                onToggleAiUsable={handleToggleAiUsable}
+                togglingId={togglingAiUsableId}
+                setViewingAsset={setViewingAsset}
+              />
             </TabsContent>
 
             {/* AI Generated Tab */}
@@ -907,5 +927,199 @@ function AssetGrid({
         ))}
       </div>
     </div>
+  );
+}
+
+// Troupe Tab Component
+interface TroupeTabProps {
+  photos: MediaAsset[];
+  syncing: boolean;
+  onSync: () => void;
+  onToggleAiUsable: (asset: MediaAsset) => void;
+  togglingId: string | null;
+  setViewingAsset: (asset: MediaAsset | null) => void;
+}
+
+function TroupeTab({ photos, syncing, onSync, onToggleAiUsable, togglingId, setViewingAsset }: TroupeTabProps) {
+  const folders = useMemo(() => {
+    const map = new Map<string, MediaAsset[]>();
+    for (const photo of photos) {
+      const key = photo.troupe_folder_name ?? "Ohne Ordner";
+      const arr = map.get(key) ?? [];
+      arr.push(photo);
+      map.set(key, arr);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [photos]);
+
+  const [openFolders, setOpenFolders] = useState<Set<string>>(
+    () => new Set(folders.map(([name]) => name))
+  );
+
+  // Update open folders when folders change (after sync)
+  useEffect(() => {
+    setOpenFolders(new Set(folders.map(([name]) => name)));
+  }, [folders.length]);
+
+  const toggleFolder = (name: string) => {
+    setOpenFolders(prev => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
+  };
+
+  if (photos.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-border/50 rounded-2xl">
+        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 to-cyan-500/20 flex items-center justify-center mb-6">
+          <FolderOpen className="h-10 w-10 text-primary" />
+        </div>
+        <h2 className="text-xl font-semibold text-foreground mb-2">
+          Keine Troupe-Fotos
+        </h2>
+        <p className="text-muted-foreground text-center max-w-md mb-6">
+          Verbinde dein Troupe-Konto, um Fotos aus deinen Picks-Alben hier anzuzeigen.
+        </p>
+        <Button
+          onClick={onSync}
+          disabled={syncing}
+          size="lg"
+          className="bg-gradient-to-r from-primary to-cyan-500"
+        >
+          {syncing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FolderOpen className="mr-2 h-5 w-5" />}
+          Troupe verknüpfen
+        </Button>
+      </div>
+    );
+  }
+
+  const excludedCount = photos.filter(p => !p.ai_usable).length;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+        <div className="glass-card px-4 py-3 rounded-xl">
+          <p className="text-2xl font-bold text-foreground">{photos.length}</p>
+          <p className="text-sm text-muted-foreground">Fotos</p>
+        </div>
+        <div className="glass-card px-4 py-3 rounded-xl">
+          <p className="text-2xl font-bold text-foreground">{folders.length}</p>
+          <p className="text-sm text-muted-foreground">Ordner</p>
+        </div>
+        {excludedCount > 0 && (
+          <div className="glass-card px-4 py-3 rounded-xl">
+            <p className="text-2xl font-bold text-destructive">{excludedCount}</p>
+            <p className="text-sm text-muted-foreground">Ausgeschlossen</p>
+          </div>
+        )}
+        <div className="flex-1" />
+        <Button onClick={onSync} disabled={syncing} size="sm" variant="outline">
+          {syncing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderOpen className="mr-1 h-4 w-4" />}
+          Troupe Sync
+        </Button>
+      </div>
+
+      {/* Folders */}
+      {folders.map(([folderName, folderPhotos]) => {
+        const folderExcluded = folderPhotos.filter(p => !p.ai_usable).length;
+        return (
+          <Collapsible
+            key={folderName}
+            open={openFolders.has(folderName)}
+            onOpenChange={() => toggleFolder(folderName)}
+          >
+            <CollapsibleTrigger className="w-full flex items-center justify-between p-4 glass-card rounded-xl hover:bg-muted/50 transition-colors">
+              <div className="flex items-center gap-2">
+                <FolderOpen className="h-4 w-4 text-primary" />
+                <span className="font-medium">{folderName}</span>
+                <Badge variant="secondary">{folderPhotos.length}</Badge>
+                {folderExcluded > 0 && (
+                  <Badge variant="outline" className="text-xs text-destructive border-destructive/30">
+                    {folderExcluded} ausgeschlossen
+                  </Badge>
+                )}
+              </div>
+              <ChevronDown className={cn(
+                "h-4 w-4 transition-transform duration-200",
+                openFolders.has(folderName) && "rotate-180"
+              )} />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-3 pb-2">
+                {folderPhotos.map(photo => (
+                  <TroupeImageCard
+                    key={photo.id}
+                    photo={photo}
+                    onToggle={() => onToggleAiUsable(photo)}
+                    toggling={togglingId === photo.id}
+                    onView={() => setViewingAsset(photo)}
+                  />
+                ))}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        );
+      })}
+    </div>
+  );
+}
+
+// Troupe Image Card Component
+interface TroupeImageCardProps {
+  photo: MediaAsset;
+  onToggle: () => void;
+  toggling: boolean;
+  onView: () => void;
+}
+
+function TroupeImageCard({ photo, onToggle, toggling, onView }: TroupeImageCardProps) {
+  return (
+    <Card className={cn(
+      "glass-card overflow-hidden group relative",
+      !photo.ai_usable && "opacity-60 ring-2 ring-destructive/40"
+    )}>
+      <CardContent className="p-0">
+        <div className="aspect-square relative">
+          {photo.public_url ? (
+            <img
+              src={photo.public_url}
+              alt={photo.filename || "Foto"}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-muted">
+              <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
+            </div>
+          )}
+          {/* Hover overlay */}
+          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            <Button variant="secondary" size="sm" onClick={onView}>
+              <Eye className="h-4 w-4" />
+            </Button>
+          </div>
+          {/* Excluded badge */}
+          {!photo.ai_usable && (
+            <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-destructive/80 text-white text-xs">
+              Ausgeschlossen
+            </div>
+          )}
+        </div>
+        {/* Toggle row */}
+        <div className="p-3 flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground truncate" title={photo.filename || undefined}>
+            {photo.filename || "—"}
+          </span>
+          <Switch
+            checked={photo.ai_usable}
+            onCheckedChange={onToggle}
+            disabled={toggling}
+            aria-label="Für Posts verwenden"
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
