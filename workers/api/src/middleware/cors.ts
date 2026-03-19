@@ -7,7 +7,7 @@ export function cors(): MiddlewareHandler {
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "authorization, content-type, x-client-info, apikey, x-cron-secret",
+          "Access-Control-Allow-Headers": "authorization, content-type, x-client-info, x-api-key, apikey, x-cron-secret",
           "Access-Control-Max-Age": "86400",
         },
       });
