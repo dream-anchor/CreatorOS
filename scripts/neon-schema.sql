@@ -21,6 +21,7 @@ CREATE TYPE public.log_level AS ENUM ('info', 'warn', 'error');
 CREATE TABLE public.profiles (
   id TEXT PRIMARY KEY,
   display_name TEXT,
+  org_id TEXT NOT NULL DEFAULT 'default',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -35,6 +36,7 @@ CREATE TABLE public.user_roles (
 CREATE TABLE public.brand_rules (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL UNIQUE,
+  org_id TEXT NOT NULL DEFAULT 'default',
   tone_style TEXT,
   do_list TEXT[] DEFAULT '{}',
   dont_list TEXT[] DEFAULT '{}',
@@ -60,6 +62,7 @@ CREATE TABLE public.brand_rules (
 CREATE TABLE public.settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL UNIQUE,
+  org_id TEXT NOT NULL DEFAULT 'default',
   posts_per_week INT DEFAULT 2,
   preferred_days TEXT[] DEFAULT '{"monday", "wednesday", "friday"}',
   preferred_hours JSONB DEFAULT '{"start": 9, "end": 18}',
@@ -75,6 +78,7 @@ CREATE TABLE public.settings (
 CREATE TABLE public.meta_connections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL UNIQUE,
+  org_id TEXT NOT NULL DEFAULT 'default',
   page_id TEXT,
   page_name TEXT,
   ig_user_id TEXT,
@@ -89,6 +93,7 @@ CREATE TABLE public.meta_connections (
 CREATE TABLE public.instagram_tokens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL UNIQUE,
+  org_id TEXT NOT NULL DEFAULT 'default',
   ig_user_id TEXT NOT NULL,
   access_token TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -102,6 +107,7 @@ CREATE TABLE public.instagram_tokens (
 CREATE TABLE public.topics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   title TEXT NOT NULL,
   description TEXT,
   keywords TEXT[] DEFAULT '{}',
@@ -116,6 +122,7 @@ CREATE TABLE public.topics (
 CREATE TABLE public.posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   topic_id UUID REFERENCES public.topics(id) ON DELETE SET NULL,
   status public.post_status NOT NULL DEFAULT 'DRAFT',
   caption TEXT,
@@ -155,6 +162,7 @@ CREATE TABLE public.posts (
 CREATE TABLE public.assets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   post_id UUID REFERENCES public.posts(id) ON DELETE CASCADE,
   storage_path TEXT NOT NULL,
   public_url TEXT,
@@ -169,6 +177,7 @@ CREATE TABLE public.slide_assets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   slide_index INTEGER NOT NULL,
   storage_path TEXT,
   public_url TEXT,
@@ -180,6 +189,7 @@ CREATE TABLE public.slide_assets (
 CREATE TABLE public.content_snippets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   storage_path TEXT NOT NULL,
   public_url TEXT,
   title TEXT,
@@ -193,6 +203,7 @@ CREATE TABLE public.content_snippets (
 CREATE TABLE public.media_assets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   storage_path TEXT NOT NULL,
   public_url TEXT,
   filename TEXT,
@@ -220,6 +231,7 @@ CREATE TABLE public.media_assets (
 CREATE TABLE public.content_plan (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   status TEXT NOT NULL DEFAULT 'draft'
     CHECK (status IN ('draft', 'pending_review', 'approved', 'scheduled', 'published', 'rejected')),
   scheduled_for TIMESTAMPTZ,
@@ -247,6 +259,7 @@ CREATE TABLE public.content_plan (
 CREATE TABLE public.events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   title TEXT NOT NULL,
   date DATE NOT NULL,
   time TIME DEFAULT '20:00',
@@ -270,6 +283,7 @@ CREATE TABLE public.events (
 CREATE TABLE public.instagram_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   post_id UUID REFERENCES public.posts(id) ON DELETE CASCADE,
   ig_comment_id TEXT NOT NULL UNIQUE,
   ig_media_id TEXT NOT NULL,
@@ -291,6 +305,7 @@ CREATE TABLE public.instagram_comments (
 CREATE TABLE public.reply_queue (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   comment_id UUID NOT NULL REFERENCES public.instagram_comments(id) ON DELETE CASCADE,
   reply_text TEXT NOT NULL,
   scheduled_for TIMESTAMPTZ,
@@ -303,6 +318,7 @@ CREATE TABLE public.reply_queue (
 CREATE TABLE public.comment_reply_queue (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   comment_id UUID REFERENCES public.instagram_comments(id) ON DELETE CASCADE,
   ig_comment_id TEXT NOT NULL,
   reply_text TEXT NOT NULL,
@@ -318,6 +334,7 @@ CREATE TABLE public.comment_reply_queue (
 CREATE TABLE public.blacklist_topics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   topic TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -325,6 +342,7 @@ CREATE TABLE public.blacklist_topics (
 CREATE TABLE public.answered_by_ignore_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   username TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -332,6 +350,7 @@ CREATE TABLE public.answered_by_ignore_accounts (
 CREATE TABLE public.emoji_nogo_terms (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   term TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -339,6 +358,7 @@ CREATE TABLE public.emoji_nogo_terms (
 CREATE TABLE public.collaborators (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   username TEXT NOT NULL,
   full_name TEXT,
   avatar_url TEXT,
@@ -352,6 +372,7 @@ CREATE TABLE public.collaborators (
 CREATE TABLE public.reply_training_data (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   comment_text TEXT NOT NULL,
   original_ai_reply TEXT,
   better_reply TEXT NOT NULL,
@@ -368,6 +389,7 @@ CREATE TABLE public.reply_training_data (
 CREATE TABLE public.daily_account_stats (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   date DATE NOT NULL,
   follower_count INTEGER DEFAULT 0,
   impressions_day INTEGER DEFAULT 0,
@@ -396,6 +418,7 @@ CREATE TABLE public.daily_account_stats (
 CREATE TABLE public.video_projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   post_id UUID REFERENCES public.posts(id) ON DELETE SET NULL,
   source_video_path TEXT NOT NULL,
   source_video_url TEXT,
@@ -427,6 +450,7 @@ CREATE TABLE public.video_segments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.video_projects(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   segment_index INTEGER NOT NULL,
   start_ms INTEGER NOT NULL,
   end_ms INTEGER NOT NULL,
@@ -443,6 +467,7 @@ CREATE TABLE public.video_renders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.video_projects(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   shotstack_render_id TEXT NOT NULL,
   shotstack_status TEXT DEFAULT 'queued',
   config_snapshot JSONB NOT NULL,
@@ -463,6 +488,7 @@ CREATE TABLE public.video_renders (
 CREATE TABLE public.chat_conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   title TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -472,6 +498,7 @@ CREATE TABLE public.chat_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id UUID NOT NULL REFERENCES public.chat_conversations(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT,
   attachments JSONB DEFAULT '{}',
@@ -481,6 +508,7 @@ CREATE TABLE public.chat_messages (
 CREATE TABLE public.upload_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   session_id TEXT NOT NULL,
   uploaded_files JSONB NOT NULL DEFAULT '[]'::jsonb,
   raw_text TEXT,
@@ -493,6 +521,7 @@ CREATE TABLE public.upload_sessions (
 CREATE TABLE public.logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT 'default',
   post_id UUID REFERENCES public.posts(id) ON DELETE SET NULL,
   level public.log_level DEFAULT 'info',
   event_type TEXT NOT NULL,
