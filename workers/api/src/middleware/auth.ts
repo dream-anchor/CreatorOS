@@ -13,6 +13,7 @@ const PUBLIC_PATHS = [
   "/api/instagram/oauth-config",
   "/api/upload/proxy",
   "/api/cron/",
+  "/api/external/",
 ];
 
 export function authMiddleware(): MiddlewareHandler {
