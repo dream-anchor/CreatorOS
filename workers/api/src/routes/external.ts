@@ -321,6 +321,214 @@ app.delete("/tasks/:id", async (c) => {
   return c.json({ deleted: true, id: taskId });
 });
 
+// ============================================================
+// DOCS ENDPOINTS
+// ============================================================
+
+// GET /docs — List docs with optional category filter
+app.get("/docs", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const category = c.req.query("category");
+  const search = c.req.query("search");
+
+  let where = "WHERE 1=1";
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (category) {
+    where += ` AND category = $${idx}`;
+    params.push(category);
+    idx++;
+  }
+  if (search) {
+    where += ` AND (title ILIKE $${idx} OR content ILIKE $${idx})`;
+    params.push(`%${search}%`);
+    idx++;
+  }
+
+  const rows = await query(sql,
+    `SELECT id, title, content, category, tags, created_at, updated_at
+     FROM pixel_docs ${where}
+     ORDER BY created_at DESC`,
+    params
+  );
+
+  return c.json(rows);
+});
+
+// POST /docs — Create a doc
+app.post("/docs", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const body = await c.req.json<{
+    title: string;
+    content?: string;
+    category?: string;
+    tags?: string[];
+  }>();
+
+  if (!body.title) {
+    return c.json({ error: "title ist Pflichtfeld" }, 400);
+  }
+
+  const rows = await query(sql,
+    `INSERT INTO pixel_docs (title, content, category, tags)
+     VALUES ($1, $2, $3, $4)
+     RETURNING *`,
+    [body.title, body.content || null, body.category || "Sonstiges", body.tags || []]
+  );
+
+  return c.json(rows[0], 201);
+});
+
+// ============================================================
+// RULES ENDPOINTS
+// ============================================================
+
+// GET /rules — List rules with optional category filter
+app.get("/rules", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const category = c.req.query("category");
+
+  let where = "WHERE 1=1";
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (category) {
+    where += ` AND category = $${idx}`;
+    params.push(category);
+    idx++;
+  }
+
+  const rows = await query(sql,
+    `SELECT id, rule_text, category, is_active, created_at, updated_at
+     FROM pixel_rules ${where}
+     ORDER BY category, created_at DESC`,
+    params
+  );
+
+  return c.json(rows);
+});
+
+// POST /rules — Create a rule
+app.post("/rules", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const body = await c.req.json<{
+    rule_text: string;
+    category?: string;
+    is_active?: boolean;
+  }>();
+
+  if (!body.rule_text) {
+    return c.json({ error: "rule_text ist Pflichtfeld" }, 400);
+  }
+
+  const rows = await query(sql,
+    `INSERT INTO pixel_rules (rule_text, category, is_active)
+     VALUES ($1, $2, $3)
+     RETURNING *`,
+    [body.rule_text, body.category || "Allgemein", body.is_active !== false]
+  );
+
+  return c.json(rows[0], 201);
+});
+
+// PATCH /rules/:id — Update a rule
+app.patch("/rules/:id", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const ruleId = c.req.param("id");
+  const body = await c.req.json<{
+    rule_text?: string;
+    category?: string;
+    is_active?: boolean;
+  }>();
+
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (body.rule_text !== undefined) { sets.push(`rule_text = $${idx}`); params.push(body.rule_text); idx++; }
+  if (body.category !== undefined) { sets.push(`category = $${idx}`); params.push(body.category); idx++; }
+  if (body.is_active !== undefined) { sets.push(`is_active = $${idx}`); params.push(body.is_active); idx++; }
+
+  if (sets.length === 0) {
+    return c.json({ error: "Keine Felder zum Aktualisieren" }, 400);
+  }
+
+  sets.push("updated_at = now()");
+  params.push(ruleId);
+
+  const result = await query(sql,
+    `UPDATE pixel_rules SET ${sets.join(", ")} WHERE id = $${idx} RETURNING *`,
+    params
+  );
+
+  if (result.length === 0) {
+    return c.json({ error: "Regel nicht gefunden" }, 404);
+  }
+
+  return c.json(result[0]);
+});
+
+// ============================================================
+// COSTS ENDPOINTS
+// ============================================================
+
+// GET /costs — List costs with optional service/period filter
+app.get("/costs", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const service = c.req.query("service");
+  const period = c.req.query("period");
+
+  let where = "WHERE 1=1";
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (service) {
+    where += ` AND service = $${idx}`;
+    params.push(service);
+    idx++;
+  }
+  if (period) {
+    where += ` AND period = $${idx}`;
+    params.push(period);
+    idx++;
+  }
+
+  const rows = await query(sql,
+    `SELECT id, service, amount_cents, currency, period, details, created_at
+     FROM api_costs ${where}
+     ORDER BY period DESC, service`,
+    params
+  );
+
+  return c.json(rows);
+});
+
+// POST /costs — Add a cost entry
+app.post("/costs", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const body = await c.req.json<{
+    service: string;
+    amount_cents: number;
+    currency?: string;
+    period: string;
+    details?: Record<string, unknown>;
+  }>();
+
+  if (!body.service || body.amount_cents === undefined || !body.period) {
+    return c.json({ error: "service, amount_cents und period sind Pflichtfelder" }, 400);
+  }
+
+  const rows = await query(sql,
+    `INSERT INTO api_costs (service, amount_cents, currency, period, details)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [body.service, body.amount_cents, body.currency || "EUR", body.period, JSON.stringify(body.details || {})]
+  );
+
+  return c.json(rows[0], 201);
+});
+
 // POST /schedule — Schedule a post
 app.post("/schedule", async (c) => {
   const userId = getUserId(c);
