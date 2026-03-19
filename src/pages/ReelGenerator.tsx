@@ -537,8 +537,7 @@ export default function ReelGenerator() {
       // We accept any response except a total fetch failure.
       if (testResult.error && testResult.error.includes("Failed to send a request")) {
         throw new Error(
-          "Edge Function nicht erreichbar. Bitte überprüfe, ob 'analyze-video-frames' in Supabase deployt ist. " +
-          "(Dashboard → Edge Functions → Status prüfen)"
+          "Edge Function nicht erreichbar. Bitte überprüfe, ob 'analyze-video-frames' deployt ist."
         );
       }
       console.log("[ReelGenerator] Connectivity test passed");

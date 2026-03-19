@@ -1,6 +1,6 @@
 /**
  * Central API client for CreatorOS.
- * Replaces all supabase.from(), supabase.functions.invoke(), and supabase.storage calls.
+ * Wraps all API calls with auth and error handling.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -53,7 +53,7 @@ export async function apiFetch<T = unknown>(
 }
 
 // ============================================================
-// Convenience methods (replace supabase.from() patterns)
+// Convenience methods
 // ============================================================
 
 /** GET request */
@@ -84,7 +84,7 @@ export function apiDelete<T = unknown>(path: string): Promise<T> {
 }
 
 // ============================================================
-// Edge Function replacement (replaces supabase.functions.invoke)
+// Edge Function invocation
 // ============================================================
 
 /**
@@ -157,7 +157,7 @@ const FUNCTION_MAP: Record<string, string> = {
 };
 
 /**
- * Drop-in replacement for supabase.functions.invoke().
+ * Invoke a backend function by name.
  * Usage: const { data, error } = await invokeFunction("generate-draft", { body: {...} });
  */
 export async function invokeFunction<T = any>(
@@ -179,7 +179,7 @@ export async function invokeFunction<T = any>(
 }
 
 // ============================================================
-// Storage replacement (replaces supabase.storage)
+// Storage (R2)
 // ============================================================
 
 /**

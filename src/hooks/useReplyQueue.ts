@@ -57,7 +57,7 @@ export function useReplyQueue() {
   useEffect(() => {
     loadQueuedComments();
 
-    // Poll for changes every 30 seconds (replaces Supabase Realtime)
+    // Poll for changes every 30 seconds
     const interval = setInterval(loadQueuedComments, 30000);
 
     return () => {
