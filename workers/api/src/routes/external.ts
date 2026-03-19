@@ -173,6 +173,154 @@ app.get("/media", async (c) => {
   return c.json(rows);
 });
 
+// ============================================================
+// TASKS ENDPOINTS
+// ============================================================
+
+// GET /tasks — List tasks with optional filters
+app.get("/tasks", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const status = c.req.query("status");
+  const assignee = c.req.query("assignee");
+  const priority = c.req.query("priority");
+
+  let where = "WHERE 1=1";
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (status) {
+    where += ` AND status = $${idx}`;
+    params.push(status);
+    idx++;
+  }
+  if (assignee) {
+    where += ` AND assignee = $${idx}`;
+    params.push(assignee);
+    idx++;
+  }
+  if (priority) {
+    where += ` AND priority = $${idx}`;
+    params.push(priority);
+    idx++;
+  }
+
+  const rows = await query(sql,
+    `SELECT id, title, description, status, priority, assignee, tags, blocked_reason,
+            org_id, created_at, updated_at, completed_at
+     FROM tasks ${where}
+     ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END,
+              created_at DESC`,
+    params
+  );
+
+  return c.json(rows);
+});
+
+// POST /tasks — Create a new task
+app.post("/tasks", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const body = await c.req.json<{
+    title: string;
+    description?: string;
+    status?: string;
+    priority?: string;
+    assignee?: string;
+    tags?: string[];
+    blocked_reason?: string;
+  }>();
+
+  if (!body.title) {
+    return c.json({ error: "title ist Pflichtfeld" }, 400);
+  }
+
+  const rows = await query(sql,
+    `INSERT INTO tasks (title, description, status, priority, assignee, tags, blocked_reason)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [
+      body.title,
+      body.description || null,
+      body.status || "todo",
+      body.priority || "medium",
+      body.assignee || "pixel",
+      body.tags || [],
+      body.blocked_reason || null,
+    ]
+  );
+
+  return c.json(rows[0], 201);
+});
+
+// PATCH /tasks/:id — Update a task
+app.patch("/tasks/:id", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const taskId = c.req.param("id");
+  const body = await c.req.json<{
+    title?: string;
+    description?: string;
+    status?: string;
+    priority?: string;
+    assignee?: string;
+    tags?: string[];
+    blocked_reason?: string;
+  }>();
+
+  // Build dynamic SET clause
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (body.title !== undefined) { sets.push(`title = $${idx}`); params.push(body.title); idx++; }
+  if (body.description !== undefined) { sets.push(`description = $${idx}`); params.push(body.description); idx++; }
+  if (body.status !== undefined) {
+    sets.push(`status = $${idx}`); params.push(body.status); idx++;
+    if (body.status === "done") {
+      sets.push(`completed_at = now()`);
+    } else {
+      sets.push(`completed_at = NULL`);
+    }
+  }
+  if (body.priority !== undefined) { sets.push(`priority = $${idx}`); params.push(body.priority); idx++; }
+  if (body.assignee !== undefined) { sets.push(`assignee = $${idx}`); params.push(body.assignee); idx++; }
+  if (body.tags !== undefined) { sets.push(`tags = $${idx}`); params.push(body.tags); idx++; }
+  if (body.blocked_reason !== undefined) { sets.push(`blocked_reason = $${idx}`); params.push(body.blocked_reason); idx++; }
+
+  if (sets.length === 0) {
+    return c.json({ error: "Keine Felder zum Aktualisieren" }, 400);
+  }
+
+  sets.push("updated_at = now()");
+  params.push(taskId);
+
+  const result = await query(sql,
+    `UPDATE tasks SET ${sets.join(", ")} WHERE id = $${idx} RETURNING *`,
+    params
+  );
+
+  if (result.length === 0) {
+    return c.json({ error: "Task nicht gefunden" }, 404);
+  }
+
+  return c.json(result[0]);
+});
+
+// DELETE /tasks/:id — Delete a task
+app.delete("/tasks/:id", async (c) => {
+  const sql = getDb(c.env.DATABASE_URL);
+  const taskId = c.req.param("id");
+
+  const result = await query(sql,
+    `DELETE FROM tasks WHERE id = $1 RETURNING id`,
+    [taskId]
+  );
+
+  if (result.length === 0) {
+    return c.json({ error: "Task nicht gefunden" }, 404);
+  }
+
+  return c.json({ deleted: true, id: taskId });
+});
+
 // POST /schedule — Schedule a post
 app.post("/schedule", async (c) => {
   const userId = getUserId(c);

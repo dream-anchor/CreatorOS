@@ -482,6 +482,25 @@ CREATE TABLE public.video_renders (
 );
 
 -- ============================================================
+-- TASKS TABLE (Pixel Dashboard)
+-- ============================================================
+
+CREATE TABLE public.tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('blocked', 'todo', 'in_progress', 'done')),
+  priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('high', 'medium', 'low')),
+  assignee TEXT NOT NULL DEFAULT 'pixel' CHECK (assignee IN ('pixel', 'antoine', 'both')),
+  tags TEXT[] DEFAULT '{}',
+  blocked_reason TEXT,
+  org_id TEXT NOT NULL DEFAULT 'default',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+-- ============================================================
 -- CHAT & UTILITY TABLES
 -- ============================================================
 
@@ -594,6 +613,10 @@ CREATE INDEX idx_reply_training_user_created ON public.reply_training_data (user
 CREATE INDEX idx_events_user_date ON public.events (user_id, date);
 CREATE INDEX idx_events_upcoming ON public.events (date) WHERE is_active = true;
 
+-- Tasks
+CREATE INDEX idx_tasks_status ON public.tasks(status);
+CREATE INDEX idx_tasks_org_id ON public.tasks(org_id);
+
 -- ============================================================
 -- TRIGGER: updated_at
 -- ============================================================
@@ -639,6 +662,8 @@ CREATE TRIGGER tr_chat_conversations_updated_at BEFORE UPDATE ON public.chat_con
 CREATE TRIGGER tr_video_projects_updated_at BEFORE UPDATE ON public.video_projects
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 CREATE TRIGGER tr_events_updated_at BEFORE UPDATE ON public.events
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER tr_tasks_updated_at BEFORE UPDATE ON public.tasks
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ============================================================
