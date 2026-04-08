@@ -294,7 +294,7 @@ const TEMPLATE_PROMPTS: Record<string, string> = {
 
 function getRequiredTemplates(daysUntilEvent: number): string[] {
   const templates: string[] = [];
-  if (daysUntilEvent <= 14) templates.push("announcement");
+  if (daysUntilEvent >= 0) templates.push("announcement"); // Sobald Event bekannt → Ankündigung
   if (daysUntilEvent <= 7) templates.push("countdown");
   if (daysUntilEvent <= 1) templates.push("reminder");
   if (daysUntilEvent < 0) templates.push("thankyou");
@@ -318,11 +318,11 @@ app.post("/auto-generate-event-posts", async (c) => {
     const userId = userSetting.user_id;
 
     try {
-      // 2. Lade aktive Events: nächste 30 Tage + gestern (für Danke-Posts)
+      // 2. Lade aktive Events: nächste 180 Tage + gestern (für Danke-Posts)
       const events = await query<Record<string, unknown>>(sql,
         `SELECT * FROM events
          WHERE user_id = $1 AND is_active = true
-           AND date BETWEEN (CURRENT_DATE - interval '1 day') AND (CURRENT_DATE + interval '30 days')
+           AND date BETWEEN (CURRENT_DATE - interval '1 day') AND (CURRENT_DATE + interval '180 days')
          ORDER BY date ASC`,
         [userId]
       );
