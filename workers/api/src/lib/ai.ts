@@ -1,4 +1,7 @@
-/** Call OpenAI Chat Completions API directly */
+/** Call OpenAI-compatible Chat Completions API.
+ *  Routes to OpenRouter automatically for non-OpenAI model IDs (e.g. google/..., anthropic/...).
+ *  Pass openrouterApiKey to enable OpenRouter fallback.
+ */
 export async function callOpenAI(
   apiKey: string,
   opts: {
@@ -8,7 +11,8 @@ export async function callOpenAI(
     tool_choice?: unknown;
     max_completion_tokens?: number;
     temperature?: number;
-  }
+  },
+  openrouterApiKey?: string
 ): Promise<{
   choices: Array<{
     message: {
@@ -20,25 +24,32 @@ export async function callOpenAI(
     finish_reason: string;
   }>;
 }> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const model = opts.model || "gpt-4o";
+  const isOpenRouter = openrouterApiKey && !model.startsWith("gpt-") && !model.startsWith("o1") && !model.startsWith("o3");
+  const url = isOpenRouter
+    ? "https://openrouter.ai/api/v1/chat/completions"
+    : "https://api.openai.com/v1/chat/completions";
+  const key = isOpenRouter ? openrouterApiKey : apiKey;
+
+  const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: opts.model || "gpt-4o",
+      model,
       messages: opts.messages,
       tools: opts.tools,
       tool_choice: opts.tool_choice,
-      max_completion_tokens: opts.max_completion_tokens || 2000,
+      max_tokens: opts.max_completion_tokens || 2000,
       temperature: opts.temperature,
     }),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OpenAI API error (${res.status}): ${text}`);
+    throw new Error(`${isOpenRouter ? "OpenRouter" : "OpenAI"} API error (${res.status}): ${text}`);
   }
 
   return res.json();

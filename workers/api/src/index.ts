@@ -39,6 +39,7 @@ export type Env = {
   PIXEL_API_KEY: string;
   PIXEL_USER_ID: string;
   DISCORD_WEBHOOK_URL: string;
+  OPENROUTER_API_KEY: string;
 };
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();

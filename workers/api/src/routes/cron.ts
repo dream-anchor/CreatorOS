@@ -393,7 +393,7 @@ app.post("/auto-generate-event-posts", async (c) => {
             .filter(Boolean)
             .join("\n");
 
-          // 6. AI-Aufruf
+          // 6. AI-Aufruf (OpenRouter für nicht-OpenAI Modelle)
           const aiResponse = await callOpenAI(c.env.OPENAI_API_KEY, {
             model,
             messages: [
@@ -420,7 +420,7 @@ app.post("/auto-generate-event-posts", async (c) => {
             ],
             tool_choice: { type: "function", function: { name: "create_event_post" } },
             max_completion_tokens: 1000,
-          });
+          }, c.env.OPENROUTER_API_KEY);
 
           const args = extractToolArgs<{
             caption: string;
