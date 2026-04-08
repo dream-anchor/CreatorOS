@@ -550,6 +550,60 @@ app.post("/auto-generate-event-posts", async (c) => {
             ]
           );
 
+          // 11. Discord Webhook — Freigabe-Notification
+          if (c.env.DISCORD_WEBHOOK_URL && postRows[0]?.id) {
+            const templateLabels: Record<string, string> = {
+              announcement: "📣 Ankündigung",
+              countdown: "⏳ Countdown",
+              reminder: "🔔 Reminder",
+              thankyou: "🙏 Danke-Post",
+            };
+            const captionPreview = args.caption.slice(0, 200) + (args.caption.length > 200 ? "…" : "");
+            const dashboardUrl = `https://creatoros.paterbrown.live/posts/${postRows[0].id}`;
+
+            const discordPayload = {
+              embeds: [{
+                title: "📱 Neuer Post-Vorschlag",
+                color: 0x5865F2,
+                fields: [
+                  {
+                    name: "🎭 Event",
+                    value: `${event.title} — ${formatDateGerman(event.date as string)}, ${event.venue}, ${event.city}`,
+                    inline: false,
+                  },
+                  {
+                    name: `${templateLabels[template] || template}`,
+                    value: captionPreview,
+                    inline: false,
+                  },
+                  {
+                    name: "Status",
+                    value: postStatus,
+                    inline: true,
+                  },
+                  {
+                    name: "Freigabe",
+                    value: `[Im Dashboard öffnen](${dashboardUrl})`,
+                    inline: true,
+                  },
+                ],
+                ...(imagePublicUrl ? { image: { url: imagePublicUrl } } : {}),
+                footer: { text: "CreatorOS Auto-Posting" },
+                timestamp: new Date().toISOString(),
+              }],
+            };
+
+            try {
+              await fetch(c.env.DISCORD_WEBHOOK_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(discordPayload),
+              });
+            } catch (webhookErr) {
+              console.error("[auto-generate] Discord webhook failed:", webhookErr);
+            }
+          }
+
           generated++;
           generatedForUser = true;
         }

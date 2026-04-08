@@ -38,6 +38,7 @@ export type Env = {
   TROUPE_SUPABASE_KEY: string;
   PIXEL_API_KEY: string;
   PIXEL_USER_ID: string;
+  DISCORD_WEBHOOK_URL: string;
 };
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
@@ -79,8 +80,8 @@ export default {
     const base = "https://creatoros-api.antoine-dfc.workers.dev";
     console.log(`[cron] Triggered: ${event.cron} at ${new Date().toISOString()}`);
 
-    if (event.cron === "0 7 * * *") {
-      // Täglich 09:00 CET: Event-Posts generieren
+    if (event.cron === "0 8 * * 1,3,5") {
+      // Mo/Mi/Fr 10:00 CEST: Event-Posts generieren
       const req = new Request(`${base}/api/cron/auto-generate-event-posts`, { method: "POST" });
       const res = await app.fetch(req, env, ctx);
       console.log(`[cron] auto-generate ${res.status}: ${await res.text()}`);
