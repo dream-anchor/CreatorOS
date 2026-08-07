@@ -315,6 +315,14 @@ function getRequiredTemplates(daysUntilEvent: number): string[] {
 // im Winter 09:00. Die Ortszeit wird jetzt zur Laufzeit geprüft (berlinTime()),
 // nicht mehr im Cron-Ausdruck festgeschrieben — dadurch stimmt sie ganzjährig.
 //
+// ACHTUNG, WOCHENTAGE: Cloudflare zählt im Cron-Ausdruck 1 = Sonntag … 7 = Samstag
+// (https://developers.cloudflare.com/workers/configuration/cron-triggers/ —
+// ausdrücklich anders als üblich, wo 0 = Sonntag ist). "0 8 * * 1,3,5" bedeutete
+// dort also So/Di/Do, nicht Mo/Mi/Fr — und genau so hat es auch gefeuert
+// (logs-Tabelle, 12 Läufe vom 12.07. bis 06.08.2026: immer So, Di, Do 08:00 UTC).
+// Die Wochentage stehen deshalb jetzt hier im Code in der JS-Zählung
+// (0 = Sonntag … 6 = Samstag) und nicht mehr im Cron-Ausdruck.
+//
 // WARUM EIN TAGESSCHALTER IN DER DATENBANK:
 // Das Cloudflare-Konto hat nur 5 Cron-Trigger (Free-Plan). Die beiden
 // CreatorOS-Zeitpläne wurden zu einem einzigen 15-Minuten-Takt zusammengelegt;
@@ -324,7 +332,7 @@ function getRequiredTemplates(daysUntilEvent: number): string[] {
 // (Tabelle cron_daily_runs, Migration 007) — wer den Tag bekommt, läuft; alle
 // weiteren Ticks des Tages überspringen. Ein fehlgeschlagener oder hängen
 // gebliebener Lauf darf vom nächsten Tick nachgeholt werden (bis MAX_ATTEMPTS).
-const GENERATION_WEEKDAYS = [1, 3, 5]; // Mo, Mi, Fr
+const GENERATION_WEEKDAYS = [1, 3, 5]; // JS-Zählung: 1 = Montag, 3 = Mittwoch, 5 = Freitag
 const GENERATION_HOUR_LOCAL = 10;      // ab 10:00 Europe/Berlin
 const GENERATION_JOB_NAME = "auto-generate-event-posts";
 const STALE_CLAIM_MINUTES = 30;        // hängender Lauf gilt danach als abgebrochen
