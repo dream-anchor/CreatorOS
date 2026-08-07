@@ -13,7 +13,15 @@ ENVIRONMENT = "production"
 R2_JURISDICTION = "eu"
 
 [triggers]
-crons = ["0 8 * * 1,3,5", "*/15 * * * *"]  # Mo/Mi/Fr 10:00 CEST: Event-Posts generieren | alle 15 Min: Scheduled Posts publishen
+# EIN einziger Zeitplan — das Cloudflare-Konto ist am Limit von 5 Cron-Triggern
+# (Free-Plan, https://developers.cloudflare.com/workers/platform/limits/).
+# Der frühere zweite Zeitplan "0 8 * * 1,3,5" wurde hier eingefaltet:
+#   - alle 15 Min: Scheduled Posts auf Instagram publishen (eigentlicher Betrieb)
+#   - Mo/Mi/Fr ab 10:00 Europe/Berlin: Event-Posts generieren, genau 1x pro Tag
+#     (Zeitfenster + atomarer Tagesschalter in der DB, siehe src/routes/cron.ts).
+# Cloudflare-Crons laufen in UTC; die Ortszeit wird deshalb im Code geprüft,
+# nicht im Cron-Ausdruck — sonst verschiebt sie sich mit der Sommerzeit.
+crons = ["*/15 * * * *"]
 
 # Secrets (set via `wrangler secret put`):
 # DATABASE_URL

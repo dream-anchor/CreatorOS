@@ -81,16 +81,24 @@ export default {
     const base = "https://creatoros-api.antoine-dfc.workers.dev";
     console.log(`[cron] Triggered: ${event.cron} at ${new Date().toISOString()}`);
 
-    if (event.cron === "0 8 * * 1,3,5") {
-      // Mo/Mi/Fr 10:00 CEST: Event-Posts generieren
-      const req = new Request(`${base}/api/cron/auto-generate-event-posts`, { method: "POST" });
-      const res = await app.fetch(req, env, ctx);
-      console.log(`[cron] auto-generate ${res.status}: ${await res.text()}`);
-    }
+    // Es gibt nur noch EINEN Zeitplan ("*/15 * * * *"). Grund: das
+    // Cloudflare-Konto ist am Limit von 5 Cron-Triggern (Free-Plan), deshalb
+    // wurden die beiden CreatorOS-Zeitpläne zusammengelegt. Der frühere zweite
+    // Zeitplan ("0 8 * * 1,3,5") entfällt; die Post-Generierung entscheidet
+    // jetzt an der Ortszeit statt am Cron-Ausdruck.
 
-    // Alle 15 Min (inkl. 07:00): Scheduled Posts auf Instagram publishen
+    // 1. Alle 15 Min: Scheduled Posts auf Instagram publishen (eigentlicher Betrieb)
     const tickReq = new Request(`${base}/api/cron/scheduler-tick`, { method: "POST" });
     const tickRes = await app.fetch(tickReq, env, ctx);
     console.log(`[cron] scheduler-tick ${tickRes.status}: ${await tickRes.text()}`);
+
+    // 2. Mo/Mi/Fr ab 10:00 Europe/Berlin: Event-Posts generieren.
+    //    Zeitfenster UND Tagesschalter (Tabelle cron_daily_runs) liegen im
+    //    Endpunkt — siehe routes/cron.ts. "?auto=1" schaltet beides scharf,
+    //    sodass pro Kalendertag genau ein Lauf stattfindet, auch wenn der
+    //    15-Minuten-Takt die Zielstunde viermal trifft.
+    const genReq = new Request(`${base}/api/cron/auto-generate-event-posts?auto=1`, { method: "POST" });
+    const genRes = await app.fetch(genReq, env, ctx);
+    console.log(`[cron] auto-generate ${genRes.status}: ${await genRes.text()}`);
   },
 };

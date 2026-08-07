@@ -1,11 +1,12 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { Env } from "../index";
 import { getDb, query, queryOne } from "../lib/db";
 import { callOpenAI, extractToolArgs } from "../lib/ai";
 import { selectBackgroundImage } from "../lib/media-selector";
 import { getTemplateHtml, type TemplateData } from "../lib/templates";
 import { renderHtmlToImage } from "../lib/image-renderer";
-import { formatDateGerman, formatTimeGerman } from "../lib/utils";
+import { formatDateGerman, formatTimeGerman, berlinTime } from "../lib/utils";
 import { publishPostToInstagram } from "../lib/instagram-publisher";
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
@@ -301,10 +302,203 @@ function getRequiredTemplates(daysUntilEvent: number): string[] {
   return templates;
 }
 
-/** POST /api/cron/auto-generate-event-posts - Automatische Event-Post-Generierung */
+// ============================================================
+// TAGESSCHALTER FÜR DIE POST-GENERIERUNG
+// ============================================================
+//
+// ZEITPLAN-ENTSCHEIDUNG (07.08.2026):
+// Gemeint ist "Mo/Mi/Fr um 10:00 ORTSZEIT Europe/Berlin" — so stand es in
+// Commit 5912361 ("Mo/Mi/Fr 10:00 CEST"). Cloudflare-Cron-Ausdrücke laufen
+// ausschliesslich in UTC
+// (https://developers.cloudflare.com/workers/configuration/cron-triggers/),
+// der alte Ausdruck "0 8 * * 1,3,5" traf 10:00 daher nur in der Sommerzeit und
+// im Winter 09:00. Die Ortszeit wird jetzt zur Laufzeit geprüft (berlinTime()),
+// nicht mehr im Cron-Ausdruck festgeschrieben — dadurch stimmt sie ganzjährig.
+//
+// WARUM EIN TAGESSCHALTER IN DER DATENBANK:
+// Das Cloudflare-Konto hat nur 5 Cron-Trigger (Free-Plan). Die beiden
+// CreatorOS-Zeitpläne wurden zu einem einzigen 15-Minuten-Takt zusammengelegt;
+// dieser trifft die Zielstunde viermal. Ein blosses Zeitfenster ("nur um Punkt
+// 10:00") wäre kein Schutz: fällt ein Lauf aus oder verschiebt er sich, gäbe es
+// gar keinen Post. Deshalb ein atomarer Anspruch pro Kalendertag in der DB
+// (Tabelle cron_daily_runs, Migration 007) — wer den Tag bekommt, läuft; alle
+// weiteren Ticks des Tages überspringen. Ein fehlgeschlagener oder hängen
+// gebliebener Lauf darf vom nächsten Tick nachgeholt werden (bis MAX_ATTEMPTS).
+const GENERATION_WEEKDAYS = [1, 3, 5]; // Mo, Mi, Fr
+const GENERATION_HOUR_LOCAL = 10;      // ab 10:00 Europe/Berlin
+const GENERATION_JOB_NAME = "auto-generate-event-posts";
+const STALE_CLAIM_MINUTES = 30;        // hängender Lauf gilt danach als abgebrochen
+const MAX_ATTEMPTS_PER_DAY = 3;
+
+type GenerationSummary = {
+  users_processed: number;
+  generated: number;
+  skipped: number;
+  errors: number;
+};
+
+/**
+ * Beansprucht den heutigen Lauf atomar. Gibt claimed=false zurück, wenn heute
+ * bereits gelaufen wurde (oder das Versuchslimit erreicht ist).
+ */
+async function claimTagesLauf(
+  sql: ReturnType<typeof getDb>,
+  runDate: string
+): Promise<{ claimed: boolean; attempts: number }> {
+  const rows = await query<{ attempts: number }>(sql,
+    `INSERT INTO cron_daily_runs (job_name, run_date, status, attempts)
+     VALUES ($1, $2::date, 'running', 1)
+     ON CONFLICT (job_name, run_date) DO UPDATE
+       SET status = 'running',
+           claimed_at = now(),
+           attempts = cron_daily_runs.attempts + 1
+       WHERE cron_daily_runs.attempts < $3::int
+         AND (
+           cron_daily_runs.status = 'failed'
+           OR (cron_daily_runs.status = 'running'
+               AND cron_daily_runs.claimed_at < now() - make_interval(mins => $4::int))
+         )
+     RETURNING attempts`,
+    [GENERATION_JOB_NAME, runDate, MAX_ATTEMPTS_PER_DAY, STALE_CLAIM_MINUTES]
+  );
+
+  return { claimed: rows.length > 0, attempts: rows[0]?.attempts ?? 0 };
+}
+
+/** Schliesst den Tageslauf ab (done | done_with_errors | failed). */
+async function beendeTagesLauf(
+  sql: ReturnType<typeof getDb>,
+  runDate: string,
+  status: string,
+  details: unknown
+): Promise<void> {
+  await query(sql,
+    `UPDATE cron_daily_runs
+        SET status = $3, finished_at = now(), details = $4
+      WHERE job_name = $1 AND run_date = $2::date`,
+    [GENERATION_JOB_NAME, runDate, status, JSON.stringify(details)]
+  ).catch((err) => {
+    console.error("[auto-generate] Tageslauf konnte nicht abgeschlossen werden:", err);
+  });
+}
+
+/**
+ * Macht einen Fehlschlag sichtbar. Die Generierung läuft nur dreimal pro Woche —
+ * ohne aktive Meldung würde ein Ausfall wochenlang niemandem auffallen.
+ * Kanäle: console.error (Worker-Logs), logs-Tabelle, Discord (falls konfiguriert).
+ */
+async function meldeStoerung(env: Env, titel: string, text: string): Promise<void> {
+  console.error(`[auto-generate] ${titel}: ${text}`);
+
+  if (!env.DISCORD_WEBHOOK_URL) return;
+  try {
+    await fetch(env.DISCORD_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [{
+          title: `⚠️ ${titel}`,
+          description: text.slice(0, 1800),
+          color: 0xE01E5A,
+          footer: { text: "CreatorOS Auto-Posting" },
+          timestamp: new Date().toISOString(),
+        }],
+      }),
+    });
+  } catch (webhookErr) {
+    console.error("[auto-generate] Discord-Alarm fehlgeschlagen:", webhookErr);
+  }
+}
+
+/**
+ * POST /api/cron/auto-generate-event-posts
+ *
+ * ?auto=1 → Aufruf aus dem 15-Minuten-Takt: Zeitfenster (Mo/Mi/Fr ab 10:00
+ *           Ortszeit) und Tagesschalter greifen, damit pro Tag genau ein Lauf
+ *           stattfindet.
+ * ohne    → manueller Aufruf: läuft sofort, ohne Tagesschalter.
+ */
 app.post("/auto-generate-event-posts", async (c) => {
+  const auto = c.req.query("auto") === "1";
   const sql = getDb(c.env.DATABASE_URL);
 
+  if (!auto) {
+    const summary = await generateEventPosts(c, sql);
+    return c.json({ success: true, mode: "manual", ...summary });
+  }
+
+  const jetzt = berlinTime();
+  const uhrzeit = `${String(jetzt.hour).padStart(2, "0")}:${String(jetzt.minute).padStart(2, "0")}`;
+
+  if (!GENERATION_WEEKDAYS.includes(jetzt.weekday) || jetzt.hour < GENERATION_HOUR_LOCAL) {
+    return c.json({
+      success: true,
+      mode: "auto",
+      skipped: "ausserhalb_zeitfenster",
+      local_date: jetzt.date,
+      local_time: uhrzeit,
+    });
+  }
+
+  const claim = await claimTagesLauf(sql, jetzt.date);
+  if (!claim.claimed) {
+    return c.json({
+      success: true,
+      mode: "auto",
+      skipped: "heute_bereits_gelaufen",
+      run_date: jetzt.date,
+    });
+  }
+
+  console.log(
+    `[auto-generate] Tageslauf ${jetzt.date} beansprucht (Versuch ${claim.attempts}), Ortszeit ${uhrzeit} Europe/Berlin`
+  );
+
+  try {
+    const summary = await generateEventPosts(c, sql);
+    await beendeTagesLauf(
+      sql,
+      jetzt.date,
+      summary.errors > 0 ? "done_with_errors" : "done",
+      summary
+    );
+
+    if (summary.errors > 0) {
+      await meldeStoerung(
+        c.env,
+        "Post-Generierung mit Fehlern",
+        `Lauf ${jetzt.date}: ${summary.errors} Fehler bei ${summary.users_processed} Konten, ` +
+        `${summary.generated} Posts erstellt. Details stehen in der logs-Tabelle.`
+      );
+    }
+
+    return c.json({
+      success: true,
+      mode: "auto",
+      run_date: jetzt.date,
+      attempt: claim.attempts,
+      ...summary,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await beendeTagesLauf(sql, jetzt.date, "failed", { error: msg, attempt: claim.attempts });
+    await meldeStoerung(
+      c.env,
+      "Post-Generierung fehlgeschlagen",
+      `Lauf ${jetzt.date}, Versuch ${claim.attempts} von ${MAX_ATTEMPTS_PER_DAY}: ${msg}`
+    );
+    return c.json(
+      { success: false, mode: "auto", run_date: jetzt.date, attempt: claim.attempts, error: msg },
+      500
+    );
+  }
+});
+
+/** Die eigentliche Generierung (unverändert) — vom Tagesschalter aufgerufen. */
+async function generateEventPosts(
+  c: Context<{ Bindings: Env; Variables: { userId: string } }>,
+  sql: ReturnType<typeof getDb>
+): Promise<GenerationSummary> {
   // 1. Lade alle User mit auto_post_mode != 'off'
   const activeUsers = await query<{ user_id: string; auto_post_mode: string }>(sql,
     "SELECT user_id, auto_post_mode FROM settings WHERE auto_post_mode IS NOT NULL AND auto_post_mode != 'off'"
@@ -620,13 +814,12 @@ app.post("/auto-generate-event-posts", async (c) => {
     }
   }
 
-  return c.json({
-    success: true,
+  return {
     users_processed: activeUsers.length,
     generated,
     skipped,
     errors,
-  });
-});
+  };
+}
 
 export { app as cronRoutes };
